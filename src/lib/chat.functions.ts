@@ -72,7 +72,7 @@ export const getThreadMessages = createServerFn({ method: "GET" })
       .eq("id", data.threadId)
       .eq("user_id", userId)
       .maybeSingle();
-    if (!thread) return { thread: null, messages: [] as Array<{ id: string; role: string; parts: unknown }> };
+    if (!thread) return { thread: null, messages: [] as Array<{ id: string; role: string; parts: Json }> };
 
     const { data: rows, error } = await supabase
       .from("messages")
