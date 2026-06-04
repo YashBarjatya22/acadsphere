@@ -71,7 +71,7 @@ export const getThreadMessages = createServerFn({ method: "GET" })
       .eq("id", data.threadId)
       .eq("user_id", userId)
       .maybeSingle();
-    if (!thread) return { thread: null, messages: [] as UIMessage[] };
+    if (!thread) return { thread: null, messages: [] as Array<{ id: string; role: string; parts: unknown }> };
 
     const { data: rows, error } = await supabase
       .from("messages")
@@ -80,10 +80,10 @@ export const getThreadMessages = createServerFn({ method: "GET" })
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
 
-    const messages: UIMessage[] = (rows ?? []).map((r) => ({
+    const messages = (rows ?? []).map((r) => ({
       id: r.id,
-      role: r.role as UIMessage["role"],
-      parts: (r.parts as UIMessage["parts"]) ?? [],
+      role: r.role,
+      parts: r.parts,
     }));
     return { thread, messages };
   });
