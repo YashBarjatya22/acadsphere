@@ -66,7 +66,7 @@ export function ChatWindow({
 
   const busy = status === "submitted" || status === "streaming";
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(_msg: unknown, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
