@@ -43,7 +43,7 @@ export function ChatLayout({
     mutationFn: (id: string) => deleteFn({ data: { id } }),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["threads"] });
-      if (id === activeThreadId) navigate({ to: "/app" });
+      if (id === activeThreadId) navigate({ to: "/app/" });
     },
   });
 
