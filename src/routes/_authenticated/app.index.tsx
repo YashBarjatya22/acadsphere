@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { createThread } from "@/lib/chat.functions";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 
-export const Route = createFileRoute("/_authenticated/app")({
+export const Route = createFileRoute("/_authenticated/app/")({
   component: AppIndex,
 });
 
