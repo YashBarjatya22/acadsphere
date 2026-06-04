@@ -84,7 +84,7 @@ export const getThreadMessages = createServerFn({ method: "GET" })
     const messages = (rows ?? []).map((r) => ({
       id: r.id,
       role: r.role,
-      parts: r.parts,
+      parts: r.parts as Json,
     }));
     return { thread, messages };
   });
