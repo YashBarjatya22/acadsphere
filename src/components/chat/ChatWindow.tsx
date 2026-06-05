@@ -22,8 +22,9 @@ import { toast } from "sonner";
 const STARTERS = [
   "Build me a 6-month MCA → Full Stack roadmap",
   "Score my resume against SDE-1 roles",
-  "Run a mock HR interview for Infosys",
+  "Upload my notes and scan for gaps",
   "Explain transactions in DBMS with exam questions",
+  "Show me example exam questions for Operating Systems",
 ];
 
 export function ChatWindow({
@@ -68,10 +69,21 @@ export function ChatWindow({
 
   async function handleSubmit(_msg: unknown, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const text = input.trim();
-    if (!text || busy) return;
+    const { text: rawText, files } = _msg as { text: string; files?: { filename: string }[] };
+    const text = (rawText ?? input).trim();
+    const hasFiles = !!files?.length;
+    if ((!text && !hasFiles) || busy) return;
     setInput("");
-    await sendMessage({ text });
+    const prompt =
+      text || hasFiles
+        ? text ||
+          "Scan the uploaded notes for concept gaps and missing topics relative to a technical student target role or exam syllabus. If gaps are found, list them with fixes. If there are no gaps, say the notes look solid and give a short appreciative message."
+        : text;
+
+    await sendMessage({
+      text: prompt,
+      files: files as FileList | undefined,
+    });
   }
 
   return (
@@ -86,7 +98,7 @@ export function ChatWindow({
                 </div>
               }
               title="What do you want to master today?"
-              description="StudentOS combines 12 modules — roadmaps, study plans, resume scoring, mock interviews — in one chat."
+              description="StudentOS combines 6 modules — roadmaps, study plans, resume scoring, and notes analysis — in one chat."
             >
               <div className="mt-4 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                 {STARTERS.map((s) => (
@@ -144,7 +156,7 @@ export function ChatWindow({
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask StudentOS anything — roadmap, resume, paper, interview…"
+            placeholder="Ask StudentOS anything — roadmap, resume, paper, or upload notes to scan gaps…"
             disabled={busy}
           />
           <PromptInputFooter className="justify-end">

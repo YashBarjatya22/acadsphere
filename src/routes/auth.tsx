@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,16 +60,28 @@ function AuthPage() {
 
   async function handleGoogle() {
     setLoading(true);
-    const res = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/app",
-    });
-    if (res.error) {
-      toast.error(res.error.message || "Google sign-in failed");
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin + "/app",
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.url) {
+        window.location.assign(data.url);
+        return;
+      }
+
+      navigate({ to: "/app", replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
       setLoading(false);
-      return;
     }
-    if (res.redirected) return;
-    navigate({ to: "/app", replace: true });
   }
 
   return (
@@ -91,7 +102,7 @@ function AuthPage() {
             {mode === "signin" ? "Sign in to continue your journey." : "Free forever. Start in 30 seconds."}
           </p>
 
-          <Button onClick={handleGoogle} disabled={loading} variant="outline" className="mt-6 w-full">
+          <Button type="button" onClick={handleGoogle} disabled={loading} variant="outline" className="mt-6 w-full">
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1h-9.17v2.97h5.27c-.23 1.4-1.66 4.1-5.27 4.1-3.17 0-5.76-2.62-5.76-5.85 0-3.23 2.59-5.85 5.76-5.85 1.8 0 3.01.77 3.7 1.43l2.52-2.43C16.83 3.84 14.78 3 12.18 3 6.99 3 2.8 7.19 2.8 12.38c0 5.18 4.19 9.37 9.38 9.37 5.41 0 9-3.8 9-9.16 0-.62-.07-1.09-.15-1.49Z"/></svg>
             Continue with Google
           </Button>

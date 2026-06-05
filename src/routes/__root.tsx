@@ -80,7 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "StudentOS — Your AI Academic Operating System" },
-      { name: "description", content: "An AI-powered academic OS: career roadmaps, study planning, resume scoring, mock interviews, and more for MCA, BCA, and B.Tech students." },
+      { name: "description", content: "An AI-powered academic OS: career roadmaps, study planning, resume scoring, and more for MCA, BCA, and B.Tech students." },
       { name: "author", content: "StudentOS" },
       { property: "og:title", content: "StudentOS — Your AI Academic Operating System" },
       { property: "og:description", content: "Mentor, study partner, career advisor, placement coach — in one chat." },
