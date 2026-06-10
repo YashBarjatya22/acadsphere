@@ -20,9 +20,7 @@ function NotFoundComponent() {
       <div className="max-w-md text-center">
         <h1 className="font-display text-7xl font-bold text-gradient">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          That route doesn't exist in StudentOS.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">That route doesn't exist in StudentOS.</p>
         <div className="mt-6">
           <Link
             to="/"
@@ -80,10 +78,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "StudentOS — Your AI Academic Operating System" },
-      { name: "description", content: "An AI-powered academic OS: career roadmaps, study planning, resume scoring, and more for MCA, BCA, and B.Tech students." },
+      {
+        name: "description",
+        content:
+          "An AI-powered academic OS: career roadmaps, study planning, resume scoring, and more for MCA, BCA, and B.Tech students.",
+      },
       { name: "author", content: "StudentOS" },
       { property: "og:title", content: "StudentOS — Your AI Academic Operating System" },
-      { property: "og:description", content: "Mentor, study partner, career advisor, placement coach — in one chat." },
+      {
+        property: "og:description",
+        content: "Mentor, study partner, career advisor, placement coach — in one chat.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -113,7 +118,9 @@ function AuthSync() {
   const router = useRouter();
   const queryClient = useQueryClient();
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
       router.invalidate();
       queryClient.invalidateQueries();
     });

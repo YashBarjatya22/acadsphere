@@ -1,37 +1,58 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
-
+import crypto from "node:crypto";
+import { getDb } from "./db.server";
 
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data, error } = await supabase
-      .from("threads")
-      .select("id, title, module, updated_at")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(100);
-    if (error) throw new Error(error.message);
+    const { userId } = context;
+    const db = getDb();
+    if (!db) throw new Error("Database not initialized");
+
+    const stmt = db.prepare(`
+      SELECT id, title, module, updated_at 
+      FROM threads 
+      WHERE user_id = ? 
+      ORDER BY updated_at DESC 
+      LIMIT 100
+    `);
+    const data = stmt.all(userId);
     return data ?? [];
   });
 
 export const createThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ title: z.string().min(1).max(120).optional(), module: z.string().max(80).optional() }).parse(input ?? {}),
+    z
+      .object({
+        title: z.string().min(1).max(120).optional(),
+        module: z.string().max(80).optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { data: row, error } = await supabase
-      .from("threads")
-      .insert({ user_id: userId, title: data.title ?? "New chat", module: data.module ?? null })
-      .select("id, title, module, updated_at")
-      .single();
-    if (error) throw new Error(error.message);
-    return row;
+    const { userId } = context;
+    const db = getDb();
+    if (!db) throw new Error("Database not initialized");
+
+    const threadId = crypto.randomUUID();
+    const title = data.title ?? "New chat";
+    const module = data.module ?? null;
+
+    const insertStmt = db.prepare(`
+      INSERT INTO threads (id, user_id, title, module) 
+      VALUES (?, ?, ?, ?)
+    `);
+    insertStmt.run(threadId, userId, title, module);
+
+    const selectStmt = db.prepare(`
+      SELECT id, title, module, updated_at 
+      FROM threads 
+      WHERE id = ?
+    `);
+    return selectStmt.get(threadId);
   });
 
 export const renameThread = createServerFn({ method: "POST" })
@@ -40,13 +61,16 @@ export const renameThread = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), title: z.string().min(1).max(120) }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase
-      .from("threads")
-      .update({ title: data.title })
-      .eq("id", data.id)
-      .eq("user_id", userId);
-    if (error) throw new Error(error.message);
+    const { userId } = context;
+    const db = getDb();
+    if (!db) throw new Error("Database not initialized");
+
+    const stmt = db.prepare(`
+      UPDATE threads 
+      SET title = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ? AND user_id = ?
+    `);
+    stmt.run(data.title, data.id, userId);
     return { ok: true };
   });
 
@@ -54,9 +78,15 @@ export const deleteThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("threads").delete().eq("id", data.id).eq("user_id", userId);
-    if (error) throw new Error(error.message);
+    const { userId } = context;
+    const db = getDb();
+    if (!db) throw new Error("Database not initialized");
+
+    const stmt = db.prepare(`
+      DELETE FROM threads 
+      WHERE id = ? AND user_id = ?
+    `);
+    stmt.run(data.id, userId);
     return { ok: true };
   });
 
@@ -64,27 +94,31 @@ export const getThreadMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { userId } = context;
+    const db = getDb();
+    if (!db) throw new Error("Database not initialized");
+
     // verify thread ownership
-    const { data: thread } = await supabase
-      .from("threads")
-      .select("id, title, module")
-      .eq("id", data.threadId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (!thread) return { thread: null, messages: [] as Array<{ id: string; role: string; parts: Json }> };
+    const threadStmt = db.prepare(`
+      SELECT id, title, module 
+      FROM threads 
+      WHERE id = ? AND user_id = ?
+    `);
+    const thread = threadStmt.get(data.threadId, userId);
+    if (!thread) return { thread: null, messages: [] };
 
-    const { data: rows, error } = await supabase
-      .from("messages")
-      .select("id, role, parts, created_at")
-      .eq("thread_id", data.threadId)
-      .order("created_at", { ascending: true });
-    if (error) throw new Error(error.message);
+    const messagesStmt = db.prepare(`
+      SELECT id, role, parts, created_at 
+      FROM messages 
+      WHERE thread_id = ? 
+      ORDER BY created_at ASC
+    `);
+    const rows = messagesStmt.all(data.threadId);
 
-    const messages = (rows ?? []).map((r) => ({
+    const messages = (rows ?? []).map((r: any) => ({
       id: r.id,
       role: r.role,
-      parts: r.parts as Json,
+      parts: JSON.parse(r.parts),
     }));
     return { thread, messages };
   });

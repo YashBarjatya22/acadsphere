@@ -64,10 +64,10 @@
   --surface: oklch(0.21 0.025 250);
   --surface-foreground: oklch(0.97 0.01 220);
 
-  --card: oklch(0.20 0.025 250);
+  --card: oklch(0.2 0.025 250);
   --card-foreground: oklch(0.97 0.01 220);
 
-  --popover: oklch(0.20 0.025 250);
+  --popover: oklch(0.2 0.025 250);
   --popover-foreground: oklch(0.97 0.01 220);
 
   --primary: oklch(0.82 0.17 165);
@@ -78,23 +78,23 @@
   --secondary-foreground: oklch(0.97 0.01 220);
 
   --muted: oklch(0.24 0.025 250);
-  --muted-foreground: oklch(0.70 0.02 230);
+  --muted-foreground: oklch(0.7 0.02 230);
 
-  --accent: oklch(0.30 0.04 250);
+  --accent: oklch(0.3 0.04 250);
   --accent-foreground: oklch(0.97 0.01 220);
 
   --destructive: oklch(0.65 0.22 25);
   --destructive-foreground: oklch(0.98 0.01 220);
 
-  --border: oklch(0.30 0.025 250);
+  --border: oklch(0.3 0.025 250);
   --input: oklch(0.26 0.03 250);
   --ring: oklch(0.82 0.17 165);
 
   --chart-1: oklch(0.82 0.17 165);
   --chart-2: oklch(0.72 0.15 220);
   --chart-3: oklch(0.78 0.16 60);
-  --chart-4: oklch(0.65 0.20 320);
-  --chart-5: oklch(0.70 0.18 15);
+  --chart-4: oklch(0.65 0.2 320);
+  --chart-5: oklch(0.7 0.18 15);
 
   --sidebar: oklch(0.18 0.022 250);
   --sidebar-foreground: oklch(0.92 0.01 220);
@@ -117,35 +117,42 @@
     font-style: normal;
     font-weight: 100 900;
     font-display: swap;
-    src: url("https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTc2dRZsLLMfA.woff2") format("woff2");
+    src: url("https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTc2dRZsLLMfA.woff2")
+      format("woff2");
   }
   @font-face {
     font-family: "Space Grotesk";
     font-style: normal;
     font-weight: 300 700;
     font-display: swap;
-    src: url("https://fonts.gstatic.com/s/spacegrotesk/v16/V8mDoQDjQSkFtoMM3T6r8E7mF71Q-gOoraIAEj7oUUxjLwhq.woff2") format("woff2");
+    src: url("https://fonts.gstatic.com/s/spacegrotesk/v16/V8mDoQDjQSkFtoMM3T6r8E7mF71Q-gOoraIAEj7oUUxjLwhq.woff2")
+      format("woff2");
   }
   @font-face {
     font-family: "JetBrains Mono";
     font-style: normal;
     font-weight: 400 700;
     font-display: swap;
-    src: url("https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2") format("woff2");
+    src: url("https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2")
+      format("woff2");
   }
 
   * {
     border-color: var(--color-border);
   }
 
-  html, body {
+  html,
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
-  h1, h2, h3, h4 {
+  h1,
+  h2,
+  h3,
+  h4 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
@@ -159,7 +166,9 @@
     background-size: 48px 48px;
   }
   .glow-primary {
-    box-shadow: 0 0 0 1px var(--primary), 0 10px 40px -10px var(--accent-glow);
+    box-shadow:
+      0 0 0 1px var(--primary),
+      0 10px 40px -10px var(--accent-glow);
   }
   .text-gradient {
     background: linear-gradient(135deg, var(--primary), var(--accent-glow));
