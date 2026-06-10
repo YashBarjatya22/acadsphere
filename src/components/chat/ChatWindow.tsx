@@ -118,9 +118,7 @@ export function ChatWindow({
             </ConversationEmptyState>
           ) : (
             messages.map((m) => {
-              const text = m.parts
-                .map((p) => (p.type === "text" ? p.text : ""))
-                .join("");
+              const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
               return (
                 <Message key={m.id} from={m.role}>
                   <MessageContent>

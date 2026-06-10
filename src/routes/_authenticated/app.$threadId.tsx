@@ -18,7 +18,9 @@ function ThreadPage() {
     queryFn: () => fetchMessages({ data: { threadId } }),
   });
 
-  const initialMessages: UIMessage[] = (data?.messages ?? []).map((m) => ({
+  const initialMessages: UIMessage[] = (
+    (data?.messages ?? []) as { id: string; role: string; parts?: unknown }[]
+  ).map((m) => ({
     id: m.id,
     role: m.role as UIMessage["role"],
     parts: (m.parts ?? []) as UIMessage["parts"],

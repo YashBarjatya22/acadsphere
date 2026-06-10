@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, Trash2, LogOut, Menu } from "lucide-react";
+import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -69,9 +69,34 @@ export function ChatLayout({
           </Link>
         </div>
 
-        <div className="px-3">
-          <Button onClick={() => create.mutate()} disabled={create.isPending} className="w-full justify-start" size="sm">
+        <div className="px-3 space-y-2">
+          <Button
+            onClick={() => create.mutate()}
+            disabled={create.isPending}
+            className="w-full justify-start"
+            size="sm"
+          >
             <Plus className="mr-2 h-4 w-4" /> New chat
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <a href="http://localhost:8502" target="_blank" rel="noopener noreferrer">
+              <FileCheck2 className="mr-2 h-4 w-4 text-primary" /> Resume Analyzer
+            </a>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <a href="http://localhost:8501" target="_blank" rel="noopener noreferrer">
+              <Compass className="mr-2 h-4 w-4 text-primary" /> Career Roadmap
+            </a>
           </Button>
         </div>
 
@@ -83,7 +108,7 @@ export function ChatLayout({
             <div className="px-3 py-2 text-sm text-muted-foreground">No chats yet.</div>
           )}
           <ul className="space-y-0.5">
-            {threads.map((t) => {
+            {threads.map((t: { id: string; title: string }) => {
               const active = t.id === activeThreadId;
               return (
                 <li key={t.id} className="group flex items-center gap-1">
@@ -115,7 +140,12 @@ export function ChatLayout({
         </div>
 
         <div className="border-t border-border p-3">
-          <Button onClick={handleSignOut} variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
+          <Button
+            onClick={handleSignOut}
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground"
+          >
             <LogOut className="mr-2 h-4 w-4" /> Sign out
           </Button>
         </div>
