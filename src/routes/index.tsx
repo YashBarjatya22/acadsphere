@@ -94,6 +94,10 @@ function Landing() {
           {MODULES.map(({ icon: Icon, title, desc }, i) => {
             const isResumeAnalyzer = title === "Resume Analyzer";
             const isCareerRoadmap = title === "Career Roadmap";
+            const isPaperSimplifier = title === "Paper Simplifier";
+            const isStudyPlanner = title === "Study Planner";
+            const isNotesGapAnalyzer = title === "Notes Gap Analyzer";
+            const isAnalytics = title === "Analytics";
             const CardContent = (
               <div className="flex items-start gap-4">
                 <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary/15 text-primary">
@@ -111,29 +115,73 @@ function Landing() {
 
             if (isResumeAnalyzer) {
               return (
-                <a
+                <Link
                   key={title}
-                  href="http://localhost:8502"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer"
+                  to="/app/resume-analyzer"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
                 >
                   {CardContent}
-                </a>
+                </Link>
               );
             }
 
             if (isCareerRoadmap) {
               return (
-                <a
+                <Link
                   key={title}
-                  href="http://localhost:8501"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer"
+                  to="/app/career-roadmap"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
                 >
                   {CardContent}
-                </a>
+                </Link>
+              );
+            }
+
+            if (isPaperSimplifier) {
+              return (
+                <Link
+                  key={title}
+                  to="/paper-simplifier"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
+                >
+                  {CardContent}
+                </Link>
+              );
+            }
+
+            if (isStudyPlanner) {
+              return (
+                <Link
+                  key={title}
+                  to="/study-planner"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
+                >
+                  {CardContent}
+                </Link>
+              );
+            }
+
+            if (isNotesGapAnalyzer) {
+              return (
+                <Link
+                  key={title}
+                  to="/notes-gap-analyzer"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
+                >
+                  {CardContent}
+                </Link>
+              );
+            }
+
+            if (isAnalytics) {
+              return (
+                <Link
+                  key={title}
+                  to="/analytics"
+                  className="group relative bg-surface p-6 transition-colors hover:bg-card block cursor-pointer border-none"
+                >
+                  {CardContent}
+                </Link>
               );
             }
 
