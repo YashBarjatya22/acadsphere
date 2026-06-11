@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass } from "lucide-react";
+import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass, BookOpen, Calendar, Target, LineChart } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -53,6 +53,10 @@ export function ChatLayout({
     navigate({ to: "/" });
   }
 
+  const handleComingSoon = (moduleName: string) => {
+    toast.info(`Coming soon: The ${moduleName} module is currently under development.`);
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
@@ -69,34 +73,80 @@ export function ChatLayout({
           </Link>
         </div>
 
-        <div className="px-3 space-y-2">
+        <div className="px-3 space-y-1.5 overflow-y-auto max-h-[350px] scrollbar-thin">
           <Button
             onClick={() => create.mutate()}
             disabled={create.isPending}
-            className="w-full justify-start"
+            className="w-full justify-start mb-2"
             size="sm"
           >
             <Plus className="mr-2 h-4 w-4" /> New chat
           </Button>
+
           <Button
             asChild
             variant="outline"
             className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
             size="sm"
           >
-            <a href="http://localhost:8502" target="_blank" rel="noopener noreferrer">
-              <FileCheck2 className="mr-2 h-4 w-4 text-primary" /> Resume Analyzer
-            </a>
-          </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
-            size="sm"
-          >
-            <a href="http://localhost:8501" target="_blank" rel="noopener noreferrer">
+            <Link to="/app/career-roadmap">
               <Compass className="mr-2 h-4 w-4 text-primary" /> Career Roadmap
-            </a>
+            </Link>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/paper-simplifier">
+              <BookOpen className="mr-2 h-4 w-4 text-primary" /> Paper Simplifier
+            </Link>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/study-planner">
+              <Calendar className="mr-2 h-4 w-4 text-primary" /> Study Planner
+            </Link>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/app/resume-analyzer">
+              <FileCheck2 className="mr-2 h-4 w-4 text-primary" /> Resume Analyzer
+            </Link>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/notes-gap-analyzer">
+              <Target className="mr-2 h-4 w-4 text-primary" /> Notes Gap Analyzer
+            </Link>
+          </Button>
+
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/analytics">
+              <LineChart className="mr-2 h-4 w-4 text-primary" /> Analytics
+            </Link>
           </Button>
         </div>
 

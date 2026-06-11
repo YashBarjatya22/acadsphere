@@ -1,0 +1,251 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+import { generateText } from "ai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const ResumeInputSchema = z.object({
+  fileName: z.string(),
+  fileContent: z.string(), // Base64 encoded file data
+  jobDescription: z.string(),
+  custom_key: z.string().optional(),
+  provider: z.enum(["Gemini", "OpenAI"]).optional(),
+});
+
+function analyzeResumeHeuristics(resumeText: string, jobDescription: string) {
+  const rWords = new Set(resumeText.toLowerCase().match(/\b\w+\b/g) || []);
+  const jdWords = new Set(jobDescription.toLowerCase().match(/\b\w+\b/g) || []);
+  
+  const skillsDb = [
+    "python", "javascript", "typescript", "react", "vue", "angular", "node", "fastapi", "django", "flask",
+    "sql", "nosql", "mongodb", "postgresql", "mysql", "sqlite", "docker", "kubernetes", "aws", "gcp", "azure",
+    "git", "github", "ci/cd", "agile", "scrum", "machine learning", "data science", "deep learning", "nlp",
+    "html", "css", "tailwind", "bootstrap", "next.js", "vite", "java", "c++", "c#", "go", "rust", "php",
+    "communication", "leadership", "problem solving", "teamwork", "analytical", "project management"
+  ];
+  
+  const matchingSkills: string[] = [];
+  const missingSkills: string[] = [];
+  
+  for (const skill of skillsDb) {
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const skillRegex = new RegExp(`\\b${escaped}\\b`, "i");
+    if (skillRegex.test(jobDescription)) {
+      if (skillRegex.test(resumeText)) {
+        matchingSkills.push(skill.charAt(0).toUpperCase() + skill.slice(1));
+      } else {
+        missingSkills.push(skill.charAt(0).toUpperCase() + skill.slice(1));
+      }
+    }
+  }
+  
+  const totalSkillsInJd = matchingSkills.length + missingSkills.length;
+  let score = 0;
+  if (totalSkillsInJd > 0) {
+    score = Math.round((matchingSkills.length / totalSkillsInJd) * 100);
+  } else {
+    let intersectionCount = 0;
+    for (const w of rWords) {
+      if (jdWords.has(w)) intersectionCount++;
+    }
+    score = Math.round((intersectionCount / Math.max(jdWords.size, 1)) * 100);
+    score = Math.min(Math.max(score, 30), 95);
+  }
+  
+  const gapAnalysis: string[] = [];
+  if (missingSkills.length > 0) {
+    gapAnalysis.push(`Add keywords and experience descriptions for missing core skills: ${missingSkills.slice(0, 3).join(", ")}.`);
+  }
+  gapAnalysis.push("Incorporate more quantitative results and metrics (e.g., '% improvement', 'reduced latency by X%') to demonstrate impact rather than just listing responsibilities.");
+  gapAnalysis.push("Optimize the resume structure to place skills in a dedicated, prominent section at the top of your resume.");
+  
+  // split sentences
+  const sentences = resumeText.split(/[.\n-]/)
+    .map(s => s.trim())
+    .filter(s => s.length > 20 && s.length < 120);
+    
+  const rewrites: Array<{ original: string; rewrite: string; reason: string }> = [];
+  if (sentences.length > 0) {
+    const targetSentences = sentences.slice(0, 2);
+    for (let idx = 0; idx < targetSentences.length; idx++) {
+      const orig = targetSentences[idx];
+      if (idx === 0 && missingSkills.length > 0) {
+        const skillToAdd = missingSkills[0];
+        rewrites.push({
+          original: orig,
+          rewrite: `Designed and optimized core modules, integrating ${skillToAdd} to enhance application performance and reduce load times by 20%.`,
+          reason: `Incorporates the highly requested skill '${skillToAdd}' and adds a quantitative result to show direct business impact.`
+        });
+      } else {
+        rewrites.push({
+          original: orig,
+          rewrite: `Spearheaded collaborative development efforts, utilizing industry best practices to deliver project deliverables 15% ahead of schedule.`,
+          reason: "Uses stronger action verbs ('Spearheaded', 'Deliver') and highlights efficiency gains with measurable metrics."
+        });
+      }
+    }
+  } else {
+    rewrites.push({
+      original: "Worked on building web pages for the team.",
+      rewrite: "Architected and implemented modular, responsive UI components using React and Tailwind CSS, increasing accessibility scores by 18%.",
+      reason: "Showcases specific front-end tech stack elements from the job description and quantifies layout improvements."
+    });
+  }
+  
+  return {
+    ats_score: score,
+    compatibility_rating: score >= 80 ? "High Fit" : (score >= 60 ? "Medium Fit" : "Low Fit"),
+    overall_summary: `Your resume has a matching score of ${score}% against the job description. It contains several key matching skills such as ${matchingSkills.length > 0 ? matchingSkills.slice(0, 3).join(", ") : 'general industry terms'}. However, it is missing some important skills listed in the job description: ${missingSkills.length > 0 ? missingSkills.slice(0, 3).join(", ") : "none"}. Addressing these gaps and incorporating the suggested bullet rewrites will make your profile significantly stronger for ATS scanners.`,
+    matching_skills: matchingSkills,
+    missing_skills: missingSkills,
+    gap_analysis: gapAnalysis,
+    rewrites
+  };
+}
+
+export const analyzeResume = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => ResumeInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    // 1. Write the file content locally
+    const tempDir = path.join(process.cwd(), "temp_uploads");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const cleanFileName = data.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const tempFilePath = path.join(tempDir, `resume_${Date.now()}_${cleanFileName}`);
+    fs.writeFileSync(tempFilePath, Buffer.from(data.fileContent, "base64"));
+
+    let resumeText = "";
+    try {
+      // 2. Run the python extraction bridge
+      const pythonPath = "python";
+      const scriptPath = path.join(process.cwd(), "extract_text.py");
+      const buffer = execFileSync(pythonPath, [scriptPath, tempFilePath]);
+      resumeText = buffer.toString("utf-8");
+    } catch (e) {
+      console.error("Text extraction failed. Falling back to simple plain text file read.", e);
+      try {
+        resumeText = fs.readFileSync(tempFilePath, "utf8");
+      } catch (err) {
+        console.error("Failed to read file:", err);
+      }
+    } finally {
+      // 3. Clean up the temp file
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+    }
+
+    if (!resumeText || resumeText.trim().length === 0) {
+      throw new Error("Could not extract text from the uploaded resume file.");
+    }
+
+    const customKey = data.custom_key?.trim();
+    const systemLovableKey = process.env.LOVABLE_API_KEY;
+    const systemGeminiKey = process.env.GEMINI_API_KEY;
+    const systemOpenaiKey = process.env.OPENAI_API_KEY;
+
+    const hasKeys = !!(customKey || systemLovableKey || systemGeminiKey || systemOpenaiKey);
+
+    // Fall back to local heuristics if AI keys aren't set
+    if (!hasKeys) {
+      return {
+        text: resumeText,
+        analysis: analyzeResumeHeuristics(resumeText, data.jobDescription)
+      };
+    }
+
+    // Initialize AI provider
+    let model: any;
+    try {
+      if (data.provider === "OpenAI" && customKey) {
+        const provider = createOpenAICompatible({
+          name: "openai",
+          baseURL: "https://api.openai.com/v1",
+          headers: { Authorization: `Bearer ${customKey}` },
+        });
+        model = provider("gpt-4o-mini");
+      } else if (data.provider === "Gemini" && customKey) {
+        const provider = createOpenAICompatible({
+          name: "gemini",
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+          headers: { Authorization: `Bearer ${customKey}` },
+        });
+        model = provider("gemini-1.5-flash");
+      } else if (systemLovableKey) {
+        const gateway = createLovableAiGatewayProvider(systemLovableKey);
+        model = gateway("google/gemini-3-flash-preview");
+      } else if (systemGeminiKey) {
+        const provider = createOpenAICompatible({
+          name: "gemini",
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+          headers: { Authorization: `Bearer ${systemGeminiKey}` },
+        });
+        model = provider("gemini-1.5-flash");
+      } else if (systemOpenaiKey) {
+        const provider = createOpenAICompatible({
+          name: "openai",
+          baseURL: "https://api.openai.com/v1",
+          headers: { Authorization: `Bearer ${systemOpenaiKey}` },
+        });
+        model = provider("gpt-4o-mini");
+      }
+
+      const prompt = `
+      You are an expert resume optimizer and professional recruiter.
+      Analyze the user's resume text and job description provided below. 
+      Calculate their alignment metrics, detect skill gaps, and provide actionable bullet point rewrites.
+
+      Resume Content:
+      ${resumeText}
+
+      Job Description:
+      ${data.jobDescription}
+
+      Provide your response as a valid JSON object. Do not include markdown code block formatting (like \`\`\`json) or any prefix/suffix outside the JSON.
+      The response must strictly follow this JSON structure:
+      {
+          "ats_score": <integer from 0 to 100 representing compatibility score>,
+          "compatibility_rating": "<High Fit / Medium Fit / Low Fit>",
+          "overall_summary": "<compelling, professional, and detailed 3-4 sentence placement review summary>",
+          "matching_skills": ["<list of tech stack or soft skills in the resume that match the job description>"],
+          "missing_skills": ["<list of important requirements from the job description not seen in the resume>"],
+          "gap_analysis": ["<actionable checklist item 1>", "<actionable checklist item 2>"],
+          "rewrites": [
+              {
+                  "original": "<an actual weak or generic phrase/sentence extracted or derived from the resume>",
+                  "rewrite": "<the optimized ATS-compatible bullet containing high-impact action verbs and quantitative results>",
+                  "reason": "<explanation of the strategy used for this rewrite>"
+              }
+          ]
+      }
+      `;
+
+      const response = await generateText({
+        model,
+        prompt,
+      });
+
+      let text = response.text.trim();
+      if (text.startsWith("```")) {
+        text = text.replace(/^```(?:json)?/im, "").replace(/```$/m, "").trim();
+      }
+
+      const analysis = JSON.parse(text);
+      return {
+        text: resumeText,
+        analysis
+      };
+    } catch (error) {
+      console.error("AI resume compatibility analysis failed, falling back to local heuristics:", error);
+      return {
+        text: resumeText,
+        analysis: analyzeResumeHeuristics(resumeText, data.jobDescription)
+      };
+    }
+  });

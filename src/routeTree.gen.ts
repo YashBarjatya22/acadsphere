@@ -14,7 +14,13 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as AuthenticatedStudyPlannerRouteImport } from './routes/_authenticated/study-planner'
+import { Route as AuthenticatedPaperSimplifierRouteImport } from './routes/_authenticated/paper-simplifier'
+import { Route as AuthenticatedNotesGapAnalyzerRouteImport } from './routes/_authenticated/notes-gap-analyzer'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as AuthenticatedAppResumeAnalyzerRouteImport } from './routes/_authenticated/app.resume-analyzer'
+import { Route as AuthenticatedAppCareerRoadmapRouteImport } from './routes/_authenticated/app.career-roadmap'
 import { Route as AuthenticatedAppThreadIdRouteImport } from './routes/_authenticated/app.$threadId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -41,11 +47,46 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedStudyPlannerRoute =
+  AuthenticatedStudyPlannerRouteImport.update({
+    id: '/study-planner',
+    path: '/study-planner',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPaperSimplifierRoute =
+  AuthenticatedPaperSimplifierRouteImport.update({
+    id: '/paper-simplifier',
+    path: '/paper-simplifier',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedNotesGapAnalyzerRoute =
+  AuthenticatedNotesGapAnalyzerRouteImport.update({
+    id: '/notes-gap-analyzer',
+    path: '/notes-gap-analyzer',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/app/',
   path: '/app/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppResumeAnalyzerRoute =
+  AuthenticatedAppResumeAnalyzerRouteImport.update({
+    id: '/app/resume-analyzer',
+    path: '/app/resume-analyzer',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppCareerRoadmapRoute =
+  AuthenticatedAppCareerRoadmapRouteImport.update({
+    id: '/app/career-roadmap',
+    path: '/app/career-roadmap',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppThreadIdRoute =
   AuthenticatedAppThreadIdRouteImport.update({
     id: '/app/$threadId',
@@ -57,16 +98,28 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
+  '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
+  '/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
+  '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
+  '/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/app': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesById {
@@ -75,8 +128,14 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
+  '/_authenticated/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
+  '/_authenticated/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/_authenticated/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/_authenticated/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/_authenticated/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRouteTypes {
@@ -85,19 +144,43 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/sitemap.xml'
+    | '/analytics'
+    | '/notes-gap-analyzer'
+    | '/paper-simplifier'
+    | '/study-planner'
     | '/api/chat'
     | '/app/$threadId'
+    | '/app/career-roadmap'
+    | '/app/resume-analyzer'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/sitemap.xml' | '/api/chat' | '/app/$threadId' | '/app'
+  to:
+    | '/'
+    | '/auth'
+    | '/sitemap.xml'
+    | '/analytics'
+    | '/notes-gap-analyzer'
+    | '/paper-simplifier'
+    | '/study-planner'
+    | '/api/chat'
+    | '/app/$threadId'
+    | '/app/career-roadmap'
+    | '/app/resume-analyzer'
+    | '/app'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/sitemap.xml'
+    | '/_authenticated/analytics'
+    | '/_authenticated/notes-gap-analyzer'
+    | '/_authenticated/paper-simplifier'
+    | '/_authenticated/study-planner'
     | '/api/chat'
     | '/_authenticated/app/$threadId'
+    | '/_authenticated/app/career-roadmap'
+    | '/_authenticated/app/resume-analyzer'
     | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
 }
@@ -146,11 +229,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/study-planner': {
+      id: '/_authenticated/study-planner'
+      path: '/study-planner'
+      fullPath: '/study-planner'
+      preLoaderRoute: typeof AuthenticatedStudyPlannerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/paper-simplifier': {
+      id: '/_authenticated/paper-simplifier'
+      path: '/paper-simplifier'
+      fullPath: '/paper-simplifier'
+      preLoaderRoute: typeof AuthenticatedPaperSimplifierRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/notes-gap-analyzer': {
+      id: '/_authenticated/notes-gap-analyzer'
+      path: '/notes-gap-analyzer'
+      fullPath: '/notes-gap-analyzer'
+      preLoaderRoute: typeof AuthenticatedNotesGapAnalyzerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/': {
       id: '/_authenticated/app/'
       path: '/app'
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/resume-analyzer': {
+      id: '/_authenticated/app/resume-analyzer'
+      path: '/app/resume-analyzer'
+      fullPath: '/app/resume-analyzer'
+      preLoaderRoute: typeof AuthenticatedAppResumeAnalyzerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/career-roadmap': {
+      id: '/_authenticated/app/career-roadmap'
+      path: '/app/career-roadmap'
+      fullPath: '/app/career-roadmap'
+      preLoaderRoute: typeof AuthenticatedAppCareerRoadmapRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/$threadId': {
@@ -164,12 +289,24 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedNotesGapAnalyzerRoute: typeof AuthenticatedNotesGapAnalyzerRoute
+  AuthenticatedPaperSimplifierRoute: typeof AuthenticatedPaperSimplifierRoute
+  AuthenticatedStudyPlannerRoute: typeof AuthenticatedStudyPlannerRoute
   AuthenticatedAppThreadIdRoute: typeof AuthenticatedAppThreadIdRoute
+  AuthenticatedAppCareerRoadmapRoute: typeof AuthenticatedAppCareerRoadmapRoute
+  AuthenticatedAppResumeAnalyzerRoute: typeof AuthenticatedAppResumeAnalyzerRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedNotesGapAnalyzerRoute: AuthenticatedNotesGapAnalyzerRoute,
+  AuthenticatedPaperSimplifierRoute: AuthenticatedPaperSimplifierRoute,
+  AuthenticatedStudyPlannerRoute: AuthenticatedStudyPlannerRoute,
   AuthenticatedAppThreadIdRoute: AuthenticatedAppThreadIdRoute,
+  AuthenticatedAppCareerRoadmapRoute: AuthenticatedAppCareerRoadmapRoute,
+  AuthenticatedAppResumeAnalyzerRoute: AuthenticatedAppResumeAnalyzerRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
 }
 
