@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { getAnalyticsSummary, updateProfile } from "@/lib/analytics.functions";
 import { createThread } from "@/lib/chat.functions";
@@ -10,19 +11,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { 
-  User, 
-  BookOpen, 
-  Target, 
-  Calendar, 
-  Compass, 
-  FileCheck2, 
-  LineChart, 
-  ArrowRight, 
-  Sparkles, 
-  Flame, 
-  GraduationCap, 
-  CheckCircle2, 
+import {
+  User,
+  BookOpen,
+  Target,
+  Calendar,
+  Compass,
+  FileCheck2,
+  LineChart,
+  ArrowRight,
+  Sparkles,
+  Flame,
+  GraduationCap,
+  CheckCircle2,
   AlertTriangle,
   MessageSquare,
   RefreshCw
@@ -35,13 +36,13 @@ export const Route = createFileRoute("/_authenticated/app/")({
 function AppIndex() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  
+
   // Server functions
   const getSummaryFn = useServerFn(getAnalyticsSummary);
   const updateProfileFn = useServerFn(updateProfile);
   const createThreadFn = useServerFn(createThread);
 
-  const { data: analytics, isLoading, refetch } = useQuery({
+  const { data: analytics, isLoading, error, refetch } = useQuery({
     queryKey: ["analyticsSummary"],
     queryFn: () => getSummaryFn(),
   });
@@ -63,7 +64,7 @@ function AppIndex() {
         degree: analytics.profile.degree,
         semester: analytics.profile.semester,
         targetRole: analytics.profile.targetRole,
-        skills: analytics.profile.skills.join(", "),
+        skills: Array.isArray(analytics.profile.skills) ? analytics.profile.skills.join(", ") : "",
       });
       setIsEditing(true);
     }
@@ -103,8 +104,38 @@ function AppIndex() {
     );
   }
 
-  const profile = analytics?.profile;
-  const stats = analytics?.stats;
+  if (error || !analytics) {
+    return (
+      <ChatLayout activeThreadId={null}>
+        <div className="flex h-full items-center justify-center bg-slate-50 px-4">
+          <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Unable to load your StudentOS workspace</h2>
+            <p className="mt-3 text-sm text-slate-500">
+              {error?.message || "We couldn't fetch your dashboard data. Please try again or sign out to refresh your session."}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button onClick={() => refetch()} className="min-w-[120px]">
+                Retry
+              </Button>
+              <Button
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  navigate({ to: "/auth", replace: true });
+                }}
+                variant="outline"
+                className="min-w-[120px]"
+              >
+                Sign out
+              </Button>
+            </div>
+          </div>
+        </div>
+      </ChatLayout>
+    );
+  }
+
+  const profile = analytics.profile;
+  const stats = analytics.stats;
   const readiness = stats?.placementReadiness || 0;
 
   return (
@@ -117,25 +148,104 @@ function AppIndex() {
               Welcome back, {profile?.fullName || "Student"}!
             </h1>
             <p className="text-slate-500 text-sm mt-1">
-              Your academic success command center. Let's make progress today.
+              Your persistent academic OS dashboard — where placement readiness, learning momentum, and knowledge gaps stay connected.
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
-            <Button 
-              onClick={() => launchChat.mutate()} 
+            <Button
+              onClick={() => launchChat.mutate()}
               disabled={launchChat.isPending}
               className="glow-primary bg-[#2563EB] text-white hover:bg-blue-700"
             >
               <MessageSquare className="mr-2 h-4 w-4" /> Start AI Mentoring
             </Button>
-            
+
             <Button asChild variant="outline" className="border-slate-200 text-slate-700 bg-white">
               <Link to="/analytics">
                 <LineChart className="mr-2 h-4 w-4 text-[#2563EB]" /> Full Analytics
               </Link>
             </Button>
           </div>
+        </div>
+
+        {/* Success score banner */}
+        <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Student Success Score</p>
+              <h2 className="text-4xl font-extrabold text-[#1E3A8A]">{analytics?.studentSuccessScore || Math.round((readiness * 0.6 + (analytics?.roadmap.percentage || 67) * 0.2 + (stats?.studyHoursThisWeek || 12.2) * 1.5) / 2)}%</h2>
+              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+                This score pulls together placement readiness, roadmap progress, exam preparedness, and study momentum to keep your academic journey visible.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold text-slate-600 md:grid-cols-3">
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Profile</div>
+                <div className="text-xl font-bold text-slate-800">{profile?.degree ? "Configured" : "Set up"}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Roadmap</div>
+                <div className="text-xl font-bold text-slate-800">{analytics?.roadmap.percentage || 67}%</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Momentum</div>
+                <div className="text-xl font-bold text-slate-800">{stats?.studyHoursThisWeek || 12.2}h</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-8 grid gap-4 xl:grid-cols-[1.45fr_0.55fr]">
+          <Card className="bg-white border-slate-200/80 shadow-sm">
+            <CardHeader className="pb-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Student Intelligence</span>
+              <h2 className="mt-2 font-display text-xl font-semibold text-slate-900">Recommended next moves</h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Knowledge focus</p>
+                  <p className="mt-2 text-sm text-slate-700">{analytics?.subjectPerformance?.[1]?.name ?? "Operating Systems"} is the next high-impact revision area.</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Placement signal</p>
+                  <p className="mt-2 text-sm text-slate-700">Boost your resume strength by adding outcome-based achievements and 1 extra project story.</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {(analytics?.insights ?? []).slice(0, 3).map((insight: string, index: number) => (
+                  <div key={index} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-sm text-slate-700">{insight}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900 border-slate-800 text-white shadow-sm">
+            <CardHeader className="pb-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 block">Journey pulse</span>
+              <h2 className="mt-2 font-display text-xl font-semibold">Knowledge profile</h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl bg-white/5 p-4">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-300">Strong subject</p>
+                <p className="mt-2 text-lg font-semibold text-white">{analytics?.subjectPerformance?.[0]?.name ?? "DBMS"}</p>
+                <p className="text-sm text-slate-300 mt-1">Readiness {analytics?.subjectPerformance?.[0]?.readiness ?? 82}%</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-4">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-300">Weak subject</p>
+                <p className="mt-2 text-lg font-semibold text-white">{analytics?.subjectPerformance?.[1]?.name ?? "Operating Systems"}</p>
+                <p className="text-sm text-slate-300 mt-1">Readiness {analytics?.subjectPerformance?.[1]?.readiness ?? 65}%</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-4">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-300">Forecast</p>
+                <p className="mt-2 text-lg font-semibold text-white">{analytics?.predictions?.placementReadiness30Days ?? 82}% in 30 days</p>
+                <p className="text-sm text-slate-300 mt-1">{analytics?.predictions?.skillGrowthForecast ?? "+4 skills expected next quarter"}</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Overview cards */}
@@ -195,7 +305,7 @@ function AppIndex() {
 
         {/* Main Work & Profile Layout */}
         <div className="grid gap-6 lg:grid-cols-3">
-          
+
           {/* Left / Middle: StudentOS Workflow Checklists */}
           <div className="space-y-6 lg:col-span-2">
             <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
@@ -219,9 +329,9 @@ function AppIndex() {
                       Degree: <strong className="text-slate-700">{profile?.degree}</strong> · Role: <strong className="text-slate-700">{profile?.targetRole}</strong>. Configure these parameters to custom-tailor the AI insights.
                     </p>
                   </div>
-                  <Button 
-                    onClick={startEdit} 
-                    variant="link" 
+                  <Button
+                    onClick={startEdit}
+                    variant="link"
                     className="p-0 text-xs font-semibold justify-start text-[#2563EB] hover:text-[#1E3A8A] mt-4"
                   >
                     Edit Profile Details <ArrowRight className="ml-1 h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
@@ -294,7 +404,7 @@ function AppIndex() {
             <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
               <h2 className="text-base font-bold text-slate-800 mb-4">Launch Active Modules</h2>
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                <Link 
+                <Link
                   to="/app/career-roadmap"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -307,7 +417,7 @@ function AppIndex() {
                   </div>
                 </Link>
 
-                <Link 
+                <Link
                   to="/study-planner"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -320,7 +430,7 @@ function AppIndex() {
                   </div>
                 </Link>
 
-                <Link 
+                <Link
                   to="/paper-simplifier"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -333,7 +443,7 @@ function AppIndex() {
                   </div>
                 </Link>
 
-                <Link 
+                <Link
                   to="/app/resume-analyzer"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -346,7 +456,7 @@ function AppIndex() {
                   </div>
                 </Link>
 
-                <Link 
+                <Link
                   to="/notes-gap-analyzer"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -359,7 +469,7 @@ function AppIndex() {
                   </div>
                 </Link>
 
-                <Link 
+                <Link
                   to="/analytics"
                   className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:border-blue-100 hover:bg-slate-50/50 transition-colors"
                 >
@@ -414,8 +524,8 @@ function AppIndex() {
                       <div className="flex flex-wrap gap-1 mt-1">
                         {profile?.skills && profile.skills.length > 0 ? (
                           profile.skills.map((skill: string) => (
-                            <span 
-                              key={skill} 
+                            <span
+                              key={skill}
                               className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium"
                             >
                               {skill}
@@ -427,9 +537,9 @@ function AppIndex() {
                       </div>
                     </div>
 
-                    <Button 
-                      onClick={startEdit} 
-                      className="w-full mt-4 border-slate-200 text-slate-600 hover:bg-slate-50 bg-white" 
+                    <Button
+                      onClick={startEdit}
+                      className="w-full mt-4 border-slate-200 text-slate-600 hover:bg-slate-50 bg-white"
                       variant="outline"
                       size="sm"
                     >
@@ -437,7 +547,7 @@ function AppIndex() {
                     </Button>
                   </div>
                 ) : (
-                  <form 
+                  <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       saveProfile.mutate(profileForm);
@@ -504,17 +614,17 @@ function AppIndex() {
                     </div>
 
                     <div className="flex gap-2 pt-2">
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         disabled={saveProfile.isPending}
                         className="flex-1 h-8 text-xs bg-[#2563EB] hover:bg-blue-700 text-white"
                         size="sm"
                       >
                         {saveProfile.isPending ? "Saving..." : "Save"}
                       </Button>
-                      <Button 
-                        type="button" 
-                        onClick={() => setIsEditing(false)} 
+                      <Button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
                         className="h-8 text-xs border-slate-200 text-slate-500"
                         variant="outline"
                         size="sm"

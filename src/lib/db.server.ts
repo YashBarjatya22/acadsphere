@@ -8,6 +8,7 @@ try {
   // Store db in the workspace directory
   const dbPath = path.join(process.cwd(), "local.db");
   db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA foreign_keys = ON;");
 
   // Create tables if they don't exist
   db.exec(`
@@ -27,6 +28,49 @@ try {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS student_metrics (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      roadmap_progress REAL DEFAULT 0,
+      study_consistency REAL DEFAULT 0,
+      notes_coverage REAL DEFAULT 0,
+      resume_strength REAL DEFAULT 0,
+      placement_readiness REAL DEFAULT 0,
+      skill_growth REAL DEFAULT 0,
+      success_score REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_profile (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      concept TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('roadmap', 'paper', 'notes', 'study')),
+      confidence REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS knowledge_profile_user_id_idx ON knowledge_profile (user_id);
+
+    CREATE TABLE IF NOT EXISTS student_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL CHECK (event_type IN (
+        'ROADMAP_MILESTONE_COMPLETED',
+        'STUDY_TASK_COMPLETED',
+        'NOTES_ANALYZED',
+        'PAPER_ANALYZED',
+        'RESUME_ANALYZED',
+        'CHAT_COMPLETED'
+      )),
+      payload TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS student_events_user_id_idx ON student_events (user_id);
+    CREATE INDEX IF NOT EXISTS student_events_created_at_idx ON student_events (created_at);
 
     CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,

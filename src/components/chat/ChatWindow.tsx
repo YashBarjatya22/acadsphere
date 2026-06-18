@@ -77,7 +77,7 @@ export function ChatWindow({
     const prompt =
       text || hasFiles
         ? text ||
-          "Scan the uploaded notes for concept gaps and missing topics relative to a technical student target role or exam syllabus. If gaps are found, list them with fixes. If there are no gaps, say the notes look solid and give a short appreciative message."
+        "Scan the uploaded notes for concept gaps and missing topics relative to a technical student target role or exam syllabus. If gaps are found, list them with fixes. If there are no gaps, say the notes look solid and give a short appreciative message."
         : text;
 
     await sendMessage({
@@ -97,8 +97,8 @@ export function ChatWindow({
                   <Brain className="h-6 w-6" />
                 </div>
               }
-              title="What do you want to master today?"
-              description="StudentOS combines 6 modules — roadmaps, study plans, resume scoring, and notes analysis — in one chat."
+              title="Where should your student journey go next?"
+              description="StudentOS guides your profile, career, learning, research, and placement readiness in one unified experience."
             >
               <div className="mt-4 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                 {STARTERS.map((s) => (
@@ -154,7 +154,7 @@ export function ChatWindow({
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask StudentOS anything — roadmap, resume, paper, or upload notes to scan gaps…"
+            placeholder="Ask StudentOS to move your academic success score forward — from roadmap to resume, study plan to exam readiness…"
             disabled={busy}
           />
           <PromptInputFooter className="justify-end">

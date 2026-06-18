@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getDb } from "./db.server";
+import { createDefaultMetrics, getStudentMetrics, updateStudentMetrics } from "./student-metrics/student-metrics.functions";
 import crypto from "node:crypto";
 
 // Schema for logging activity
@@ -27,7 +28,7 @@ const UpdateProfileSchema = z.object({
 function seedAnalyticsData(db: any, userId: string) {
   // 1. Seed activities spanning the last 45 days to create a streak & heatmap history
   const today = new Date();
-  
+
   // Seed a study streak of 12 active days in the last 15 days, and another 18 active days prior
   const activeDaysOffset = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, // Current streak of 12 days
@@ -35,27 +36,27 @@ function seedAnalyticsData(db: any, userId: string) {
   ];
 
   const subjects = ["DBMS", "Operating Systems", "Computer Networks", "Software Engineering"];
-  
+
   for (const offset of activeDaysOffset) {
     const actDate = new Date();
     actDate.setDate(today.getDate() - offset);
     const dateStr = actDate.toISOString().split("T")[0] + " 10:00:00";
-    
+
     const activityId = crypto.randomUUID();
     const sub = subjects[offset % subjects.length];
     const duration = 45 + (offset * 7) % 90; // variable durations: 45 to 135 mins
     const score = 70 + (offset * 3) % 25; // scores 70 to 95%
-    
+
     db.prepare(`
       INSERT INTO student_activities (id, user_id, activity_type, subject, duration_minutes, score, details, created_at)
       VALUES (?, ?, 'study_session', ?, ?, ?, ?, ?)
     `).run(
-      activityId, 
-      userId, 
-      sub, 
-      duration, 
-      score, 
-      JSON.stringify({ note: `Completed study session on ${sub}`, topic: "Exam Preparation" }), 
+      activityId,
+      userId,
+      sub,
+      duration,
+      score,
+      JSON.stringify({ note: `Completed study session on ${sub}`, topic: "Exam Preparation" }),
       dateStr
     );
   }
@@ -76,15 +77,15 @@ function seedAnalyticsData(db: any, userId: string) {
     const milestoneDate = new Date();
     milestoneDate.setDate(today.getDate() - (idx * 4 + 2));
     const dateStr = milestoneDate.toISOString().split("T")[0] + " 15:30:00";
-    
+
     db.prepare(`
       INSERT INTO student_activities (id, user_id, activity_type, subject, duration_minutes, score, details, created_at)
       VALUES (?, ?, 'milestone', ?, 0, 100, ?, ?)
     `).run(
-      crypto.randomUUID(), 
-      userId, 
-      m.sub, 
-      JSON.stringify({ milestone_title: m.title, status: "Completed" }), 
+      crypto.randomUUID(),
+      userId,
+      m.sub,
+      JSON.stringify({ milestone_title: m.title, status: "Completed" }),
       dateStr
     );
   });
@@ -102,14 +103,14 @@ function seedAnalyticsData(db: any, userId: string) {
     const skillDate = new Date();
     skillDate.setDate(today.getDate() - s.dateOffset);
     const dateStr = skillDate.toISOString().split("T")[0] + " 17:00:00";
-    
+
     db.prepare(`
       INSERT INTO student_activities (id, user_id, activity_type, subject, duration_minutes, score, details, created_at)
       VALUES (?, ?, 'skill', 'General', 0, 100, ?, ?)
     `).run(
-      crypto.randomUUID(), 
-      userId, 
-      JSON.stringify({ skill_name: s.name }), 
+      crypto.randomUUID(),
+      userId,
+      JSON.stringify({ skill_name: s.name }),
       dateStr
     );
   });
@@ -137,6 +138,9 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
     } catch {
       userSkills = profile.current_skills ? profile.current_skills.split(",").map((s: string) => s.trim()) : [];
     }
+
+    // Ensure a persisted student metrics row exists for this user.
+    createDefaultMetrics(userId);
 
     // Check if user has any activity records, if not seed initial dummy data
     const countStmt = db.prepare("SELECT COUNT(*) as cnt FROM student_activities WHERE user_id = ?");
@@ -192,7 +196,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
         if (res.coverageScore) {
           notesScores[n.subject] = Math.max(notesScores[n.subject] || 0, res.coverageScore);
         }
-      } catch {}
+      } catch { }
     });
 
     // 1. Calculate Streak Stats
@@ -204,23 +208,23 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
 
     // Sort active dates descending
     const sortedDates = Array.from(activeDates).sort((a, b) => b.localeCompare(a));
-    
+
     let currentStreak = 0;
     let longestStreak = 0;
-    
+
     if (sortedDates.length > 0) {
       const todayStr = new Date().toISOString().split("T")[0];
       const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-      
+
       // Streak counts only if active today or yesterday
       if (sortedDates[0] === todayStr || sortedDates[0] === yesterdayStr) {
         let tempStreak = 1;
         let prevDate = new Date(sortedDates[0]);
-        
+
         for (let i = 1; i < sortedDates.length; i++) {
           const currDate = new Date(sortedDates[i]);
           const diffDays = Math.round((prevDate.getTime() - currDate.getTime()) / (1000 * 60 * 60 * 24));
-          
+
           if (diffDays === 1) {
             tempStreak++;
             prevDate = currDate;
@@ -230,17 +234,17 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
         }
         currentStreak = tempStreak;
       }
-      
+
       // Calculate longest streak
       let maxStreak = 0;
       let tempStreak = 1;
       const sortedAsc = Array.from(activeDates).sort((a, b) => a.localeCompare(b));
-      
+
       for (let i = 1; i < sortedAsc.length; i++) {
         const prev = new Date(sortedAsc[i - 1]);
         const curr = new Date(sortedAsc[i]);
         const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 1) {
           tempStreak++;
         } else if (diffDays > 1) {
@@ -260,11 +264,11 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
     let totalMinutes = 0;
     let weekMinutes = 0;
     let monthMinutes = 0;
-    
+
     const now = Date.now();
     const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
     const oneMonthAgo = now - 30 * 24 * 60 * 60 * 1000;
-    
+
     const subjectMinutes: Record<string, number> = {
       "DBMS": 0,
       "Operating Systems": 0,
@@ -276,7 +280,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       if (act.activity_type === "study_session") {
         const minutes = act.duration_minutes || 0;
         totalMinutes += minutes;
-        
+
         const actTime = new Date(act.created_at).getTime();
         if (actTime >= oneWeekAgo) {
           weekMinutes += minutes;
@@ -365,7 +369,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       try {
         const detailsObj = JSON.parse(act.details);
         skillName = detailsObj.skill_name || "New Skill";
-      } catch {}
+      } catch { }
       return { month: monthName, skill: skillName };
     }).reverse();
 
@@ -377,7 +381,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
     const skillsScore = Math.min(30 + userSkills.length * 10, 95);
     const projectsScore = 75;
     const interviewScore = 88;
-    
+
     // Average
     const placementReadiness = Math.round((resumeScore + skillsScore + projectsScore + interviewScore + (roadmapCompletion || 67)) / 5);
 
@@ -393,6 +397,44 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       examReadinessStatus = "Needs Revision";
       examReadinessScore = 72;
     }
+
+    const normalizedStudyImpact = Math.min(monthlyHours / 40, 1) * 100;
+    const studentSuccessScore = Math.round(
+      Math.min(
+        100,
+        placementReadiness * 0.4 + examReadinessScore * 0.3 + roadmapCompletion * 0.2 + normalizedStudyImpact * 0.1,
+      ),
+    );
+
+    if (lowReadinessCount >= 2) {
+      examReadinessStatus = "High Risk";
+      examReadinessScore = 55;
+    } else if (lowReadinessCount === 1) {
+      examReadinessStatus = "Needs Revision";
+      examReadinessScore = 72;
+    }
+
+    // Persist the score components to the central student_metrics row.
+    const currentMetrics = getStudentMetrics(userId);
+    const notesCoverageValue = Object.keys(notesScores).length
+      ? Math.round(Object.values(notesScores).reduce((sum, value) => sum + value, 0) / Object.values(notesScores).length)
+      : subjectPerformance.reduce((sum, s) => sum + (s.coverage || 0), 0) / Math.max(subjectPerformance.length, 1);
+    const skillGrowthValue = Math.min(100, Math.max(0, skillsThisMonth * 12 + 40));
+    const studyConsistencyValue = Math.min(100, Math.max(0, currentStreak * 6 + 20));
+
+    if (currentMetrics) {
+      updateStudentMetrics(userId, {
+        roadmap_progress: roadmapCompletion,
+        study_consistency: studyConsistencyValue,
+        notes_coverage: Math.round(notesCoverageValue),
+        resume_strength: resumeScore,
+        placement_readiness: placementReadiness,
+        skill_growth: skillGrowthValue,
+        success_score: studentSuccessScore,
+      });
+    }
+
+    const persistedMetrics = getStudentMetrics(userId);
 
     // 7. Productivity Heatmap - Activity occurrences in the last 365 days
     const contributionData: Record<string, number> = {};
@@ -433,8 +475,9 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
         semester: profile.semester || "Semester 6",
         targetRole: profile.target_role || "Frontend Engineer",
         skills: userSkills,
-        examDates: profile.updated_at
+        examDates: profile.updated_at,
       },
+      studentMetrics: persistedMetrics,
       stats: {
         currentStreak,
         longestStreak,
@@ -444,7 +487,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
         placementReadiness,
         learningVelocity: avgLearningSpeed,
         skillsAddedThisMonth: skillsThisMonth,
-        velocityTrend
+        velocityTrend,
       },
       placementBreakdown: {
         resume: resumeScore,
@@ -462,13 +505,14 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       subjectPerformance,
       examReadiness: {
         score: examReadinessScore,
-        status: examReadinessStatus
+        status: examReadinessStatus,
       },
       skillsTimeline: finalTimeline,
       heatmapData: contributionData,
       insights,
       predictions,
-      achievements
+      achievements,
+      studentSuccessScore: persistedMetrics?.success_score ?? studentSuccessScore,
     };
   });
 
@@ -517,14 +561,14 @@ export const updateProfile = createServerFn({ method: "POST" })
     try {
       const skillsArr = data.skills.split(",").map(s => s.trim()).filter(Boolean);
       skillsJson = JSON.stringify(skillsArr);
-      
+
       // Log new skills to analytics
       const oldProfile = db.prepare("SELECT current_skills FROM profiles WHERE id = ?").get(userId);
       let oldSkills: string[] = [];
       if (oldProfile && oldProfile.current_skills) {
-        try { oldSkills = JSON.parse(oldProfile.current_skills); } catch {}
+        try { oldSkills = JSON.parse(oldProfile.current_skills); } catch { }
       }
-      
+
       const newlyAdded = skillsArr.filter(x => !oldSkills.includes(x));
       newlyAdded.forEach(newSkill => {
         db.prepare(`
@@ -537,7 +581,7 @@ export const updateProfile = createServerFn({ method: "POST" })
           nowStr
         );
       });
-    } catch {}
+    } catch { }
 
     db.prepare(`
       UPDATE profiles 
