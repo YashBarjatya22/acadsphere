@@ -2,38 +2,39 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { getAnalyticsSummary, exportAnalyticsCSV } from "@/lib/analytics.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { 
-  LineChart as RechartLine, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as ChartTooltip, 
-  ResponsiveContainer, 
-  PieChart as RechartPie, 
-  Pie, 
-  Cell 
+import {
+  LineChart as RechartLine,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as ChartTooltip,
+  ResponsiveContainer,
+  PieChart as RechartPie,
+  Pie,
+  Cell
 } from "recharts";
-import { 
-  LineChart, 
-  Flame, 
-  GraduationCap, 
-  Clock, 
-  BookOpen, 
-  Calendar, 
-  TrendingUp, 
-  Compass, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Award, 
-  Download, 
-  Share2, 
+import {
+  LineChart,
+  Flame,
+  GraduationCap,
+  Clock,
+  BookOpen,
+  Calendar,
+  TrendingUp,
+  Compass,
+  CheckCircle2,
+  AlertTriangle,
+  Award,
+  Download,
+  Share2,
   Database,
   BrainCircuit,
   PieChart
@@ -50,7 +51,7 @@ function AnalyticsDashboardPage() {
   const getSummaryFn = useServerFn(getAnalyticsSummary);
   const exportCSVFn = useServerFn(exportAnalyticsCSV);
 
-  const { data: analytics, isLoading } = useQuery({
+  const { data: analytics, isLoading, error } = useQuery({
     queryKey: ["analyticsSummary"],
     queryFn: () => getSummaryFn(),
   });
@@ -61,7 +62,7 @@ function AnalyticsDashboardPage() {
     try {
       const res = await exportCSVFn();
       if (!res.csv) throw new Error("No data returned");
-      
+
       const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -85,7 +86,7 @@ function AnalyticsDashboardPage() {
     if (navigator.share) {
       navigator.share({
         title: "StudentOS Academic Analytics",
-        text: `My Placement Readiness is at ${analytics?.stats.placementReadiness || 82}%! Check out my learning velocity.`,
+        text: `My Student Success Score is ${analytics?.studentSuccessScore || analytics?.stats.placementReadiness || 82}% — I am tracking toward placement readiness and mastery.`,
         url: window.location.href,
       }).then(() => {
         toast.success("Progress shared successfully!");
@@ -112,6 +113,36 @@ function AnalyticsDashboardPage() {
     );
   }
 
+  if (error || !analytics) {
+    return (
+      <ChatLayout activeThreadId={null}>
+        <div className="flex h-full items-center justify-center bg-slate-50 px-4">
+          <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Unable to load analytics</h2>
+            <p className="mt-3 text-sm text-slate-500">
+              {error?.message || "Please refresh the page or sign out if your session has expired."}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button onClick={() => window.location.reload()} className="min-w-[120px]">
+                Retry
+              </Button>
+              <Button
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  window.location.href = "/auth";
+                }}
+                variant="outline"
+                className="min-w-[120px]"
+              >
+                Sign out
+              </Button>
+            </div>
+          </div>
+        </div>
+      </ChatLayout>
+    );
+  }
+
   const stats = analytics?.stats;
   const profile = analytics?.profile;
   const placement = analytics?.placementBreakdown;
@@ -131,7 +162,7 @@ function AnalyticsDashboardPage() {
   const getHeatmapGrid = () => {
     const today = new Date();
     const days: Date[] = [];
-    
+
     // Get start date (364 days ago, aligned to start on a Sunday or Sunday of that week)
     const startDate = new Date();
     startDate.setDate(today.getDate() - 364);
@@ -165,7 +196,7 @@ function AnalyticsDashboardPage() {
   return (
     <ChatLayout activeThreadId={null}>
       <div className="h-full overflow-y-auto bg-[#F8FAFC] text-slate-800 p-6 md:p-8 scrollbar-thin print:bg-white print:p-0">
-        
+
         {/* Header Section */}
         <div className="border-b border-slate-200 pb-5 mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:border-none print:pb-0">
           <div>
@@ -189,7 +220,7 @@ function AnalyticsDashboardPage() {
               <Download className="h-3.5 w-3.5" />
               Download PDF Report
             </Button>
-            
+
             <Button
               onClick={handleExportCSV}
               size="sm"
@@ -214,10 +245,10 @@ function AnalyticsDashboardPage() {
 
         {/* Native React Dashboard Panel */}
         <div className="space-y-6">
-          
+
           {/* Row 1: Student Overview & Quick Stats */}
           <div className="grid gap-6 md:grid-cols-3">
-            
+
             {/* Overview Details */}
             <Card className="bg-white border-slate-200/80 shadow-sm md:col-span-1">
               <CardHeader className="pb-3">
@@ -246,7 +277,7 @@ function AnalyticsDashboardPage() {
                 <div>
                   <span className="text-slate-400 block font-semibold text-[10px] uppercase">Academic Focus Skills</span>
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {profile?.skills.map((skill: string) => (
+                    {(profile?.skills ?? []).map((skill: string) => (
                       <span key={skill} className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-medium border border-slate-200/50">
                         {skill}
                       </span>
@@ -257,7 +288,7 @@ function AnalyticsDashboardPage() {
             </Card>
 
             {/* Quick Stats Grid */}
-            <div className="md:col-span-2 grid gap-4 grid-cols-2">
+            <div className="md:col-span-2 grid gap-4 md:grid-cols-3">
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Current Streak</span>
@@ -266,6 +297,17 @@ function AnalyticsDashboardPage() {
                 <div className="mt-4">
                   <span className="text-3xl font-extrabold text-slate-800">{stats?.currentStreak} Days</span>
                   <span className="text-[10px] text-slate-400 block mt-1">Consistency Tracker Indicator</span>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Student Success</span>
+                  <CheckCircle2 className="h-5 w-5 text-[#2563EB] shrink-0" />
+                </div>
+                <div className="mt-4">
+                  <span className="text-3xl font-extrabold text-[#1E3A8A]">{analytics?.studentSuccessScore ?? Math.round((stats?.placementReadiness || 82) * 0.5 + (analytics?.roadmap.percentage || 67) * 0.3 + (stats?.studyHoursThisWeek || 12.2) * 0.2)}%</span>
+                  <span className="text-[10px] text-slate-400 block mt-1">Unified journey readiness score</span>
                 </div>
               </div>
 
@@ -307,7 +349,7 @@ function AnalyticsDashboardPage() {
 
           {/* Row 2: Study Streak Tracker & Placement Readiness Gauge */}
           <div className="grid gap-6 lg:grid-cols-2">
-            
+
             {/* Streak Consistency Graph */}
             <Card className="bg-white border-slate-200/80 shadow-sm">
               <CardHeader className="pb-3">
@@ -352,7 +394,7 @@ function AnalyticsDashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 sm:grid-cols-2 pt-2 text-xs">
-                
+
                 {/* SVG Gauge Chart */}
                 <div className="flex flex-col items-center justify-center py-2">
                   <div className="relative h-28 w-28 flex items-center justify-center">
@@ -426,7 +468,7 @@ function AnalyticsDashboardPage() {
 
           {/* Row 3: Learning Velocity & Roadmap Progress */}
           <div className="grid gap-6 lg:grid-cols-3">
-            
+
             {/* Learning Velocity (Section 4) */}
             <Card className="bg-white border-slate-200/80 shadow-sm lg:col-span-2">
               <CardHeader className="pb-3">
@@ -451,7 +493,7 @@ function AnalyticsDashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                     <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} />
                     <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} />
-                    <ChartTooltip 
+                    <ChartTooltip
                       contentStyle={{ backgroundColor: "#fff", borderColor: "#E2E8F0", borderRadius: "8px", fontSize: "11px" }}
                       labelStyle={{ fontWeight: "bold", color: "#1E3A8A" }}
                     />
@@ -491,7 +533,7 @@ function AnalyticsDashboardPage() {
 
           {/* Row 4: Study Performance (Pie Chart) & Subject Performance (Progress bars) */}
           <div className="grid gap-6 lg:grid-cols-3">
-            
+
             {/* Study Performance (Section 6) */}
             <Card className="bg-white border-slate-200/80 shadow-sm lg:col-span-1">
               <CardHeader className="pb-3">
@@ -508,7 +550,7 @@ function AnalyticsDashboardPage() {
                   <ResponsiveContainer width="100%" height="100%">
                     <RechartPie>
                       <Pie
-                        data={analytics?.subjectDistribution}
+                        data={analytics?.subjectDistribution ?? []}
                         cx="50%"
                         cy="50%"
                         innerRadius={50}
@@ -516,7 +558,7 @@ function AnalyticsDashboardPage() {
                         paddingAngle={3}
                         dataKey="value"
                       >
-                        {analytics?.subjectDistribution.map((entry: any, index: number) => (
+                        {(analytics?.subjectDistribution ?? []).map((entry: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                         ))}
                       </Pie>
@@ -530,7 +572,7 @@ function AnalyticsDashboardPage() {
                 </div>
               </CardContent>
               <div className="px-5 pb-5 grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-medium">
-                {analytics?.subjectDistribution.map((item: any, index: number) => (
+                {(analytics?.subjectDistribution ?? []).map((item: any, index: number) => (
                   <div key={item.name} className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} />
                     <span className="truncate">{item.name} ({item.value}h)</span>
@@ -551,18 +593,17 @@ function AnalyticsDashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-xs space-y-5 pt-2">
-                {analytics?.subjectPerformance.map((sub: any) => (
+                {(analytics?.subjectPerformance ?? []).map((sub: any) => (
                   <div key={sub.name} className="border-b border-slate-100 pb-3 last:border-none last:pb-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1.5 mb-2">
                       <span className="font-bold text-slate-700 text-sm">{sub.name}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-semibold text-slate-400">Coverage: {sub.coverage}%</span>
                         <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5">Readiness: {sub.readiness}%</span>
-                        <Badge className={`text-[9px] font-bold py-0 ${
-                          sub.revision === "Ready" 
-                            ? "bg-green-50 border border-green-200 text-green-700" 
-                            : "bg-amber-50 border border-amber-200 text-amber-700"
-                        }`}>
+                        <Badge className={`text-[9px] font-bold py-0 ${sub.revision === "Ready"
+                          ? "bg-green-50 border border-green-200 text-green-700"
+                          : "bg-amber-50 border border-amber-200 text-amber-700"
+                          }`}>
                           {sub.revision}
                         </Badge>
                       </div>
@@ -577,7 +618,7 @@ function AnalyticsDashboardPage() {
 
           {/* Row 5: Exam Readiness & Skill Growth Dashboard */}
           <div className="grid gap-6 lg:grid-cols-3">
-            
+
             {/* Exam Readiness Status Card (Section 8) */}
             <Card className="bg-white border-slate-200/80 shadow-sm lg:col-span-1 flex flex-col justify-between">
               <CardHeader className="pb-3">
@@ -623,7 +664,7 @@ function AnalyticsDashboardPage() {
               </CardHeader>
               <CardContent className="text-xs space-y-4 pt-1">
                 <div className="relative border-l border-slate-200 pl-4 ml-2 space-y-5">
-                  {analytics?.skillsTimeline.map((item: any, idx: number) => (
+                  {(analytics?.skillsTimeline ?? []).map((item: any, idx: number) => (
                     <div key={idx} className="relative">
                       <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-[#2563EB] ring-4 ring-white" />
                       <div>
@@ -660,7 +701,7 @@ function AnalyticsDashboardPage() {
                         const dateIndex = weekIdx * 7 + dayIdx;
                         const dateObj = heatmapDays[dateIndex];
                         if (!dateObj || dateObj > new Date()) return <div key={dayIdx} className="w-2.5 h-2.5 rounded-sm bg-transparent" />;
-                        
+
                         const dateString = formatHeatmapDate(dateObj);
                         return (
                           <div
@@ -689,7 +730,7 @@ function AnalyticsDashboardPage() {
 
           {/* Row 7: AI Insights Engine & Predictions */}
           <div className="grid gap-6 lg:grid-cols-2">
-            
+
             {/* AI Insights Engine (Section 11) */}
             <Card className="bg-white border-slate-200/80 shadow-sm p-5 space-y-4">
               <span className="font-display text-base font-bold text-[#1E3A8A] flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
@@ -697,9 +738,9 @@ function AnalyticsDashboardPage() {
                 AI Insights Engine
               </span>
               <ul className="space-y-3 text-xs text-slate-600 leading-normal">
-                {analytics?.insights.map((insight: string, idx: number) => (
+                {(analytics?.insights ?? []).map((insight: string, idx: number) => (
                   <li key={idx} className="flex gap-2 items-start">
-                    <span className="font-bold text-[#2563EB] shrink-0">0{idx+1}</span>
+                    <span className="font-bold text-[#2563EB] shrink-0">0{idx + 1}</span>
                     <span>{insight}</span>
                   </li>
                 ))}
@@ -712,7 +753,7 @@ function AnalyticsDashboardPage() {
                 <BrainCircuit className="h-5 w-5 text-indigo-500 animate-pulse" />
                 Career Readiness Simulator & Predictions
               </span>
-              
+
               {/* Interactive Range Slider */}
               <div className="space-y-2 pb-2">
                 <div className="flex justify-between text-xs font-semibold text-slate-600">
@@ -773,13 +814,12 @@ function AnalyticsDashboardPage() {
             <CardContent className="pt-5">
               <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
                 {achievements.map((item: any) => (
-                  <div 
-                    key={item.id} 
-                    className={`rounded-xl border p-4 text-center flex flex-col items-center justify-between gap-2 transition-all ${
-                      item.unlocked 
-                        ? "bg-white border-blue-200/80 shadow-sm" 
-                        : "bg-slate-50/50 border-slate-200 opacity-50 select-none"
-                    }`}
+                  <div
+                    key={item.id}
+                    className={`rounded-xl border p-4 text-center flex flex-col items-center justify-between gap-2 transition-all ${item.unlocked
+                      ? "bg-white border-blue-200/80 shadow-sm"
+                      : "bg-slate-50/50 border-slate-200 opacity-50 select-none"
+                      }`}
                   >
                     <span className="text-3xl shrink-0" role="img" aria-label={item.title}>
                       {item.icon}
@@ -788,11 +828,10 @@ function AnalyticsDashboardPage() {
                       <span className="font-bold text-xs text-slate-700 block">{item.title}</span>
                       <span className="text-[9px] text-slate-400 mt-0.5 block leading-normal">{item.desc}</span>
                     </div>
-                    <Badge className={`text-[9px] font-bold py-0.5 mt-2 ${
-                      item.unlocked 
-                        ? "bg-green-50 border border-green-200 text-green-700" 
-                        : "bg-slate-100 text-slate-400 border border-slate-200"
-                    }`}>
+                    <Badge className={`text-[9px] font-bold py-0.5 mt-2 ${item.unlocked
+                      ? "bg-green-50 border border-green-200 text-green-700"
+                      : "bg-slate-100 text-slate-400 border border-slate-200"
+                      }`}>
                       {item.unlocked ? "Unlocked" : "Locked"}
                     </Badge>
                   </div>

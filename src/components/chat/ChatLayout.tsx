@@ -80,9 +80,26 @@ export function ChatLayout({
             className="w-full justify-start mb-2"
             size="sm"
           >
-            <Plus className="mr-2 h-4 w-4" /> New chat
+            <Plus className="mr-2 h-4 w-4" /> New AI Mentor
           </Button>
 
+          <div className="mt-4 px-2 pb-2 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            Command Center
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
+            <Link to="/app">
+              <CheckCircle2 className="mr-2 h-4 w-4 text-primary" /> Dashboard
+            </Link>
+          </Button>
+
+          <div className="mt-5 px-2 pb-2 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            My Journey
+          </div>
           <Button
             asChild
             variant="outline"
@@ -91,17 +108,6 @@ export function ChatLayout({
           >
             <Link to="/app/career-roadmap">
               <Compass className="mr-2 h-4 w-4 text-primary" /> Career Roadmap
-            </Link>
-          </Button>
-
-          <Button
-            asChild
-            variant="outline"
-            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
-            size="sm"
-          >
-            <Link to="/paper-simplifier">
-              <BookOpen className="mr-2 h-4 w-4 text-primary" /> Paper Simplifier
             </Link>
           </Button>
 
@@ -123,10 +129,13 @@ export function ChatLayout({
             size="sm"
           >
             <Link to="/app/resume-analyzer">
-              <FileCheck2 className="mr-2 h-4 w-4 text-primary" /> Resume Analyzer
+              <FileCheck2 className="mr-2 h-4 w-4 text-primary" /> Resume Profile
             </Link>
           </Button>
 
+          <div className="mt-5 px-2 pb-2 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            Knowledge Center
+          </div>
           <Button
             asChild
             variant="outline"
@@ -134,7 +143,7 @@ export function ChatLayout({
             size="sm"
           >
             <Link to="/notes-gap-analyzer">
-              <Target className="mr-2 h-4 w-4 text-primary" /> Notes Gap Analyzer
+              <Target className="mr-2 h-4 w-4 text-primary" /> Notes Analyzer
             </Link>
           </Button>
 
@@ -144,8 +153,22 @@ export function ChatLayout({
             className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
             size="sm"
           >
+            <Link to="/paper-simplifier">
+              <BookOpen className="mr-2 h-4 w-4 text-primary" /> Paper Simplifier
+            </Link>
+          </Button>
+
+          <div className="mt-5 px-2 pb-2 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            Placement Center
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-start border-border text-foreground hover:bg-sidebar-accent"
+            size="sm"
+          >
             <Link to="/analytics">
-              <LineChart className="mr-2 h-4 w-4 text-primary" /> Analytics
+              <LineChart className="mr-2 h-4 w-4 text-primary" /> Success Analytics
             </Link>
           </Button>
         </div>

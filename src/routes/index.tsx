@@ -15,11 +15,11 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "StudentOS — Your AI Academic Operating System" },
+      { title: "StudentOS — Your AI Academic Success Ecosystem" },
       {
         name: "description",
         content:
-          "6 AI modules for technical students: roadmaps, study plans, resume scoring, and notes analysis — in one chat.",
+          "A journey-driven AI platform for student success: career planning, learning execution, gap validation, research support, and placement readiness.",
       },
     ],
   }),
@@ -66,11 +66,11 @@ function Landing() {
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <Button asChild size="lg" className="glow-primary">
               <Link to="/auth">
-                Launch StudentOS <ArrowRight className="ml-2 h-4 w-4" />
+                Start Your Success Journey <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <a href="#modules">Explore 6 modules</a>
+              <a href="#modules">See the journey stages</a>
             </Button>
           </div>
         </div>
@@ -82,7 +82,7 @@ function Landing() {
           <div>
             <p className="font-mono text-xs uppercase tracking-widest text-primary">// modules</p>
             <h2 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-              Six tools. One chat.
+              One journey. Six support engines.
             </h2>
           </div>
           <p className="hidden max-w-sm text-sm text-muted-foreground md:block">

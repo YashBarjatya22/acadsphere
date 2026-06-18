@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { getDb } from "./db.server";
+import { createDefaultMetrics } from "./student-metrics/student-metrics.functions";
 
 const JWT_SECRET = process.env.JWT_SECRET || "studentos-super-secret-key-12345";
 
@@ -82,6 +83,9 @@ export const signUpFn = createServerFn({ method: "POST" })
       // Insert profile
       const profileStmt = db.prepare("INSERT INTO profiles (id, full_name) VALUES (?, ?)");
       profileStmt.run(userId, data.fullName);
+
+      // Insert default metrics for the new user
+      createDefaultMetrics(userId);
 
       // Sign token
       const token = signToken(userId, email);
