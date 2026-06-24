@@ -2,8 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import crypto from "node:crypto";
-import { getDb } from "@/lib/db.server";
-import { verifyToken } from "@/lib/auth.functions";
+import { supabaseServer } from "@/integrations/supabase/supabase.server";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { STUDENT_OS_SYSTEM_PROMPT } from "@/lib/student-os-prompt";
 
@@ -25,21 +24,21 @@ export const Route = createFileRoute("/api/chat")({
         }
         const token = authHeader.slice("Bearer ".length);
 
-        const claims = verifyToken(token);
-        if (!claims) {
+        const { data: authData, error: authError } = await supabaseServer.auth.getUser(token);
+        if (authError || !authData.user) {
           return new Response("Unauthorized", { status: 401 });
         }
-        const userId = claims.sub;
+        const userId = authData.user.id;
 
-        const db = getDb();
-        if (!db) {
-          return new Response("Database not initialized", { status: 500 });
-        }
+        // Verify thread ownership in Supabase
+        const { data: thread, error: threadError } = await supabaseServer
+          .from("threads")
+          .select("id, title")
+          .eq("id", threadId)
+          .eq("user_id", userId)
+          .single();
 
-        // Verify thread ownership in SQLite
-        const threadStmt = db.prepare("SELECT id, title FROM threads WHERE id = ? AND user_id = ?");
-        const thread = threadStmt.get(threadId, userId);
-        if (!thread) {
+        if (threadError || !thread) {
           return new Response("Thread not found", { status: 404 });
         }
 
@@ -92,9 +91,6 @@ export const Route = createFileRoute("/api/chat")({
           originalMessages: uiMessages,
           onFinish: async ({ messages: finalMessages }) => {
             try {
-              const localDb = getDb();
-              if (!localDb) return;
-
               // Persist the latest user message + the new assistant message(s)
               const knownIds = new Set(uiMessages.map((m) => m.id));
               const toInsert = finalMessages.filter(
@@ -102,15 +98,15 @@ export const Route = createFileRoute("/api/chat")({
               );
 
               if (toInsert.length > 0) {
-                const insertStmt = localDb.prepare(`
-                  INSERT INTO messages (id, thread_id, user_id, role, parts) 
-                  VALUES (?, ?, ?, ?, ?)
-                `);
-                for (const m of toInsert) {
-                  const messageId = m.id || crypto.randomUUID();
-                  const partsJson = JSON.stringify(m.parts);
-                  insertStmt.run(messageId, threadId, userId, m.role, partsJson);
-                }
+                const messageRecords = toInsert.map((m) => ({
+                  id: m.id || crypto.randomUUID(),
+                  thread_id: threadId,
+                  user_id: userId,
+                  role: m.role,
+                  parts: m.parts,
+                }));
+                
+                await supabaseServer.from("messages").insert(messageRecords);
               }
 
               // Auto-title from first user message if still default
@@ -120,17 +116,18 @@ export const Route = createFileRoute("/api/chat")({
                   .join(" ")
                   .trim()
                   .slice(0, 80);
+                  
                 if (text) {
-                  const updateStmt = localDb.prepare(
-                    "UPDATE threads SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                  );
-                  updateStmt.run(text, threadId);
+                  await supabaseServer
+                    .from("threads")
+                    .update({ title: text, updated_at: new Date().toISOString() })
+                    .eq("id", threadId);
                 }
               } else {
-                const updateStmt = localDb.prepare(
-                  "UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                );
-                updateStmt.run(threadId);
+                await supabaseServer
+                  .from("threads")
+                  .update({ updated_at: new Date().toISOString() })
+                  .eq("id", threadId);
               }
             } catch (e) {
               console.error("[chat] persist error", e);
