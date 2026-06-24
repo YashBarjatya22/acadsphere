@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { bypassSignup } from "@/lib/auth.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,21 +33,24 @@ function AuthPage() {
     });
   }, [navigate]);
 
+  const bypassSignupMutation = useServerFn(bypassSignup);
+
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: window.location.origin + "/app",
-            data: { full_name: name },
-          },
+        // 1. Create the user using our admin bypass server function
+        // This marks their email as confirmed automatically.
+        await bypassSignupMutation({
+          data: { email, password, name },
         });
+
+        // 2. Since their email is confirmed, we can instantly log them in
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        toast.success("Check your email to confirm your account.");
+        
+        navigate({ to: "/app", replace: true });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
