@@ -1,24 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import crypto from "node:crypto";
-import { getDb } from "./db.server";
+import { supabaseServer } from "@/integrations/supabase/supabase.server";
 
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId } = context;
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
 
-    const stmt = db.prepare(`
-      SELECT id, title, module, updated_at 
-      FROM threads 
-      WHERE user_id = ? 
-      ORDER BY updated_at DESC 
-      LIMIT 100
-    `);
-    const data = stmt.all(userId);
+    const { data, error } = await supabaseServer
+      .from("threads")
+      .select("id, title, module, updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.error("Error listing threads:", error);
+      return [];
+    }
+
     return data ?? [];
   });
 
@@ -34,25 +35,20 @@ export const createThread = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
-    const threadId = crypto.randomUUID();
     const title = data.title ?? "New chat";
     const module = data.module ?? null;
 
-    const insertStmt = db.prepare(`
-      INSERT INTO threads (id, user_id, title, module) 
-      VALUES (?, ?, ?, ?)
-    `);
-    insertStmt.run(threadId, userId, title, module);
+    const { data: thread, error } = await supabaseServer
+      .from("threads")
+      .insert([{ user_id: userId, title, module }])
+      .select("id, title, module, updated_at")
+      .single();
 
-    const selectStmt = db.prepare(`
-      SELECT id, title, module, updated_at 
-      FROM threads 
-      WHERE id = ?
-    `);
-    return selectStmt.get(threadId);
+    if (error || !thread) {
+      throw new Error("Failed to create thread: " + error?.message);
+    }
+
+    return thread;
   });
 
 export const renameThread = createServerFn({ method: "POST" })
@@ -62,15 +58,17 @@ export const renameThread = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
 
-    const stmt = db.prepare(`
-      UPDATE threads 
-      SET title = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ? AND user_id = ?
-    `);
-    stmt.run(data.title, data.id, userId);
+    const { error } = await supabaseServer
+      .from("threads")
+      .update({ title: data.title, updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error("Failed to rename thread: " + error.message);
+    }
+
     return { ok: true };
   });
 
@@ -79,14 +77,17 @@ export const deleteThread = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
 
-    const stmt = db.prepare(`
-      DELETE FROM threads 
-      WHERE id = ? AND user_id = ?
-    `);
-    stmt.run(data.id, userId);
+    const { error } = await supabaseServer
+      .from("threads")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error("Failed to delete thread: " + error.message);
+    }
+
     return { ok: true };
   });
 
@@ -95,30 +96,35 @@ export const getThreadMessages = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ threadId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
 
-    // verify thread ownership
-    const threadStmt = db.prepare(`
-      SELECT id, title, module 
-      FROM threads 
-      WHERE id = ? AND user_id = ?
-    `);
-    const thread = threadStmt.get(data.threadId, userId);
-    if (!thread) return { thread: null, messages: [] };
+    // Verify thread ownership
+    const { data: thread, error: threadError } = await supabaseServer
+      .from("threads")
+      .select("id, title, module")
+      .eq("id", data.threadId)
+      .eq("user_id", userId)
+      .single();
 
-    const messagesStmt = db.prepare(`
-      SELECT id, role, parts, created_at 
-      FROM messages 
-      WHERE thread_id = ? 
-      ORDER BY created_at ASC
-    `);
-    const rows = messagesStmt.all(data.threadId);
+    if (threadError || !thread) {
+      return { thread: null, messages: [] };
+    }
+
+    const { data: rows, error: msgError } = await supabaseServer
+      .from("messages")
+      .select("id, role, parts, created_at")
+      .eq("thread_id", data.threadId)
+      .order("created_at", { ascending: true });
+
+    if (msgError) {
+      console.error("Error fetching messages:", msgError);
+      return { thread, messages: [] };
+    }
 
     const messages = (rows ?? []).map((r: any) => ({
       id: r.id,
       role: r.role,
-      parts: JSON.parse(r.parts),
+      parts: typeof r.parts === "string" ? JSON.parse(r.parts) : r.parts,
     }));
+
     return { thread, messages };
   });

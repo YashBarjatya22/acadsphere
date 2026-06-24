@@ -1,6 +1,6 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { verifyToken } from "@/lib/auth.functions";
+import { supabaseServer } from "./supabase.server";
 
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
@@ -25,15 +25,16 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       throw new Error("Unauthorized: No token provided");
     }
 
-    const claims = verifyToken(token);
-    if (!claims) {
+    const { data, error } = await supabaseServer.auth.getUser(token);
+    
+    if (error || !data.user) {
       throw new Error("Unauthorized: Invalid or expired token");
     }
 
     return next({
       context: {
-        userId: claims.sub,
-        claims,
+        userId: data.user.id,
+        user: data.user,
       },
     });
   },

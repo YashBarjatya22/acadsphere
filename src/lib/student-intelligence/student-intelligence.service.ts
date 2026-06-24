@@ -1,9 +1,9 @@
-import { getDb } from "../db.server";
+import { supabaseServer } from "@/integrations/supabase/supabase.server";
 import {
     StudentMetricsRecord,
     getStudentMetrics,
 } from "../student-metrics/student-metrics.functions";
-import { KnowledgeProfileRecord } from "../knowledge/knowledge.functions";
+import { KnowledgeProfileRecord, getKnowledgeProfile } from "../knowledge/knowledge.functions";
 
 export interface ProfileRecord {
     id: string;
@@ -36,7 +36,7 @@ export interface StudyTaskRecord {
     user_id: string;
     plan_id: string;
     title: string;
-    completed: number;
+    completed: boolean;
     created_at: string;
 }
 
@@ -86,18 +86,60 @@ export interface StudentState {
     knowledgeProfile: KnowledgeProfileRecord[];
 }
 
-export function getStudentState(userId: string): StudentState {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
+export async function getStudentState(userId: string): Promise<StudentState> {
+    // Fetch everything in parallel for performance
+    const [
+        profileResult,
+        metrics,
+        studyPlansResult,
+        studyTasksResult,
+        notesResult,
+        papersResult,
+        activitiesResult,
+        knowledgeProfile,
+    ] = await Promise.all([
+        supabaseServer.from('profiles').select('*').eq('id', userId).single(),
+        getStudentMetrics(userId),
+        supabaseServer.from('study_plans').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabaseServer.from('study_tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabaseServer.from('notes_analyses').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabaseServer.from('paper_analyses').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabaseServer.from('student_activities').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        getKnowledgeProfile(userId),
+    ]);
 
-    const profile = fetchProfile(db, userId);
-    const metrics = getStudentMetrics(userId);
-    const studyPlans = fetchStudyPlans(db, userId);
-    const studyTasks = fetchStudyTasks(db, userId);
-    const notes = fetchNotesAnalyses(db, userId);
-    const papers = fetchPaperAnalyses(db, userId);
-    const activities = fetchStudentActivities(db, userId);
-    const knowledgeProfile = fetchKnowledgeProfile(db, userId);
+    const profileRow = profileResult.data;
+    const profile: ProfileRecord | null = profileRow ? {
+        ...profileRow,
+        current_skills: Array.isArray(profileRow.current_skills)
+            ? profileRow.current_skills
+            : (typeof profileRow.current_skills === 'string'
+                ? JSON.parse(profileRow.current_skills || '[]')
+                : []),
+    } : null;
+
+    const studyPlans: StudyPlanRecord[] = (studyPlansResult.data ?? []).map((r: any) => ({
+        ...r,
+        subjects: typeof r.subjects === 'string' ? JSON.parse(r.subjects) : r.subjects,
+        result: typeof r.result === 'string' ? JSON.parse(r.result) : r.result,
+    }));
+
+    const studyTasks: StudyTaskRecord[] = (studyTasksResult.data ?? []) as StudyTaskRecord[];
+
+    const notes: NotesAnalysisRecord[] = (notesResult.data ?? []).map((r: any) => ({
+        ...r,
+        result: typeof r.result === 'string' ? JSON.parse(r.result) : r.result,
+    }));
+
+    const papers: PaperAnalysisRecord[] = (papersResult.data ?? []).map((r: any) => ({
+        ...r,
+        result: typeof r.result === 'string' ? JSON.parse(r.result) : r.result,
+    }));
+
+    const activities: StudentActivityRecord[] = (activitiesResult.data ?? []).map((r: any) => ({
+        ...r,
+        details: typeof r.details === 'string' ? JSON.parse(r.details || 'null') : r.details,
+    }));
 
     return {
         profile,
@@ -112,114 +154,4 @@ export function getStudentState(userId: string): StudentState {
         activities,
         knowledgeProfile,
     };
-}
-
-function fetchProfile(db: any, userId: string): ProfileRecord | null {
-    const row = db
-        .prepare(`
-      SELECT * FROM profiles
-      WHERE id = ?
-      LIMIT 1
-    `)
-        .get(userId);
-
-    if (!row) return null;
-
-    return {
-        ...row,
-        current_skills: parseJsonString<string[]>(row.current_skills, []),
-    };
-}
-
-function fetchStudyPlans(db: any, userId: string): StudyPlanRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM study_plans
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId)
-        .map((row: any) => ({
-            ...row,
-            subjects: parseJsonString<StudyPlanSubject[]>(row.subjects, []),
-            result: parseJsonString<unknown>(row.result, null),
-        }));
-}
-
-function fetchStudyTasks(db: any, userId: string): StudyTaskRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM study_tasks
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId) as StudyTaskRecord[];
-}
-
-function fetchNotesAnalyses(db: any, userId: string): NotesAnalysisRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM notes_analyses
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId)
-        .map((row: any) => ({
-            ...row,
-            result: parseJsonString<unknown>(row.result, null),
-        }));
-}
-
-function fetchPaperAnalyses(db: any, userId: string): PaperAnalysisRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM paper_analyses
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId)
-        .map((row: any) => ({
-            ...row,
-            result: parseJsonString<unknown>(row.result, null),
-        }));
-}
-
-function fetchStudentActivities(db: any, userId: string): StudentActivityRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM student_activities
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId)
-        .map((row: any) => ({
-            ...row,
-            details: parseJsonString<unknown>(row.details, null),
-        }));
-}
-
-function fetchKnowledgeProfile(db: any, userId: string): KnowledgeProfileRecord[] {
-    return db
-        .prepare(`
-      SELECT * FROM knowledge_profile
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `)
-        .all(userId) as KnowledgeProfileRecord[];
-}
-
-function parseJsonString<T>(value: unknown, fallback: T): T {
-    if (value === null || value === undefined) {
-        return fallback;
-    }
-
-    if (typeof value !== "string") {
-        return value as T;
-    }
-
-    try {
-        return JSON.parse(value) as T;
-    } catch {
-        return fallback;
-    }
 }

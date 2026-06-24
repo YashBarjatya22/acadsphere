@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass, BookOpen, Calendar, Target, LineChart } from "lucide-react";
+import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass, BookOpen, Calendar, Target, LineChart, CheckCircle2 } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

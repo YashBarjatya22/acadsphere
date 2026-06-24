@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-import { getDb } from "../db.server";
+import { supabaseServer } from "@/integrations/supabase/supabase.server";
 
 export type StudentMetricsRecord = {
     id: string;
@@ -51,101 +50,67 @@ function buildMetricPayload(data: StudentMetricsUpdate): Partial<StudentMetricsR
     } as Partial<StudentMetricsRecord>;
 }
 
-export function getStudentMetrics(userId: string): StudentMetricsRecord | null {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
-    const stmt = db.prepare(`
-    SELECT * FROM student_metrics
-    WHERE user_id = ?
-    LIMIT 1
-  `);
-    const row = stmt.get(userId);
-    return row ? (row as StudentMetricsRecord) : null;
+export async function getStudentMetrics(userId: string): Promise<StudentMetricsRecord | null> {
+    const { data, error } = await supabaseServer
+        .from('student_metrics')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+        
+    if (error && error.code !== 'PGRST116') {
+        console.error("Error fetching metrics:", error);
+    }
+    
+    return data as StudentMetricsRecord | null;
 }
 
-export function createDefaultMetrics(userId: string): StudentMetricsRecord {
-    const existing = getStudentMetrics(userId);
+export async function createDefaultMetrics(userId: string): Promise<StudentMetricsRecord> {
+    const existing = await getStudentMetrics(userId);
     if (existing) return existing;
 
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
+    const { data, error } = await supabaseServer
+        .from('student_metrics')
+        .insert([{
+            user_id: userId,
+            ...DEFAULT_STUDENT_METRICS
+        }])
+        .select()
+        .single();
 
-    const id = crypto.randomUUID();
-    const insertStmt = db.prepare(`
-    INSERT INTO student_metrics (
-      id,
-      user_id,
-      roadmap_progress,
-      study_consistency,
-      notes_coverage,
-      resume_strength,
-      placement_readiness,
-      skill_growth,
-      success_score
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-    insertStmt.run(
-        id,
-        userId,
-        DEFAULT_STUDENT_METRICS.roadmap_progress,
-        DEFAULT_STUDENT_METRICS.study_consistency,
-        DEFAULT_STUDENT_METRICS.notes_coverage,
-        DEFAULT_STUDENT_METRICS.resume_strength,
-        DEFAULT_STUDENT_METRICS.placement_readiness,
-        DEFAULT_STUDENT_METRICS.skill_growth,
-        DEFAULT_STUDENT_METRICS.success_score,
-    );
-
-    const created = getStudentMetrics(userId);
-    if (!created) {
-        throw new Error("Failed to create default student metrics");
+    if (error || !data) {
+        throw new Error("Failed to create default student metrics: " + error?.message);
     }
-    return created;
+    
+    return data as StudentMetricsRecord;
 }
 
-export function updateStudentMetrics(userId: string, data: StudentMetricsUpdate): StudentMetricsRecord {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
+export async function updateStudentMetrics(userId: string, data: StudentMetricsUpdate): Promise<StudentMetricsRecord> {
     const payload = buildMetricPayload(data);
     if (Object.keys(payload).length === 0) {
-        const existing = getStudentMetrics(userId);
+        const existing = await getStudentMetrics(userId);
         if (!existing) throw new Error("Student metrics not found");
         return existing;
     }
 
-    const metrics = getStudentMetrics(userId) ?? createDefaultMetrics(userId);
-
-    const stmt = db.prepare(`
-    UPDATE student_metrics
-    SET roadmap_progress = ?,
-        study_consistency = ?,
-        notes_coverage = ?,
-        resume_strength = ?,
-        placement_readiness = ?,
-        skill_growth = ?,
-        success_score = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ?
-  `);
-
-    stmt.run(
-        payload.roadmap_progress ?? metrics.roadmap_progress,
-        payload.study_consistency ?? metrics.study_consistency,
-        payload.notes_coverage ?? metrics.notes_coverage,
-        payload.resume_strength ?? metrics.resume_strength,
-        payload.placement_readiness ?? metrics.placement_readiness,
-        payload.skill_growth ?? metrics.skill_growth,
-        payload.success_score ?? metrics.success_score,
-        userId,
-    );
-
-    const updated = getStudentMetrics(userId);
-    if (!updated) {
-        throw new Error("Failed to update student metrics");
+    // Ensure they exist first
+    const existing = await getStudentMetrics(userId);
+    if (!existing) {
+        await createDefaultMetrics(userId);
     }
 
-    return updated;
+    const { data: updated, error } = await supabaseServer
+        .from('student_metrics')
+        .update({
+            ...payload,
+            updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+    if (error || !updated) {
+        throw new Error("Failed to update student metrics: " + error?.message);
+    }
+
+    return updated as StudentMetricsRecord;
 }

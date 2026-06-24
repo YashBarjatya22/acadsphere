@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-import { getDb } from "../db.server";
+import { supabaseServer } from "@/integrations/supabase/supabase.server";
 
 export type KnowledgeSource = "roadmap" | "paper" | "notes" | "study";
 
@@ -36,138 +35,129 @@ function normalizeConcept(concept: string) {
 }
 
 function clampConfidence(value: number | undefined) {
-    if (!Number.isFinite(value)) return 0;
+    if (value === undefined || !Number.isFinite(value)) return 0;
     return Math.min(100, Math.max(0, value));
 }
 
-export function getKnowledgeProfile(userId: string): KnowledgeProfileRecord[] {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
+export async function getKnowledgeProfile(userId: string): Promise<KnowledgeProfileRecord[]> {
+    const { data, error } = await supabaseServer
+        .from('knowledge_profile')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    const stmt = db.prepare(`
-    SELECT * FROM knowledge_profile
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-  `);
+    if (error) {
+        console.error("Error fetching knowledge profile:", error);
+        return [];
+    }
 
-    return stmt.all(userId) as KnowledgeProfileRecord[];
+    return (data ?? []) as KnowledgeProfileRecord[];
 }
 
-export function getKnowledgeChunkById(chunkId: string): KnowledgeProfileRecord | null {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
+export async function getKnowledgeChunkById(chunkId: string): Promise<KnowledgeProfileRecord | null> {
+    const { data, error } = await supabaseServer
+        .from('knowledge_profile')
+        .select('*')
+        .eq('id', chunkId)
+        .single();
 
-    const stmt = db.prepare(`
-    SELECT * FROM knowledge_profile
-    WHERE id = ?
-    LIMIT 1
-  `);
+    if (error && error.code !== 'PGRST116') {
+        console.error("Error fetching knowledge chunk:", error);
+    }
 
-    const row = stmt.get(chunkId);
-    return row ? (row as KnowledgeProfileRecord) : null;
+    return data as KnowledgeProfileRecord | null;
 }
 
-export function findKnowledgeChunk(userId: string, concept: string, source: KnowledgeSource): KnowledgeProfileRecord | null {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
+export async function findKnowledgeChunk(userId: string, concept: string, source: KnowledgeSource): Promise<KnowledgeProfileRecord | null> {
     const normalized = normalizeConcept(concept);
-    const stmt = db.prepare(`
-    SELECT * FROM knowledge_profile
-    WHERE user_id = ?
-      AND LOWER(TRIM(concept)) = LOWER(TRIM(?))
-      AND source = ?
-    LIMIT 1
-  `);
+    const { data, error } = await supabaseServer
+        .from('knowledge_profile')
+        .select('*')
+        .eq('user_id', userId)
+        .ilike('concept', normalized)
+        .eq('source', source)
+        .single();
 
-    const row = stmt.get(userId, normalized, source);
-    return row ? (row as KnowledgeProfileRecord) : null;
+    if (error && error.code !== 'PGRST116') {
+        console.error("Error finding knowledge chunk:", error);
+    }
+
+    return data as KnowledgeProfileRecord | null;
 }
 
-export function createKnowledgeChunk(userId: string, data: KnowledgeProfileCreateInput): KnowledgeProfileRecord {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
+export async function createKnowledgeChunk(userId: string, data: KnowledgeProfileCreateInput): Promise<KnowledgeProfileRecord> {
     const concept = normalizeConcept(data.concept);
     if (concept.length === 0) {
         throw new Error("Knowledge concept cannot be empty");
     }
 
-    const existing = findKnowledgeChunk(userId, concept, data.source);
+    const existing = await findKnowledgeChunk(userId, concept, data.source);
     if (existing) {
         throw new Error("Knowledge chunk already exists for this concept and source");
     }
 
-    const id = crypto.randomUUID();
     const confidence = clampConfidence(data.confidence);
-    const insertStmt = db.prepare(`
-    INSERT INTO knowledge_profile (id, user_id, concept, source, confidence)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-    insertStmt.run(id, userId, concept, data.source, confidence);
+    const { data: row, error } = await supabaseServer
+        .from('knowledge_profile')
+        .insert([{ user_id: userId, concept, source: data.source, confidence }])
+        .select()
+        .single();
 
-    const created = getKnowledgeChunkById(id);
-    if (!created) {
-        throw new Error("Failed to create knowledge chunk");
+    if (error || !row) {
+        throw new Error("Failed to create knowledge chunk: " + error?.message);
     }
 
-    return created;
+    return row as KnowledgeProfileRecord;
 }
 
-export function updateKnowledgeChunk(chunkId: string, data: KnowledgeProfileUpdateInput): KnowledgeProfileRecord {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
-
-    const existing = getKnowledgeChunkById(chunkId);
+export async function updateKnowledgeChunk(chunkId: string, update: KnowledgeProfileUpdateInput): Promise<KnowledgeProfileRecord> {
+    const existing = await getKnowledgeChunkById(chunkId);
     if (!existing) {
         throw new Error("Knowledge chunk not found");
     }
 
-    const concept = data.concept !== undefined ? normalizeConcept(data.concept) : existing.concept;
+    const concept = update.concept !== undefined ? normalizeConcept(update.concept) : existing.concept;
     if (concept.length === 0) {
         throw new Error("Knowledge concept cannot be empty");
     }
 
-    const source = data.source ?? existing.source;
-    const confidence = data.confidence !== undefined ? clampConfidence(data.confidence) : existing.confidence;
+    const source = update.source ?? existing.source;
+    const confidence = update.confidence !== undefined ? clampConfidence(update.confidence) : existing.confidence;
 
-    if ((concept.toLowerCase() !== existing.concept.toLowerCase() || source !== existing.source)) {
-        const duplicate = findKnowledgeChunk(existing.user_id, concept, source);
+    if (concept.toLowerCase() !== existing.concept.toLowerCase() || source !== existing.source) {
+        const duplicate = await findKnowledgeChunk(existing.user_id, concept, source);
         if (duplicate && duplicate.id !== chunkId) {
             throw new Error("Another knowledge chunk already exists for this concept and source");
         }
     }
 
-    const updateStmt = db.prepare(`
-    UPDATE knowledge_profile
-    SET concept = ?,
-        source = ?,
-        confidence = ?,
-        created_at = created_at
-    WHERE id = ?
-  `);
-    updateStmt.run(concept, source, confidence, chunkId);
+    const { data: updated, error } = await supabaseServer
+        .from('knowledge_profile')
+        .update({ concept, source, confidence })
+        .eq('id', chunkId)
+        .select()
+        .single();
 
-    const updated = getKnowledgeChunkById(chunkId);
-    if (!updated) {
-        throw new Error("Failed to update knowledge chunk");
+    if (error || !updated) {
+        throw new Error("Failed to update knowledge chunk: " + error?.message);
     }
 
-    return updated;
+    return updated as KnowledgeProfileRecord;
 }
 
-export function deleteKnowledgeChunk(chunkId: string): void {
-    const db = getDb();
-    if (!db) throw new Error("Database not initialized");
+export async function deleteKnowledgeChunk(chunkId: string): Promise<void> {
+    const { error } = await supabaseServer
+        .from('knowledge_profile')
+        .delete()
+        .eq('id', chunkId);
 
-    db.prepare(`
-    DELETE FROM knowledge_profile
-    WHERE id = ?
-  `).run(chunkId);
+    if (error) {
+        throw new Error("Failed to delete knowledge chunk: " + error.message);
+    }
 }
 
-export function upsertKnowledgeChunk(userId: string, data: KnowledgeProfileCreateInput): KnowledgeProfileRecord {
-    const existing = findKnowledgeChunk(userId, data.concept, data.source);
+export async function upsertKnowledgeChunk(userId: string, data: KnowledgeProfileCreateInput): Promise<KnowledgeProfileRecord> {
+    const existing = await findKnowledgeChunk(userId, data.concept, data.source);
     if (existing) {
         const confidence = Math.max(existing.confidence, clampConfidence(data.confidence));
         return updateKnowledgeChunk(existing.id, { confidence });
