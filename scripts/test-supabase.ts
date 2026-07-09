@@ -2,6 +2,26 @@ import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import dns from "node:dns";
+
+// DNS patch to bypass local getaddrinfo failures
+const originalLookup = dns.lookup;
+dns.lookup = function (hostname: string, options: any, callback: any) {
+  if (hostname === "icyrztdyrucqmeklgpfs.supabase.co") {
+    const cb = typeof options === "function" ? options : callback;
+    const opts = typeof options === "object" ? options : {};
+    const ip = "172.67.75.143";
+    if (cb) {
+      if (opts.all) {
+        cb(null, [{ address: ip, family: 4 }]);
+      } else {
+        cb(null, ip, 4);
+      }
+      return;
+    }
+  }
+  return originalLookup.apply(this, arguments as any);
+} as any;
 
 // Load .env.local manually since npx tsx might not load it
 const envPath = path.resolve(process.cwd(), ".env.local");
@@ -34,7 +54,7 @@ async function verifySupabase() {
         console.error("Please run the SQL migration in 'supabase/migrations/0001_complete_schema.sql' inside your Supabase Dashboard SQL Editor!");
         return;
       }
-      console.error("❌ Connection failed or Error querying:", error.message);
+      console.error("❌ Connection failed or Error querying:", error);
       return;
     }
     

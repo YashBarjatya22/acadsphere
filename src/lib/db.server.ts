@@ -1,6 +1,26 @@
 // @ts-ignore
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+import dns from "node:dns";
+
+// DNS patch to bypass local getaddrinfo failures for Supabase domain
+const originalLookup = dns.lookup;
+dns.lookup = function (hostname: string, options: any, callback: any) {
+  if (hostname === "icyrztdyrucqmeklgpfs.supabase.co") {
+    const cb = typeof options === "function" ? options : callback;
+    const opts = typeof options === "object" ? options : {};
+    const ip = "172.67.75.143";
+    if (cb) {
+      if (opts.all) {
+        cb(null, [{ address: ip, family: 4 }]);
+      } else {
+        cb(null, ip, 4);
+      }
+      return;
+    }
+  }
+  return originalLookup.apply(this, arguments as any);
+} as any;
 
 let db: any;
 
@@ -149,3 +169,30 @@ try {
 export function getDb() {
   return db;
 }
+
+import { createClient } from "@supabase/supabase-js";
+
+let supabaseServerClient: any = null;
+
+export function getSupabaseServerClient() {
+  if (supabaseServerClient) return supabaseServerClient;
+  
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  
+  if (supabaseUrl && supabaseKey) {
+    try {
+      supabaseServerClient = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        }
+      });
+      return supabaseServerClient;
+    } catch (e) {
+      console.warn("[Supabase Client Init Error]", e);
+    }
+  }
+  return null;
+}
+

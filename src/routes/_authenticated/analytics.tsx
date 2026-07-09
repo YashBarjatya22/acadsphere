@@ -128,7 +128,10 @@ function AnalyticsDashboardPage() {
               </Button>
               <Button
                 onClick={async () => {
-                  await supabase.auth.signOut();
+                  localStorage.removeItem("demo_session_token");
+                  localStorage.removeItem("demo_user_id");
+                  localStorage.removeItem("demo_user_email");
+                  try { await supabase.auth.signOut(); } catch (_) {}
                   window.location.href = "/auth";
                 }}
                 variant="outline"

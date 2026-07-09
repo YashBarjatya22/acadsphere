@@ -19,8 +19,21 @@ import { Route as AuthenticatedPaperSimplifierRouteImport } from './routes/_auth
 import { Route as AuthenticatedNotesGapAnalyzerRouteImport } from './routes/_authenticated/notes-gap-analyzer'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as AuthenticatedAppVivaSimulatorRouteImport } from './routes/_authenticated/app.viva-simulator'
+import { Route as AuthenticatedAppStudentsRouteImport } from './routes/_authenticated/app.students'
+import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppResumeAnalyzerRouteImport } from './routes/_authenticated/app.resume-analyzer'
+import { Route as AuthenticatedAppProfileRouteImport } from './routes/_authenticated/app.profile'
+import { Route as AuthenticatedAppNotesRouteImport } from './routes/_authenticated/app.notes'
+import { Route as AuthenticatedAppLabBuddyRouteImport } from './routes/_authenticated/app.lab-buddy'
+import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticated/app.extra'
+import { Route as AuthenticatedAppCommunityRouteImport } from './routes/_authenticated/app.community'
+import { Route as AuthenticatedAppCiaReminderRouteImport } from './routes/_authenticated/app.cia-reminder'
 import { Route as AuthenticatedAppCareerRoadmapRouteImport } from './routes/_authenticated/app.career-roadmap'
+import { Route as AuthenticatedAppAttendanceRouteImport } from './routes/_authenticated/app.attendance'
+import { Route as AuthenticatedAppAssignmentsRouteImport } from './routes/_authenticated/app.assignments'
+import { Route as AuthenticatedAppAnnouncementsRouteImport } from './routes/_authenticated/app.announcements'
+import { Route as AuthenticatedAppAiAssistantRouteImport } from './routes/_authenticated/app.ai-assistant'
 import { Route as AuthenticatedAppThreadIdRouteImport } from './routes/_authenticated/app.$threadId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -75,16 +88,91 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/app/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppVivaSimulatorRoute =
+  AuthenticatedAppVivaSimulatorRouteImport.update({
+    id: '/app/viva-simulator',
+    path: '/app/viva-simulator',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppStudentsRoute =
+  AuthenticatedAppStudentsRouteImport.update({
+    id: '/app/students',
+    path: '/app/students',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppSettingsRoute =
+  AuthenticatedAppSettingsRouteImport.update({
+    id: '/app/settings',
+    path: '/app/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppResumeAnalyzerRoute =
   AuthenticatedAppResumeAnalyzerRouteImport.update({
     id: '/app/resume-analyzer',
     path: '/app/resume-analyzer',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAppProfileRoute = AuthenticatedAppProfileRouteImport.update({
+  id: '/app/profile',
+  path: '/app/profile',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppNotesRoute = AuthenticatedAppNotesRouteImport.update({
+  id: '/app/notes',
+  path: '/app/notes',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppLabBuddyRoute =
+  AuthenticatedAppLabBuddyRouteImport.update({
+    id: '/app/lab-buddy',
+    path: '/app/lab-buddy',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppExtraRoute = AuthenticatedAppExtraRouteImport.update({
+  id: '/app/extra',
+  path: '/app/extra',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppCommunityRoute =
+  AuthenticatedAppCommunityRouteImport.update({
+    id: '/app/community',
+    path: '/app/community',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppCiaReminderRoute =
+  AuthenticatedAppCiaReminderRouteImport.update({
+    id: '/app/cia-reminder',
+    path: '/app/cia-reminder',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppCareerRoadmapRoute =
   AuthenticatedAppCareerRoadmapRouteImport.update({
     id: '/app/career-roadmap',
     path: '/app/career-roadmap',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppAttendanceRoute =
+  AuthenticatedAppAttendanceRouteImport.update({
+    id: '/app/attendance',
+    path: '/app/attendance',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppAssignmentsRoute =
+  AuthenticatedAppAssignmentsRouteImport.update({
+    id: '/app/assignments',
+    path: '/app/assignments',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppAnnouncementsRoute =
+  AuthenticatedAppAnnouncementsRouteImport.update({
+    id: '/app/announcements',
+    path: '/app/announcements',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppAiAssistantRoute =
+  AuthenticatedAppAiAssistantRouteImport.update({
+    id: '/app/ai-assistant',
+    path: '/app/ai-assistant',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAppThreadIdRoute =
@@ -104,8 +192,21 @@ export interface FileRoutesByFullPath {
   '/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
+  '/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
+  '/app/assignments': typeof AuthenticatedAppAssignmentsRoute
+  '/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/app/community': typeof AuthenticatedAppCommunityRoute
+  '/app/extra': typeof AuthenticatedAppExtraRoute
+  '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
+  '/app/notes': typeof AuthenticatedAppNotesRoute
+  '/app/profile': typeof AuthenticatedAppProfileRoute
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/app/students': typeof AuthenticatedAppStudentsRoute
+  '/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesByTo {
@@ -118,8 +219,21 @@ export interface FileRoutesByTo {
   '/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
+  '/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
+  '/app/assignments': typeof AuthenticatedAppAssignmentsRoute
+  '/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/app/community': typeof AuthenticatedAppCommunityRoute
+  '/app/extra': typeof AuthenticatedAppExtraRoute
+  '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
+  '/app/notes': typeof AuthenticatedAppNotesRoute
+  '/app/profile': typeof AuthenticatedAppProfileRoute
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/app/students': typeof AuthenticatedAppStudentsRoute
+  '/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/app': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesById {
@@ -134,8 +248,21 @@ export interface FileRoutesById {
   '/_authenticated/study-planner': typeof AuthenticatedStudyPlannerRoute
   '/api/chat': typeof ApiChatRoute
   '/_authenticated/app/$threadId': typeof AuthenticatedAppThreadIdRoute
+  '/_authenticated/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
+  '/_authenticated/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
+  '/_authenticated/app/assignments': typeof AuthenticatedAppAssignmentsRoute
+  '/_authenticated/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/_authenticated/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
+  '/_authenticated/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/_authenticated/app/community': typeof AuthenticatedAppCommunityRoute
+  '/_authenticated/app/extra': typeof AuthenticatedAppExtraRoute
+  '/_authenticated/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
+  '/_authenticated/app/notes': typeof AuthenticatedAppNotesRoute
+  '/_authenticated/app/profile': typeof AuthenticatedAppProfileRoute
   '/_authenticated/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/_authenticated/app/students': typeof AuthenticatedAppStudentsRoute
+  '/_authenticated/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRouteTypes {
@@ -150,8 +277,21 @@ export interface FileRouteTypes {
     | '/study-planner'
     | '/api/chat'
     | '/app/$threadId'
+    | '/app/ai-assistant'
+    | '/app/announcements'
+    | '/app/assignments'
+    | '/app/attendance'
     | '/app/career-roadmap'
+    | '/app/cia-reminder'
+    | '/app/community'
+    | '/app/extra'
+    | '/app/lab-buddy'
+    | '/app/notes'
+    | '/app/profile'
     | '/app/resume-analyzer'
+    | '/app/settings'
+    | '/app/students'
+    | '/app/viva-simulator'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -164,8 +304,21 @@ export interface FileRouteTypes {
     | '/study-planner'
     | '/api/chat'
     | '/app/$threadId'
+    | '/app/ai-assistant'
+    | '/app/announcements'
+    | '/app/assignments'
+    | '/app/attendance'
     | '/app/career-roadmap'
+    | '/app/cia-reminder'
+    | '/app/community'
+    | '/app/extra'
+    | '/app/lab-buddy'
+    | '/app/notes'
+    | '/app/profile'
     | '/app/resume-analyzer'
+    | '/app/settings'
+    | '/app/students'
+    | '/app/viva-simulator'
     | '/app'
   id:
     | '__root__'
@@ -179,8 +332,21 @@ export interface FileRouteTypes {
     | '/_authenticated/study-planner'
     | '/api/chat'
     | '/_authenticated/app/$threadId'
+    | '/_authenticated/app/ai-assistant'
+    | '/_authenticated/app/announcements'
+    | '/_authenticated/app/assignments'
+    | '/_authenticated/app/attendance'
     | '/_authenticated/app/career-roadmap'
+    | '/_authenticated/app/cia-reminder'
+    | '/_authenticated/app/community'
+    | '/_authenticated/app/extra'
+    | '/_authenticated/app/lab-buddy'
+    | '/_authenticated/app/notes'
+    | '/_authenticated/app/profile'
     | '/_authenticated/app/resume-analyzer'
+    | '/_authenticated/app/settings'
+    | '/_authenticated/app/students'
+    | '/_authenticated/app/viva-simulator'
     | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
 }
@@ -264,6 +430,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/viva-simulator': {
+      id: '/_authenticated/app/viva-simulator'
+      path: '/app/viva-simulator'
+      fullPath: '/app/viva-simulator'
+      preLoaderRoute: typeof AuthenticatedAppVivaSimulatorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/students': {
+      id: '/_authenticated/app/students'
+      path: '/app/students'
+      fullPath: '/app/students'
+      preLoaderRoute: typeof AuthenticatedAppStudentsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/settings': {
+      id: '/_authenticated/app/settings'
+      path: '/app/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AuthenticatedAppSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/resume-analyzer': {
       id: '/_authenticated/app/resume-analyzer'
       path: '/app/resume-analyzer'
@@ -271,11 +458,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppResumeAnalyzerRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/profile': {
+      id: '/_authenticated/app/profile'
+      path: '/app/profile'
+      fullPath: '/app/profile'
+      preLoaderRoute: typeof AuthenticatedAppProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/notes': {
+      id: '/_authenticated/app/notes'
+      path: '/app/notes'
+      fullPath: '/app/notes'
+      preLoaderRoute: typeof AuthenticatedAppNotesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/lab-buddy': {
+      id: '/_authenticated/app/lab-buddy'
+      path: '/app/lab-buddy'
+      fullPath: '/app/lab-buddy'
+      preLoaderRoute: typeof AuthenticatedAppLabBuddyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/extra': {
+      id: '/_authenticated/app/extra'
+      path: '/app/extra'
+      fullPath: '/app/extra'
+      preLoaderRoute: typeof AuthenticatedAppExtraRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/community': {
+      id: '/_authenticated/app/community'
+      path: '/app/community'
+      fullPath: '/app/community'
+      preLoaderRoute: typeof AuthenticatedAppCommunityRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/cia-reminder': {
+      id: '/_authenticated/app/cia-reminder'
+      path: '/app/cia-reminder'
+      fullPath: '/app/cia-reminder'
+      preLoaderRoute: typeof AuthenticatedAppCiaReminderRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/career-roadmap': {
       id: '/_authenticated/app/career-roadmap'
       path: '/app/career-roadmap'
       fullPath: '/app/career-roadmap'
       preLoaderRoute: typeof AuthenticatedAppCareerRoadmapRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/attendance': {
+      id: '/_authenticated/app/attendance'
+      path: '/app/attendance'
+      fullPath: '/app/attendance'
+      preLoaderRoute: typeof AuthenticatedAppAttendanceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/assignments': {
+      id: '/_authenticated/app/assignments'
+      path: '/app/assignments'
+      fullPath: '/app/assignments'
+      preLoaderRoute: typeof AuthenticatedAppAssignmentsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/announcements': {
+      id: '/_authenticated/app/announcements'
+      path: '/app/announcements'
+      fullPath: '/app/announcements'
+      preLoaderRoute: typeof AuthenticatedAppAnnouncementsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/ai-assistant': {
+      id: '/_authenticated/app/ai-assistant'
+      path: '/app/ai-assistant'
+      fullPath: '/app/ai-assistant'
+      preLoaderRoute: typeof AuthenticatedAppAiAssistantRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/$threadId': {
@@ -294,8 +551,21 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPaperSimplifierRoute: typeof AuthenticatedPaperSimplifierRoute
   AuthenticatedStudyPlannerRoute: typeof AuthenticatedStudyPlannerRoute
   AuthenticatedAppThreadIdRoute: typeof AuthenticatedAppThreadIdRoute
+  AuthenticatedAppAiAssistantRoute: typeof AuthenticatedAppAiAssistantRoute
+  AuthenticatedAppAnnouncementsRoute: typeof AuthenticatedAppAnnouncementsRoute
+  AuthenticatedAppAssignmentsRoute: typeof AuthenticatedAppAssignmentsRoute
+  AuthenticatedAppAttendanceRoute: typeof AuthenticatedAppAttendanceRoute
   AuthenticatedAppCareerRoadmapRoute: typeof AuthenticatedAppCareerRoadmapRoute
+  AuthenticatedAppCiaReminderRoute: typeof AuthenticatedAppCiaReminderRoute
+  AuthenticatedAppCommunityRoute: typeof AuthenticatedAppCommunityRoute
+  AuthenticatedAppExtraRoute: typeof AuthenticatedAppExtraRoute
+  AuthenticatedAppLabBuddyRoute: typeof AuthenticatedAppLabBuddyRoute
+  AuthenticatedAppNotesRoute: typeof AuthenticatedAppNotesRoute
+  AuthenticatedAppProfileRoute: typeof AuthenticatedAppProfileRoute
   AuthenticatedAppResumeAnalyzerRoute: typeof AuthenticatedAppResumeAnalyzerRoute
+  AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
+  AuthenticatedAppStudentsRoute: typeof AuthenticatedAppStudentsRoute
+  AuthenticatedAppVivaSimulatorRoute: typeof AuthenticatedAppVivaSimulatorRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
 
@@ -305,8 +575,21 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPaperSimplifierRoute: AuthenticatedPaperSimplifierRoute,
   AuthenticatedStudyPlannerRoute: AuthenticatedStudyPlannerRoute,
   AuthenticatedAppThreadIdRoute: AuthenticatedAppThreadIdRoute,
+  AuthenticatedAppAiAssistantRoute: AuthenticatedAppAiAssistantRoute,
+  AuthenticatedAppAnnouncementsRoute: AuthenticatedAppAnnouncementsRoute,
+  AuthenticatedAppAssignmentsRoute: AuthenticatedAppAssignmentsRoute,
+  AuthenticatedAppAttendanceRoute: AuthenticatedAppAttendanceRoute,
   AuthenticatedAppCareerRoadmapRoute: AuthenticatedAppCareerRoadmapRoute,
+  AuthenticatedAppCiaReminderRoute: AuthenticatedAppCiaReminderRoute,
+  AuthenticatedAppCommunityRoute: AuthenticatedAppCommunityRoute,
+  AuthenticatedAppExtraRoute: AuthenticatedAppExtraRoute,
+  AuthenticatedAppLabBuddyRoute: AuthenticatedAppLabBuddyRoute,
+  AuthenticatedAppNotesRoute: AuthenticatedAppNotesRoute,
+  AuthenticatedAppProfileRoute: AuthenticatedAppProfileRoute,
   AuthenticatedAppResumeAnalyzerRoute: AuthenticatedAppResumeAnalyzerRoute,
+  AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
+  AuthenticatedAppStudentsRoute: AuthenticatedAppStudentsRoute,
+  AuthenticatedAppVivaSimulatorRoute: AuthenticatedAppVivaSimulatorRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
 }
 
