@@ -1,4 +1,6 @@
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
+import { getDb, getSupabaseServerClient } from "@/lib/db.server";
+import crypto from "node:crypto";
 
 export type StudentMetricsRecord = {
     id: string;
@@ -50,67 +52,149 @@ function buildMetricPayload(data: StudentMetricsUpdate): Partial<StudentMetricsR
     } as Partial<StudentMetricsRecord>;
 }
 
+// Helper to run query with SQLite fallback
+async function runWithFallback<T>(
+  supabaseOp: () => Promise<{ data: T | null; error: any }>,
+  sqliteOp: () => T
+): Promise<T> {
+  const supabase = getSupabaseServerClient();
+  if (supabase) {
+    try {
+      const { data, error } = await supabaseOp();
+      if (!error && data !== null) {
+        return data;
+      }
+    } catch (_) {}
+  }
+  return sqliteOp();
+}
+
 export async function getStudentMetrics(userId: string): Promise<StudentMetricsRecord | null> {
-    const { data, error } = await supabaseServer
+  return runWithFallback(
+    async () => {
+      const { data, error } = await supabaseServer
         .from('student_metrics')
         .select('*')
         .eq('user_id', userId)
         .single();
-        
-    if (error && error.code !== 'PGRST116') {
-        console.error("Error fetching metrics:", error);
+      return { data, error };
+    },
+    () => {
+      const db = getDb();
+      const row = db.prepare("SELECT * FROM student_metrics WHERE user_id = ?").get(userId) as any;
+      if (!row) return null;
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        roadmap_progress: row.roadmap_progress,
+        study_consistency: row.study_consistency,
+        notes_coverage: row.notes_coverage,
+        resume_strength: row.resume_strength,
+        placement_readiness: row.placement_readiness,
+        skill_growth: row.skill_growth,
+        success_score: row.success_score,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      } as StudentMetricsRecord;
     }
-    
-    return data as StudentMetricsRecord | null;
+  );
 }
 
 export async function createDefaultMetrics(userId: string): Promise<StudentMetricsRecord> {
     const existing = await getStudentMetrics(userId);
     if (existing) return existing;
 
-    const { data, error } = await supabaseServer
-        .from('student_metrics')
-        .insert([{
-            user_id: userId,
-            ...DEFAULT_STUDENT_METRICS
-        }])
-        .select()
-        .single();
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabaseServer
+          .from('student_metrics')
+          .insert([{
+              user_id: userId,
+              ...DEFAULT_STUDENT_METRICS
+          }])
+          .select()
+          .single();
+        return { data, error };
+      },
+      () => {
+        const db = getDb();
+        const id = crypto.randomUUID();
+        const nowStr = new Date().toISOString();
+        db.prepare(`
+          INSERT INTO student_metrics (
+            id, user_id, roadmap_progress, study_consistency, notes_coverage,
+            resume_strength, placement_readiness, skill_growth, success_score, created_at, updated_at
+          ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?, ?)
+        `).run(id, userId, nowStr, nowStr);
 
-    if (error || !data) {
-        throw new Error("Failed to create default student metrics: " + error?.message);
-    }
-    
-    return data as StudentMetricsRecord;
+        return {
+          id,
+          user_id: userId,
+          roadmap_progress: 0,
+          study_consistency: 0,
+          notes_coverage: 0,
+          resume_strength: 0,
+          placement_readiness: 0,
+          skill_growth: 0,
+          success_score: 0,
+          created_at: nowStr,
+          updated_at: nowStr,
+        } as StudentMetricsRecord;
+      }
+    );
 }
 
 export async function updateStudentMetrics(userId: string, data: StudentMetricsUpdate): Promise<StudentMetricsRecord> {
     const payload = buildMetricPayload(data);
-    if (Object.keys(payload).length === 0) {
-        const existing = await getStudentMetrics(userId);
-        if (!existing) throw new Error("Student metrics not found");
-        return existing;
-    }
-
+    
     // Ensure they exist first
     const existing = await getStudentMetrics(userId);
     if (!existing) {
         await createDefaultMetrics(userId);
     }
 
-    const { data: updated, error } = await supabaseServer
-        .from('student_metrics')
-        .update({
-            ...payload,
-            updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
-        .select()
-        .single();
+    return runWithFallback(
+      async () => {
+        const { data: updated, error } = await supabaseServer
+          .from('student_metrics')
+          .update({
+              ...payload,
+              updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId)
+          .select()
+          .single();
+        return { data: updated, error };
+      },
+      () => {
+        const db = getDb();
+        const nowStr = new Date().toISOString();
+        
+        // Dynamically build the update statement
+        const keys = Object.keys(payload);
+        if (keys.length > 0) {
+          const setClause = keys.map(k => `${k} = ?`).join(", ") + ", updated_at = ?";
+          const values = keys.map(k => (payload as any)[k]);
+          values.push(nowStr);
+          values.push(userId);
+          
+          db.prepare(`UPDATE student_metrics SET ${setClause} WHERE user_id = ?`).run(...values);
+        }
 
-    if (error || !updated) {
-        throw new Error("Failed to update student metrics: " + error?.message);
-    }
-
-    return updated as StudentMetricsRecord;
+        const row = db.prepare("SELECT * FROM student_metrics WHERE user_id = ?").get(userId) as any;
+        return {
+          id: row.id,
+          user_id: row.user_id,
+          roadmap_progress: row.roadmap_progress,
+          study_consistency: row.study_consistency,
+          notes_coverage: row.notes_coverage,
+          resume_strength: row.resume_strength,
+          placement_readiness: row.placement_readiness,
+          skill_growth: row.skill_growth,
+          success_score: row.success_score,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        } as StudentMetricsRecord;
+      }
+    );
 }
