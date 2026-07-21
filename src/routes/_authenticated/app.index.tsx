@@ -26,8 +26,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  Brain
 } from "lucide-react";
+import { triggerCopilot } from "@/hooks/useCopilot";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   component: AppIndex,
@@ -141,31 +143,71 @@ function AppIndex() {
   return (
     <ChatLayout activeThreadId={null}>
       <div className="h-full overflow-y-auto bg-[#F8FAFC] text-slate-900 p-6 md:p-8 scrollbar-thin">
-        {/* Top welcome banner */}
-        <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h1 className="font-display text-3xl font-extrabold text-[#1E3A8A]">
-              Welcome back, {profile?.fullName || "Student"}!
+        {/* Flagship Academic Copilot Hero Section */}
+        <div className="mb-8 rounded-3xl border border-primary/20 bg-card p-6 md:p-8 shadow-md relative overflow-hidden bg-gradient-to-br from-card via-[#1E3A8A]/10 to-card">
+          <div className="absolute top-0 right-0 h-40 w-40 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 h-40 w-40 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          
+          <div className="max-w-3xl">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-semibold text-primary mb-4">
+              <Sparkles className="h-3.5 w-3.5" /> AI Academic Copilot Active
+            </span>
+            
+            <h1 className="font-display text-3xl md:text-4xl font-extrabold text-foreground tracking-tight">
+              Good Morning, {profile?.fullName?.split(" ")[0] || "Yash"}!
             </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Your persistent academic OS dashboard — where placement readiness, learning momentum, and knowledge gaps stay connected.
+            <p className="text-muted-foreground text-sm mt-1 mb-6 font-display">
+              What would you like to achieve today?
             </p>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() => launchChat.mutate()}
-              disabled={launchChat.isPending}
-              className="glow-primary bg-[#2563EB] text-white hover:bg-blue-700"
-            >
-              <MessageSquare className="mr-2 h-4 w-4" /> Start AI Mentoring
-            </Button>
+            {/* Hero AI Input Box */}
+            <div className="relative flex items-center gap-2 rounded-2xl border border-border bg-background/80 p-2 shadow-inner focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/45 transition-all">
+              <Brain className="h-5 w-5 text-primary ml-2 shrink-0 animate-pulse" />
+              <input
+                type="text"
+                placeholder="Ask Copilot anything... (e.g., prepare for DBMS lab, Java study plan, OS help)"
+                className="flex-1 bg-transparent py-2 px-2 text-sm text-foreground placeholder-muted-foreground outline-none border-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                    triggerCopilot(e.currentTarget.value);
+                    e.currentTarget.value = "";
+                  }
+                }}
+              />
+              <button
+                onClick={(e) => {
+                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                  if (inputEl.value.trim()) {
+                    triggerCopilot(inputEl.value);
+                    inputEl.value = "";
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
+              >
+                <span>Ask Copilot</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
 
-            <Button asChild variant="outline" className="border-slate-200 text-slate-700 bg-white">
-              <Link to="/analytics">
-                <LineChart className="mr-2 h-4 w-4 text-[#2563EB]" /> Full Analytics
-              </Link>
-            </Button>
+            {/* Prompt Examples / Chips */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                "Help me prepare for tomorrow's DBMS lab",
+                "Create a study plan for my Java CIA",
+                "Explain recursion like a beginner",
+                "I only have one hour. Make the best study plan.",
+                "Revise OS in 20 minutes",
+                "Test me before my viva",
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => triggerCopilot(p)}
+                  className="rounded-full border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-card transition"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
