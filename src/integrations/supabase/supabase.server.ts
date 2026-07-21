@@ -8,17 +8,18 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error("Missing Supabase variables in .env.local (SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)");
+    console.warn("⚠️ [Supabase Server Warning] Missing Supabase URL or Key. Server operations will fail or fallback to SQLite.");
 }
 
-// Server-side Supabase client using Service Role Key to bypass RLS for internal operations
-// (RLS is enforced manually or via user-forwarded auth depending on context)
-export const supabaseServer = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-    },
-});
+// Server-side Supabase client using Service Role Key (or fallback anon key)
+export const supabaseServer = supabaseUrl && supabaseServiceKey
+    ? createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+        },
+      })
+    : null as any;
