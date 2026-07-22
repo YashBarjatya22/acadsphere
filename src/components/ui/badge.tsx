@@ -4,29 +4,57 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  // Base — Space Mono, uppercase, pill shape, no shadows
+  [
+    "inline-flex items-center",
+    "rounded-full",
+    "font-mono font-normal",
+    "text-[10px] uppercase tracking-[0.1em]",
+    "px-2.5 py-[3px]",
+    "transition-colors duration-[120ms]",
+    "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+    "select-none",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",
+        // Dark fill — primary badge
+        default:
+          "bg-foreground text-background border border-transparent",
+        // Soft gray — secondary badge
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "bg-muted text-muted-foreground border border-border",
+        // Border only — minimal badge
+        outline:
+          "bg-transparent text-foreground border border-border",
+        // Muted cream — softest badge
+        ghost:
+          "bg-transparent text-muted-foreground border-none",
+        // Status: positive (gray-scale, not green)
+        positive:
+          "bg-muted text-foreground border border-border",
+        // Status: warning (gray-scale, not amber)
+        warning:
+          "bg-muted text-muted-foreground border border-border",
+        // Status: destructive (dark, not red)
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
-        outline: "text-foreground",
+          "bg-foreground text-background border border-transparent",
       },
     },
     defaultVariants: {
-      variant: "default",
+      variant: "secondary",
     },
   },
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+  return (
+    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+  );
 }
 
 export { Badge, badgeVariants };

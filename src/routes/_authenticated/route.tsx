@@ -14,12 +14,18 @@ export const Route = createFileRoute("/_authenticated")({
       return { user: { id: userId, email } };
     }
 
-    // 2. Fall back to Supabase session
+    // 2. Fall back to Supabase session (with 2s timeout in case project is paused)
     try {
-      const { data, error } = await supabase.auth.getUser();
-      if (!error && data.user) return { user: data.user };
+      const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
+        setTimeout(() => reject(new Error("Supabase timeout")), 2000)
+      );
+      const { data, error } = await Promise.race([
+        supabase.auth.getUser(),
+        timeoutPromise
+      ]);
+      if (!error && data?.user) return { user: data.user };
     } catch (_) {
-      // Supabase unreachable
+      // Supabase unreachable or timed out
     }
 
     throw redirect({ to: "/auth" });

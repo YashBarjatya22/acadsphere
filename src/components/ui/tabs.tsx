@@ -12,7 +12,10 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+      // Editorial tab list — underline style, no pill background
+      "inline-flex items-center gap-0",
+      "border-b border-border",
+      "text-muted-foreground",
       className,
     )}
     {...props}
@@ -27,7 +30,21 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+      // Space Mono uppercase labels with underline active indicator
+      "relative inline-flex items-center justify-center",
+      "font-mono text-[11px] uppercase tracking-[0.08em]",
+      "px-4 py-3",
+      "cursor-pointer",
+      "whitespace-nowrap",
+      "text-muted-foreground",
+      "transition-colors duration-[120ms] ease-out",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "disabled:pointer-events-none disabled:opacity-40 disabled:cursor-not-allowed",
+      // Active state: black text + bottom border indicator
+      "data-[state=active]:text-foreground",
+      "data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-[1px] data-[state=active]:after:bg-foreground data-[state=active]:after:content-['']",
+      // Hover state
+      "hover:text-foreground",
       className,
     )}
     {...props}
@@ -42,7 +59,9 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "mt-6 ring-offset-background",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "animate-fade-in",
       className,
     )}
     {...props}

@@ -16,17 +16,28 @@ import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="font-display text-7xl font-bold text-gradient">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">That route doesn't exist in StudentOS.</p>
-        <div className="mt-6">
+    <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="max-w-sm text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground mb-6">
+          Error 404
+        </p>
+        <h1
+          className="font-sans font-extrabold text-foreground"
+          style={{ fontSize: "clamp(5rem, 15vw, 8rem)", letterSpacing: "-0.05em", lineHeight: 1 }}
+        >
+          404
+        </h1>
+        <p className="mt-6 text-sm font-sans text-muted-foreground leading-relaxed">
+          This page doesn't exist in AcadSphere.
+          <br />
+          It may have moved or been removed.
+        </p>
+        <div className="mt-8">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-full bg-foreground px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-background transition-opacity duration-[120ms] hover:opacity-80"
           >
-            Back to home
+            Back to Home
           </Link>
         </div>
       </div>
@@ -42,29 +53,32 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+    <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="max-w-sm text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground mb-6">
+          Unexpected Error
+        </p>
+        <h1 className="font-sans font-bold text-2xl tracking-tight text-foreground">
           This page didn't load
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong. Try again or head home.
+        <p className="mt-4 text-sm font-sans text-muted-foreground leading-relaxed">
+          Something went wrong. Check your connection and try again.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-full bg-foreground px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-background transition-opacity duration-[120ms] hover:opacity-80"
           >
-            Try again
+            Try Again
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-full border border-border px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-foreground transition-colors duration-[120ms] hover:bg-accent"
           >
-            Go home
+            Go Home
           </a>
         </div>
       </div>
@@ -77,22 +91,36 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "StudentOS — Your AI Academic Operating System" },
+      { title: "AcadSphere — AI Academic Operating System" },
       {
         name: "description",
         content:
           "An AI-powered academic OS: career roadmaps, study planning, resume scoring, and more for MCA, BCA, and B.Tech students.",
       },
-      { name: "author", content: "StudentOS" },
-      { property: "og:title", content: "StudentOS — Your AI Academic Operating System" },
+      { name: "author", content: "AcadSphere" },
+      { property: "og:title", content: "AcadSphere — AI Academic Operating System" },
       {
         property: "og:description",
-        content: "Mentor, study partner, career advisor, placement coach — in one chat.",
+        content: "Mentor, study partner, career advisor, placement coach — in one platform.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      // Preconnect to Google Fonts and Fontshare
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" as const },
+      { rel: "preconnect", href: "https://api.fontshare.com" },
+      {
+        rel: "stylesheet",
+        href: "https://api.fontshare.com/v2/css?f[]=switzer@100,200,300,400,500,600,700,800,900&display=swap",
+      },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap",
+      },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -102,7 +130,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <HeadContent />
       </head>
@@ -135,7 +163,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthSync />
       <Outlet />
-      <Toaster richColors theme="dark" />
+      <Toaster />
     </QueryClientProvider>
   );
 }
