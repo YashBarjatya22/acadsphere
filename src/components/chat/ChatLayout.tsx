@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+<<<<<<< HEAD
 import {
   Plus, MessageSquare, Trash2, LogOut, Menu,
   LayoutDashboard, BookOpen, Calendar, FileText,
@@ -16,6 +17,14 @@ import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+=======
+import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass, BookOpen, Calendar, Target, LineChart, CheckCircle2, Search, Flame, Sparkles } from "lucide-react";
+import logo from "@/assets/studentos-logo.png";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { AcademicCopilot } from "@/components/chat/AcademicCopilot";
+import { triggerCopilot } from "@/hooks/useCopilot";
+>>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
 
 export function ChatLayout({
   activeThreadId,
@@ -259,6 +268,7 @@ export function ChatLayout({
         </div>
       </aside>
 
+<<<<<<< HEAD
       {/* ─── Main content area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
@@ -444,6 +454,72 @@ export function ChatLayout({
           {children}
         </div>
       </div>
+=======
+      {/* Main */}
+      <main className="relative flex flex-1 flex-col overflow-hidden pb-16 md:pb-0">
+        {/* Desktop Header */}
+        <header className="hidden h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6 md:flex">
+          <div className="flex items-center gap-4 flex-1 max-w-md">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Ask Academic Copilot... (e.g., Explain recursion, DBMS lab, OS weakness)"
+                className="w-full rounded-full border border-border bg-background py-1.5 pl-10 pr-4 text-xs text-foreground placeholder-muted-foreground outline-none ring-primary focus:border-primary focus:ring-1 focus:ring-primary/45"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                    triggerCopilot(e.currentTarget.value);
+                    e.currentTarget.value = "";
+                  }
+                }}
+              />
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="hidden items-center gap-2 rounded-full bg-accent/40 px-3 py-1 text-xs md:flex border border-border/50">
+              <span className="text-muted-foreground text-[10px]">Streak:</span>
+              <span className="flex items-center gap-1 font-bold text-foreground text-[11px]">
+                <Flame className="h-3.5 w-3.5 fill-orange-500 text-orange-500" /> 12 Days
+              </span>
+            </div>
+            <div className="hidden items-center gap-2 rounded-full bg-accent/40 px-3 py-1 text-xs md:flex border border-border/50">
+              <span className="text-muted-foreground text-[10px]">Academic Health:</span>
+              <span className="font-bold text-primary text-[11px]">78/100</span>
+            </div>
+            <Button
+              onClick={() => triggerCopilot("")}
+              variant="outline"
+              className="gap-1.5 border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold"
+              size="sm"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Copilot
+            </Button>
+          </div>
+        </header>
+
+        {/* Mobile Header */}
+        <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4 md:hidden">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setOpen((v) => !v)} className="rounded-md p-2 hover:bg-accent text-foreground">
+              <Menu className="h-4 w-4" />
+            </button>
+            <span className="font-display text-sm font-semibold text-foreground">AcadSphere</span>
+          </div>
+          <button
+            onClick={() => triggerCopilot("")}
+            className="rounded-md p-2 text-primary hover:bg-accent/40"
+          >
+            <Sparkles className="h-4 w-4" />
+          </button>
+        </header>
+        
+        <div className="flex-1 overflow-hidden">{children}</div>
+      </main>
+      
+      {/* Global Academic Copilot */}
+      <AcademicCopilot />
+>>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
     </div>
   );
 }

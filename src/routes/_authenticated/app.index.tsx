@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   MessageSquare,
   RefreshCw,
+<<<<<<< HEAD
   Code,
   Volume2,
   Check,
@@ -53,6 +54,11 @@ import {
   LineChart as RechartsLineChart,
   Line
 } from "recharts";
+=======
+  Brain
+} from "lucide-react";
+import { triggerCopilot } from "@/hooks/useCopilot";
+>>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
 
 export const Route = createFileRoute("/_authenticated/app/")({
   component: AppIndex,
@@ -227,6 +233,7 @@ function AppIndex() {
 
   return (
     <ChatLayout activeThreadId={null}>
+<<<<<<< HEAD
       <div className="h-full overflow-y-auto bg-background text-foreground p-6 md:p-8">
         
         {/* Main Grid: Left Workspace (8/12) & Right AI Panel/Calendar (4/12) */}
@@ -253,6 +260,115 @@ function AppIndex() {
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Today:</span>
                     <span className="font-sans text-[12px] text-foreground">10:00 AM Distributed Systems · 02:00 PM Mock Viva</span>
                   </div>
+=======
+      <div className="h-full overflow-y-auto bg-[#F8FAFC] text-slate-900 p-6 md:p-8 scrollbar-thin">
+        {/* Flagship Academic Copilot Hero Section */}
+        <div className="mb-8 rounded-3xl border border-primary/20 bg-card p-6 md:p-8 shadow-md relative overflow-hidden bg-gradient-to-br from-card via-[#1E3A8A]/10 to-card">
+          <div className="absolute top-0 right-0 h-40 w-40 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 h-40 w-40 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          
+          <div className="max-w-3xl">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-semibold text-primary mb-4">
+              <Sparkles className="h-3.5 w-3.5" /> AI Academic Copilot Active
+            </span>
+            
+            <h1 className="font-display text-3xl md:text-4xl font-extrabold text-foreground tracking-tight">
+              Good Morning, {profile?.fullName?.split(" ")[0] || "Yash"}!
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1 mb-6 font-display">
+              What would you like to achieve today?
+            </p>
+
+            {/* Hero AI Input Box */}
+            <div className="relative flex items-center gap-2 rounded-2xl border border-border bg-background/80 p-2 shadow-inner focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/45 transition-all">
+              <Brain className="h-5 w-5 text-primary ml-2 shrink-0 animate-pulse" />
+              <input
+                type="text"
+                placeholder="Ask Copilot anything... (e.g., prepare for DBMS lab, Java study plan, OS help)"
+                className="flex-1 bg-transparent py-2 px-2 text-sm text-foreground placeholder-muted-foreground outline-none border-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                    triggerCopilot(e.currentTarget.value);
+                    e.currentTarget.value = "";
+                  }
+                }}
+              />
+              <button
+                onClick={(e) => {
+                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                  if (inputEl.value.trim()) {
+                    triggerCopilot(inputEl.value);
+                    inputEl.value = "";
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
+              >
+                <span>Ask Copilot</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Prompt Examples / Chips */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                "Help me prepare for tomorrow's DBMS lab",
+                "Create a study plan for my Java CIA",
+                "Explain recursion like a beginner",
+                "I only have one hour. Make the best study plan.",
+                "Revise OS in 20 minutes",
+                "Test me before my viva",
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => triggerCopilot(p)}
+                  className="rounded-full border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-card transition"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Success score banner */}
+        <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Student Success Score</p>
+              <h2 className="text-4xl font-extrabold text-[#1E3A8A]">{analytics?.studentSuccessScore || Math.round((readiness * 0.6 + (analytics?.roadmap.percentage || 67) * 0.2 + (stats?.studyHoursThisWeek || 12.2) * 1.5) / 2)}%</h2>
+              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+                This score pulls together placement readiness, roadmap progress, exam preparedness, and study momentum to keep your academic journey visible.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold text-slate-600 md:grid-cols-3">
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Profile</div>
+                <div className="text-xl font-bold text-slate-800">{profile?.degree ? "Configured" : "Set up"}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Roadmap</div>
+                <div className="text-xl font-bold text-slate-800">{analytics?.roadmap.percentage || 67}%</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Momentum</div>
+                <div className="text-xl font-bold text-slate-800">{stats?.studyHoursThisWeek || 12.2}h</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-8 grid gap-4 xl:grid-cols-[1.45fr_0.55fr]">
+          <Card className="bg-white border-slate-200/80 shadow-sm">
+            <CardHeader className="pb-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Student Intelligence</span>
+              <h2 className="mt-2 font-display text-xl font-semibold text-slate-900">Recommended next moves</h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Knowledge focus</p>
+                  <p className="mt-2 text-sm text-slate-700">{analytics?.subjectPerformance?.[1]?.name ?? "Operating Systems"} is the next high-impact revision area.</p>
+>>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
                 </div>
 
                 {/* Success ring — monochrome */}
