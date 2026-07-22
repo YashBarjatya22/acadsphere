@@ -91,21 +91,22 @@ function NotesLibraryPage() {
 
   return (
     <ChatLayout activeThreadId={null}>
-      <div className="h-full overflow-y-auto bg-[#0B0F19] text-slate-100 p-6 md:p-8 scrollbar-thin">
+      <div className="h-full overflow-y-auto bg-background text-foreground p-6 md:p-8">
         
         {/* Header section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
-              <Folder className="h-6 w-6 text-indigo-400" /> Study Notes & Slides Library
+            <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground mb-1">Library</p>
+            <h1 className="font-sans font-extrabold text-foreground" style={{ fontSize: "clamp(1.25rem, 2.5vw, 1.75rem)", letterSpacing: "-0.03em" }}>
+              Study Notes &amp; Slides
             </h1>
-            <p className="text-slate-400 text-xs mt-1">
+            <p className="font-sans text-[12px] text-muted-foreground mt-1">
               Browse slides, lecture notes, textbook chapters, and bookmark favorites.
             </p>
           </div>
 
           {canUpload && (
-            <Button onClick={() => setUploadOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8">
+            <Button onClick={() => setUploadOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Upload Note
             </Button>
           )}
@@ -115,10 +116,10 @@ function NotesLibraryPage() {
         <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setSelectedSubId("")}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            className={`px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.08em] border transition-colors duration-[120ms] ${
               selectedSubId === ""
-                ? "bg-indigo-600/30 border-indigo-500 text-indigo-300"
-                : "border-slate-800 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+                ? "bg-foreground text-background border-foreground"
+                : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >
             All Folders
@@ -127,13 +128,13 @@ function NotesLibraryPage() {
             <button
               key={sub.id}
               onClick={() => setSelectedSubId(sub.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.08em] border transition-colors duration-[120ms] flex items-center gap-1.5 ${
                 selectedSubId === sub.id
-                  ? "bg-indigo-600/30 border-indigo-500 text-indigo-300"
-                  : "border-slate-800 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
             >
-              <Folder className="h-3.5 w-3.5" />
+              <Folder className="h-3 w-3" />
               {sub.code}
             </button>
           ))}
@@ -141,12 +142,12 @@ function NotesLibraryPage() {
 
         {/* Search Panel */}
         <div className="relative mb-6">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input 
             placeholder="Search notes, slides or cheat sheets..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 bg-slate-900/40 border-slate-800 text-slate-200 text-xs h-9 placeholder-slate-500 rounded"
+            className="pl-9"
           />
         </div>
 
@@ -156,41 +157,42 @@ function NotesLibraryPage() {
           {/* Notes Card list (Col span 3) */}
           <div className="lg:col-span-3 space-y-4">
             {loadingNotes ? (
-              <div className="py-20 flex justify-center items-center text-slate-400">
-                <RefreshCw className="animate-spin h-5 w-5 mr-1" /> Loading notes vault...
+              <div className="py-20 flex justify-center items-center text-muted-foreground">
+                <RefreshCw className="animate-spin h-4 w-4 mr-2" /> Loading notes vault...
               </div>
             ) : filteredNotes.length === 0 ? (
-              <div className="py-16 text-center text-slate-500 text-xs">No notes matching filter.</div>
+              <div className="py-16 text-center">
+                <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">No notes matching filter.</p>
+              </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 {filteredNotes.map((note) => (
-                  <Card key={note.id} className="bg-slate-900/40 border-slate-800 text-left hover:border-slate-700/80 transition-all flex flex-col justify-between">
+                  <Card key={note.id} className="flex flex-col justify-between hover:bg-accent transition-colors duration-[120ms]">
                     <CardHeader className="pb-2">
                       <div className="flex justify-between items-start">
-                        <span className="px-2 py-0.5 bg-slate-950/20 border border-slate-800/40 text-[9px] font-bold text-slate-400 rounded uppercase font-mono flex items-center gap-1">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-full border border-border bg-background text-muted-foreground flex items-center gap-1">
                           <Tag className="h-2.5 w-2.5" /> {note.category}
                         </span>
                         
                         <button 
                           onClick={() => favMut.mutate(note.id)}
-                          className={`p-1 rounded hover:bg-slate-850 transition-colors ${note.isFavorite ? "text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
+                          className={`p-1 rounded-md transition-colors ${note.isFavorite ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                         >
                           <Star className="h-4 w-4" fill={note.isFavorite ? "currentColor" : "none"} />
                         </button>
                       </div>
-                      <CardTitle className="text-xs font-bold text-slate-200 mt-2">{note.title}</CardTitle>
-                      <CardDescription className="text-[10px] text-slate-500">{note.subjectCode} - {note.subjectName}</CardDescription>
+                      <CardTitle className="font-sans font-semibold text-[13px] text-foreground mt-2">{note.title}</CardTitle>
+                      <CardDescription className="font-mono text-[10px] uppercase tracking-[0.06em]">{note.subjectCode} — {note.subjectName}</CardDescription>
                     </CardHeader>
                     
                     <CardContent className="pt-2">
-                      <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{note.description}</p>
+                      <p className="font-sans text-[12px] text-muted-foreground leading-relaxed mb-4">{note.description}</p>
                       
-                      <div className="flex justify-end pt-2 border-t border-slate-850/60">
+                      <div className="flex justify-end pt-3 border-t border-border">
                         <Button 
                           onClick={() => toast.success(`Simulating download of notes: ${note.fileUrl}`)}
                           size="sm"
                           variant="ghost" 
-                          className="h-7 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-950/20"
                         >
                           <Download className="h-3.5 w-3.5 mr-1" /> Download
                         </Button>
@@ -203,21 +205,21 @@ function NotesLibraryPage() {
           </div>
 
           {/* Right Column: Bookmarks & Recently Viewed */}
-          <div className="space-y-6 text-left">
-            <Card className="bg-slate-900/40 border-slate-800">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Star className="h-4 w-4 text-amber-400 fill-amber-400" /> Bookmarked Materials
+          <div className="space-y-5">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-2">
+                  <Star className="h-3.5 w-3.5" /> Bookmarked
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 {materials.filter(m => m.isFavorite).length === 0 ? (
-                  <div className="text-[10px] text-slate-500">No bookmarks saved yet.</div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground">No bookmarks saved yet.</p>
                 ) : (
                   materials.filter(m => m.isFavorite).map((note) => (
-                    <div key={note.id} className="p-2 border border-slate-850 bg-slate-950/20 rounded flex items-center justify-between">
-                      <span className="text-[11px] text-slate-200 truncate pr-2">{note.title}</span>
-                      <button onClick={() => favMut.mutate(note.id)} className="text-slate-500 hover:text-red-400 p-0.5">
+                    <div key={note.id} className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
+                      <span className="font-sans text-[12px] text-foreground truncate pr-2">{note.title}</span>
+                      <button onClick={() => favMut.mutate(note.id)} className="text-muted-foreground hover:text-foreground transition-colors p-0.5 shrink-0">
                         <X className="h-3 w-3" />
                       </button>
                     </div>
@@ -226,20 +228,20 @@ function NotesLibraryPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-slate-900/40 border-slate-800">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Clock className="h-4 w-4 text-slate-400" /> Recently Downloaded
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5" /> Recently Downloaded
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2.5">
-                <div className="flex gap-2 items-center text-[11px] text-slate-300">
-                  <FileText className="h-3.5 w-3.5 text-blue-400" />
-                  <span className="truncate">DBMS Normalization Notes.pdf</span>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2 items-center">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="font-sans text-[12px] text-foreground truncate">DBMS Normalization Notes.pdf</span>
                 </div>
-                <div className="flex gap-2 items-center text-[11px] text-slate-300">
-                  <FileText className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="truncate">CPU Scheduling Cheat Sheet.pdf</span>
+                <div className="flex gap-2 items-center">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="font-sans text-[12px] text-foreground truncate">CPU Scheduling Cheat Sheet.pdf</span>
                 </div>
               </CardContent>
             </Card>
@@ -249,14 +251,15 @@ function NotesLibraryPage() {
 
         {/* FACULTY UPLOAD NOTE DIALOG MODAL */}
         {uploadOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm grid place-items-center p-4">
-            <Card className="bg-[#0F172A] border-slate-850 w-full max-w-sm shadow-2xl text-left relative">
-              <button onClick={() => setUploadOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
-                <X className="h-4.5 w-4.5" />
+          <div className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm grid place-items-center p-4">
+            <Card className="w-full max-w-sm relative">
+              <button onClick={() => setUploadOpen(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-4 w-4" />
               </button>
               
               <CardHeader>
-                <CardTitle className="text-sm font-semibold text-slate-200">Catalog Study Note / Slide</CardTitle>
+                <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground mb-0.5">Faculty Upload</p>
+                <CardTitle className="font-sans font-semibold text-foreground">Catalog Study Note</CardTitle>
               </CardHeader>
               
               <CardContent className="space-y-4">
@@ -265,49 +268,48 @@ function NotesLibraryPage() {
                   uploadMut.mutate(newNote);
                 }} className="space-y-4">
                   <div>
-                    <label className="text-[11px] font-medium text-slate-400 block mb-1">Subject / Lecture Slot</label>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground block mb-1.5">Subject / Lecture Slot</label>
                     <select
                       value={newNote.subjectId}
                       onChange={(e) => setNewNote({ ...newNote, subjectId: e.target.value })}
-                      className="w-full bg-slate-950/40 border border-slate-850 text-slate-300 text-xs h-8 px-2 rounded focus:outline-none"
+                      className="w-full border border-border bg-background text-foreground font-sans text-[13px] h-9 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-foreground/10"
                       required
                     >
                       <option value="">Select subject...</option>
                       {subjects.map(s => (
-                        <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
+                        <option key={s.id} value={s.id}>{s.code} — {s.name}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-medium text-slate-400 block mb-1">Note Title</label>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground block mb-1.5">Note Title</label>
                     <Input
                       required
                       value={newNote.title}
                       onChange={(e) => setNewNote({ ...newNote, title: e.target.value })}
                       placeholder="e.g. Normalization and BCNF Lecture Slides"
-                      className="bg-slate-950/40 border-slate-850 text-slate-200 text-xs h-8"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-medium text-slate-400 block mb-1">Topic Description</label>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground block mb-1.5">Topic Description</label>
                     <textarea
                       value={newNote.description}
                       onChange={(e) => setNewNote({ ...newNote, description: e.target.value })}
                       placeholder="Provide summaries or chapters covered..."
                       rows={3}
-                      className="w-full p-2 rounded bg-slate-950/40 border border-slate-850 text-slate-200 text-xs focus:outline-none"
+                      className="w-full p-3 rounded-xl border border-border bg-background text-foreground font-sans text-[13px] focus:outline-none focus:ring-2 focus:ring-foreground/10 resize-none"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] font-medium text-slate-400 block mb-1">Category</label>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground block mb-1.5">Category</label>
                       <select
                         value={newNote.category}
                         onChange={(e) => setNewNote({ ...newNote, category: e.target.value })}
-                        className="w-full bg-slate-950/40 border border-slate-850 text-slate-300 text-xs h-8 px-2 rounded focus:outline-none"
+                        className="w-full border border-border bg-background text-foreground font-sans text-[13px] h-9 px-3 rounded-xl focus:outline-none"
                       >
                         <option value="Lecture Slides">Lecture Slides</option>
                         <option value="Cheat Sheets">Cheat Sheets</option>
@@ -316,22 +318,21 @@ function NotesLibraryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[11px] font-medium text-slate-400 block mb-1">File Name</label>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground block mb-1.5">File Name</label>
                       <Input
                         required
                         value={newNote.fileUrl}
                         onChange={(e) => setNewNote({ ...newNote, fileUrl: e.target.value })}
-                        placeholder="e.g. normal_form_slides.pdf"
-                        className="bg-slate-950/40 border-slate-850 text-slate-200 text-xs h-8"
+                        placeholder="normal_form_slides.pdf"
                       />
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-2">
-                    <Button type="submit" disabled={uploadMut.isPending} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8">
+                  <div className="flex gap-2 pt-1">
+                    <Button type="submit" disabled={uploadMut.isPending} className="flex-1">
                       {uploadMut.isPending ? "Uploading..." : "Save Material"}
                     </Button>
-                    <Button type="button" onClick={() => setUploadOpen(false)} variant="outline" className="border-slate-800 text-slate-400 text-xs h-8">
+                    <Button type="button" onClick={() => setUploadOpen(false)} variant="outline" className="flex-1">
                       Cancel
                     </Button>
                   </div>

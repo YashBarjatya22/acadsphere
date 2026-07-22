@@ -5,12 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { 
-  Plus, MessageSquare, Trash2, LogOut, Menu, 
-  LayoutDashboard, BookOpen, Calendar, FileText, 
+import {
+  Plus, MessageSquare, Trash2, LogOut, Menu,
+  LayoutDashboard, BookOpen, Calendar, FileText,
   LineChart, CheckCircle2, Search, Bell, Sparkles,
   User, Settings, Code, Volume2, CalendarDays,
-  Users, Sun, Moon, X, Inbox
+  Users, Sun, Moon, X
 } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ export function ChatLayout({
   const [searchQuery, setSearchQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
 
   const listFn = useServerFn(listThreads);
   const createFn = useServerFn(createThread);
@@ -44,12 +44,12 @@ export function ChatLayout({
   // Sync theme
   useEffect(() => {
     const theme = localStorage.getItem("theme");
-    if (theme === "light") {
-      document.documentElement.classList.remove("dark");
-      setIsDark(false);
-    } else {
+    if (theme === "dark") {
       document.documentElement.classList.add("dark");
       setIsDark(true);
+    } else {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
     }
   }, []);
 
@@ -59,11 +59,9 @@ export function ChatLayout({
     if (nextDark) {
       document.documentElement.classList.add("dark");
       localStorage.setItem("theme", "dark");
-      toast.success("Theme changed to Dark");
     } else {
       document.documentElement.classList.remove("dark");
       localStorage.setItem("theme", "light");
-      toast.success("Theme changed to Light");
     }
   };
 
@@ -85,75 +83,80 @@ export function ChatLayout({
   });
 
   async function handleSignOut() {
-    // Clear demo session
     localStorage.removeItem("demo_session_token");
     localStorage.removeItem("demo_user_id");
     localStorage.removeItem("demo_user_email");
-    // Clear Supabase session
-    try { await supabase.auth.signOut(); } catch (_) {}
-    toast.success("Signed out successfully");
+    // Fire and forget so we don't block on a paused Supabase project
+    supabase.auth.signOut().catch(() => {});
+    toast.success("Signed out");
     navigate({ to: "/" });
   }
 
-
-  // Sidebar Links
   const navItems = [
-    { label: "Dashboard", to: "/app", icon: LayoutDashboard },
-    { label: "AI Study Assistant", to: "/app/ai-assistant", icon: Sparkles },
-    { label: "Smart Notes", to: "/app/notes", icon: BookOpen },
-    { label: "Study Planner", to: "/study-planner", icon: Calendar },
-    { label: "Lab Buddy", to: "/app/lab-buddy", icon: Code },
-    { label: "Viva Simulator", to: "/app/viva-simulator", icon: Volume2 },
-    { label: "Resume Builder", to: "/app/resume-analyzer", icon: FileText },
-    { label: "Placement Hub", to: "/analytics", icon: LineChart },
-    { label: "CIA Reminder", to: "/app/cia-reminder", icon: CalendarDays },
-    { label: "Attendance Tracker", to: "/app/attendance", icon: CheckCircle2 },
-    { label: "Community", to: "/app/community", icon: Users },
-    { label: "Profile", to: "/app/profile", icon: User },
-    { label: "Settings", to: "/app/settings", icon: Settings },
+    { label: "Dashboard",         to: "/app",                    icon: LayoutDashboard },
+    { label: "AI Assistant",       to: "/app/ai-assistant",       icon: Sparkles },
+    { label: "Smart Notes",        to: "/app/notes",              icon: BookOpen },
+    { label: "Study Planner",      to: "/study-planner",          icon: Calendar },
+    { label: "Lab Buddy",          to: "/app/lab-buddy",          icon: Code },
+    { label: "Viva Simulator",     to: "/app/viva-simulator",     icon: Volume2 },
+    { label: "Resume Builder",     to: "/app/resume-analyzer",    icon: FileText },
+    { label: "Placement Hub",      to: "/analytics",              icon: LineChart },
+    { label: "CIA Reminder",       to: "/app/cia-reminder",       icon: CalendarDays },
+    { label: "Attendance",         to: "/app/attendance",         icon: CheckCircle2 },
+    { label: "Community",          to: "/app/community",          icon: Users },
+    { label: "Profile",            to: "/app/profile",            icon: User },
+    { label: "Settings",           to: "/app/settings",           icon: Settings },
   ];
 
   return (
-    <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
-      
-      {/* Sidebar overlay for mobile */}
+    <div className="flex h-screen bg-background text-foreground">
+
+      {/* Mobile overlay */}
       {open && (
-        <div 
-          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm md:hidden"
+        <div
+          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* ─── Sidebar ─────────────────────────────────────────── */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out md:static md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col",
+          "border-r border-border bg-sidebar",
+          "transition-transform duration-200 ease-out",
+          "md:static md:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Sidebar Header */}
-        <div className="flex h-16 items-center justify-between px-6 border-b border-border">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="relative flex items-center justify-center p-0.5 rounded-xl bg-gradient-to-tr from-blue-600 via-teal-400 to-indigo-600 shadow-md shadow-blue-500/25 group-hover:scale-105 transition-transform duration-300">
-              <img src={logo} alt="AcadSphere" className="h-8.5 w-8.5 rounded-[10px] relative bg-background p-1" />
+        {/* Logo header */}
+        <div className="flex h-14 items-center justify-between px-5 border-b border-border shrink-0">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-foreground overflow-hidden">
+              <img
+                src={logo}
+                alt="AcadSphere"
+                className="h-5 w-5 object-contain invert dark:invert-0"
+              />
             </div>
-            <span className="text-xl font-black tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-teal-500 bg-clip-text text-transparent">
+            <span className="font-sans font-bold text-sm tracking-tight text-foreground">
               AcadSphere
             </span>
           </Link>
-          <button 
-            onClick={() => setOpen(false)} 
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms] md:hidden"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        {/* Navigation items */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin">
-          <div className="px-2 mb-2 text-xs font-semibold text-muted-foreground tracking-wider uppercase">
-            Platform Modules
-          </div>
+        {/* Navigation */}
+        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+          {/* Section label */}
+          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground px-2 mb-3">
+            Modules
+          </p>
 
           <nav className="space-y-0.5">
             {navItems.map((item) => {
@@ -163,61 +166,63 @@ export function ChatLayout({
                   key={item.label}
                   to={item.to}
                   onClick={() => setOpen(false)}
-                  activeProps={{ className: "bg-primary text-white font-medium shadow-sm shadow-blue-500/10" }}
-                  inactiveProps={{ className: "text-muted-foreground hover:text-foreground hover:bg-muted/80" }}
-                  className="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all duration-150 group"
+                  activeProps={{
+                    className: "bg-foreground text-background",
+                  }}
+                  inactiveProps={{
+                    className: "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  }}
+                  className="flex items-center gap-2.5 px-2.5 py-2 text-[13px] font-sans rounded-lg transition-colors duration-[120ms] group"
                 >
-                  <Icon className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
 
-          {/* AI Conversations List */}
-          <div className="mt-8">
+          {/* AI Mentoring threads */}
+          <div className="mt-6 pt-4 border-t border-border">
             <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">
+              <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
                 AI Mentoring
-              </span>
-              <button 
-                onClick={() => create.mutate()} 
+              </p>
+              <button
+                onClick={() => create.mutate()}
                 disabled={create.isPending}
-                className="text-xs text-primary hover:text-blue-700 flex items-center gap-1 font-medium transition-colors"
+                className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors duration-[120ms]"
                 title="New AI Chat"
               >
-                <Plus className="h-3.5 w-3.5" /> New
+                <Plus className="h-3 w-3" /> New
               </button>
             </div>
 
             {threads.length === 0 ? (
-              <div className="px-2 py-3 text-xs text-muted-foreground italic bg-muted/40 rounded-lg text-center">
-                No active mentoring chats.
-              </div>
+              <p className="px-2 py-2 text-[11px] font-mono text-muted-foreground">
+                No active threads.
+              </p>
             ) : (
-              <ul className="space-y-0.5 max-h-[160px] overflow-y-auto scrollbar-thin">
+              <ul className="space-y-0.5 max-h-40 overflow-y-auto">
                 {threads.map((t: { id: string; title: string }) => {
                   const active = t.id === activeThreadId;
                   return (
-                    <li key={t.id} className="group flex items-center gap-0.5 rounded-lg hover:bg-muted/50">
+                    <li key={t.id} className="group flex items-center gap-0.5 rounded-lg hover:bg-accent">
                       <Link
                         to="/app/$threadId"
                         params={{ threadId: t.id }}
                         onClick={() => setOpen(false)}
                         className={cn(
-                          "flex flex-1 items-center gap-2 truncate px-2.5 py-1.5 text-xs transition-colors",
-                          active
-                            ? "font-semibold text-primary"
-                            : "text-muted-foreground hover:text-foreground",
+                          "flex flex-1 items-center gap-2 truncate px-2.5 py-1.5 text-[12px] transition-colors duration-[120ms]",
+                          active ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
                         <span className="truncate">{t.title}</span>
                       </Link>
                       <button
                         onClick={() => del.mutate(t.id)}
                         aria-label="Delete chat"
-                        className="invisible mr-1 grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:visible transition-all"
+                        className="invisible mr-1.5 grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground group-hover:visible transition-all duration-[120ms]"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -229,118 +234,141 @@ export function ChatLayout({
           </div>
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="border-t border-border p-4 bg-muted/20">
+        {/* Sidebar footer */}
+        <div className="border-t border-border p-3 shrink-0">
           <div className="flex items-center justify-between">
             <button
               onClick={toggleTheme}
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-full transition-colors duration-[120ms]"
+              title={isDark ? "Light mode" : "Dark mode"}
             >
-              {isDark ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4" />}
+              {isDark
+                ? <Sun className="h-4 w-4" />
+                : <Moon className="h-4 w-4" />
+              }
             </button>
 
             <button
               onClick={handleSignOut}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground hover:bg-accent rounded-full transition-colors duration-[120ms]"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span>Sign Out</span>
+              Sign Out
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* ─── Main content area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
-        {/* Top Navigation Header */}
-        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6 shrink-0 relative z-10">
-          
-          {/* Left: Mobile Menu Toggle & Title */}
+
+        {/* Top header */}
+        <header className="flex h-14 items-center justify-between border-b border-border bg-background px-5 shrink-0 relative z-10">
+
+          {/* Left */}
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setOpen(true)} 
-              className="rounded-lg p-2 text-muted-foreground hover:bg-muted md:hidden"
+            <button
+              onClick={() => setOpen(true)}
+              className="rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms] md:hidden"
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-4.5 w-4.5" />
             </button>
             <div className="hidden md:flex items-center gap-2">
-              <span className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Workspace</span>
-              <span className="text-muted-foreground/30">/</span>
-              <span className="text-sm font-medium text-foreground">AcadSphere Hub</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                Workspace
+              </span>
+              <span className="text-border">/</span>
+              <span className="font-sans text-[13px] font-medium text-foreground">
+                AcadSphere Hub
+              </span>
             </div>
           </div>
 
-          {/* Center: Command Center Style Search Bar */}
-          <div className="flex-1 max-w-md mx-4 relative hidden sm:block">
+          {/* Center: search */}
+          <div className="flex-1 max-w-sm mx-4 hidden sm:block">
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search resources, templates, or ask AI..."
+                placeholder="Search or ask anything..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-1.5 text-xs rounded-full border border-border bg-muted/40 text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-150"
+                className={cn(
+                  "w-full pl-9 pr-4 py-2",
+                  "text-[12px] font-sans",
+                  "rounded-full border border-border bg-muted/60 text-foreground",
+                  "placeholder:text-muted-foreground",
+                  "focus:outline-none focus:ring-2 focus:ring-ring focus:border-foreground",
+                  "transition-[border-color,box-shadow] duration-[120ms]",
+                )}
               />
             </div>
           </div>
 
-          {/* Right: Actions, Notifications, Profile */}
-          <div className="flex items-center gap-3">
-            
-            {/* Quick AI Button */}
+          {/* Right: actions */}
+          <div className="flex items-center gap-2">
+
+            {/* Ask AI */}
             <Button
-              onClick={() => {
-                create.mutate();
-              }}
+              onClick={() => create.mutate()}
               size="sm"
-              className="h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/10 transition-all duration-150"
+              className="h-8 px-4 text-[10px]"
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span className="hidden md:inline">Ask AI</span>
             </Button>
 
-            {/* Theme Toggle Button */}
+            {/* Theme toggle */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
-              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              className="p-2 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms]"
+              title={isDark ? "Light mode" : "Dark mode"}
             >
-              {isDark ? <Sun className="h-4.5 w-4.5 text-amber-500" /> : <Moon className="h-4.5 w-4.5" />}
+              {isDark
+                ? <Sun className="h-4 w-4" />
+                : <Moon className="h-4 w-4" />
+              }
             </button>
 
-            {/* Notifications Button */}
+            {/* Notifications */}
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-all relative"
+                className="relative p-2 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms]"
               >
-                <Bell className="h-4.5 w-4.5" />
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-emerald-500 rounded-full" />
+                <Bell className="h-4 w-4" />
+                <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-foreground" />
               </button>
 
               {showNotifications && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
-                  <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-card p-4 shadow-xl z-50 animate-in fade-in-50 slide-in-from-top-2 duration-150">
-                    <div className="flex items-center justify-between border-b border-border pb-2 mb-3">
-                      <h4 className="font-semibold text-xs text-foreground uppercase tracking-wider">Notifications</h4>
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-medium">New Alerts</span>
+                  <div className={cn(
+                    "absolute right-0 top-full mt-2 w-76 z-50",
+                    "rounded-xl border border-border bg-popover p-5",
+                    "shadow-none animate-slide-up",
+                  )}>
+                    <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-foreground">
+                        Notifications
+                      </p>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                        2 new
+                      </span>
                     </div>
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-2.5 text-xs pb-2 border-b border-border/40">
-                        <div className="h-2 w-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-foreground shrink-0" />
                         <div>
-                          <p className="font-medium text-foreground">CIA-1 Syllabus Update</p>
-                          <p className="text-[10px] text-muted-foreground">Distributed Systems: Units 1 & 2 are finalized.</p>
+                          <p className="text-[13px] font-sans font-medium text-foreground">CIA-1 Syllabus Update</p>
+                          <p className="text-[11px] font-sans text-muted-foreground mt-0.5">Distributed Systems: Units 1 & 2 are finalized.</p>
                         </div>
                       </div>
-                      <div className="flex items-start gap-2.5 text-xs">
-                        <div className="h-2 w-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground shrink-0" />
                         <div>
-                          <p className="font-medium text-foreground">Viva prep suggested</p>
-                          <p className="text-[10px] text-muted-foreground">Practice round open for Computer Networks.</p>
+                          <p className="text-[13px] font-sans font-medium text-foreground">Viva prep suggested</p>
+                          <p className="text-[11px] font-sans text-muted-foreground mt-0.5">Practice round open for Computer Networks.</p>
                         </div>
                       </div>
                     </div>
@@ -349,54 +377,58 @@ export function ChatLayout({
               )}
             </div>
 
-            {/* Profile Avatar */}
+            {/* Profile */}
             <div className="relative">
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-muted transition-all"
+                className="flex items-center p-1 rounded-full hover:bg-accent transition-colors duration-[120ms]"
               >
-                <Avatar className="h-7 w-7 border border-border">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">AS</AvatarFallback>
+                <Avatar className="h-7 w-7">
+                  <AvatarImage src="" />
+                  <AvatarFallback>AS</AvatarFallback>
                 </Avatar>
               </button>
 
               {showProfileMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
-                  <div className="absolute right-0 mt-2 w-48 rounded-xl border border-border bg-card py-1.5 shadow-xl z-50 animate-in fade-in-50 slide-in-from-top-2 duration-150">
-                    <div className="px-4 py-2 border-b border-border">
-                      <p className="text-xs font-semibold text-foreground">AcadSphere Student</p>
-                      <p className="text-[10px] text-muted-foreground truncate">student@acadsphere.edu</p>
+                  <div className={cn(
+                    "absolute right-0 top-full mt-2 w-48 z-50",
+                    "rounded-xl border border-border bg-popover py-2",
+                    "shadow-none animate-slide-up",
+                  )}>
+                    <div className="px-4 py-2 border-b border-border mb-1">
+                      <p className="font-sans text-[13px] font-semibold text-foreground">AcadSphere</p>
+                      <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em] truncate mt-0.5">
+                        student@acadsphere.edu
+                      </p>
                     </div>
-                    
+
                     <Link
                       to="/app/profile"
                       onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                      className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]"
                     >
                       <User className="h-3.5 w-3.5" />
-                      <span>My Profile</span>
+                      My Profile
                     </Link>
 
                     <Link
                       to="/app/settings"
                       onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                      className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]"
                     >
                       <Settings className="h-3.5 w-3.5" />
-                      <span>Settings</span>
+                      Settings
                     </Link>
 
-                    <div className="border-t border-border mt-1.5 pt-1.5">
+                    <div className="border-t border-border mt-1 pt-1">
                       <button
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          handleSignOut();
-                        }}
-                        className="flex items-center gap-2 w-full text-left px-4 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                        onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                        className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]"
                       >
                         <LogOut className="h-3.5 w-3.5" />
-                        <span>Sign Out</span>
+                        Sign Out
                       </button>
                     </div>
                   </div>
@@ -407,7 +439,7 @@ export function ChatLayout({
           </div>
         </header>
 
-        {/* Content Wrapper */}
+        {/* Content */}
         <div className="flex-1 overflow-hidden">
           {children}
         </div>
