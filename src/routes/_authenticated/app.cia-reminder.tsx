@@ -24,9 +24,10 @@ interface Exam {
 const STORAGE_KEY = "acadsphere_cia_exams";
 
 const defaultExams: Exam[] = [
-  { id: "1", subject: "Database Management Systems (DBMS)", date: "2026-07-15", syllabus: "Units 1 & 2 — ER Models, Relational Algebra, SQL", reminderSet: true, type: "CIA-1" },
-  { id: "2", subject: "Distributed Systems (DS)", date: "2026-07-16", syllabus: "Units 1–3 — Message Passing, Clock Sync, Consensus", reminderSet: false, type: "CIA-1" },
-  { id: "3", subject: "Computer Networks (CN)", date: "2026-07-18", syllabus: "Units 1 & 2 — OSI Model, Routing Protocols, IP Subnets", reminderSet: true, type: "CIA-1" },
+  { id: "1", subject: "Database Management Systems (DBMS)", date: "2026-07-28", syllabus: "Units 1 & 2 — ER Models, Relational Algebra, BCNF", reminderSet: true, type: "CIA-2" },
+  { id: "2", subject: "Operating Systems (OS)", date: "2026-07-30", syllabus: "Units 1–3 — Deadlocks, Banker's Algorithm, Semaphores", reminderSet: true, type: "CIA-2" },
+  { id: "3", subject: "Computer Networks (CN)", date: "2026-08-02", syllabus: "Units 1 & 2 — TCP 3-Way Handshake, Subnetting, IPv6", reminderSet: true, type: "CIA-2" },
+  { id: "4", subject: "Artificial Intelligence (AI)", date: "2026-08-06", syllabus: "Units 1–3 — Minimax Algorithm, A* Search, Loss Functions", reminderSet: true, type: "Model" },
 ];
 
 function getDaysUntil(dateStr: string): number {

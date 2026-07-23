@@ -17,27 +17,39 @@ import { Toaster } from "@/components/ui/sonner";
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
-      <div className="max-w-sm text-center">
+      <div className="max-w-md text-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground mb-6">
-          Error 404
+          Error 404 · Page Not Found
         </p>
         <h1
           className="font-sans font-extrabold text-foreground"
-          style={{ fontSize: "clamp(5rem, 15vw, 8rem)", letterSpacing: "-0.05em", lineHeight: 1 }}
+          style={{ fontSize: "clamp(4rem, 12vw, 6rem)", letterSpacing: "-0.05em", lineHeight: 1 }}
         >
           404
         </h1>
         <p className="mt-6 text-sm font-sans text-muted-foreground leading-relaxed">
-          This page doesn't exist in AcadSphere.
+          The page you requested does not exist or has been updated.
           <br />
-          It may have moved or been removed.
+          Choose an option below to return to AcadSphere:
         </p>
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            to="/app"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 font-sans text-xs font-bold text-primary-foreground shadow-md transition-opacity hover:opacity-90"
+          >
+            Go to Student Dashboard
+          </Link>
+          <Link
+            to="/app/attendance"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-5 py-2.5 font-sans text-xs font-bold text-foreground transition-colors hover:bg-accent"
+          >
+            Attendance Engine
+          </Link>
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-full bg-foreground px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-background transition-opacity duration-[120ms] hover:opacity-80"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-muted/50 px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
           >
-            Back to Home
+            Home
           </Link>
         </div>
       </div>
@@ -54,31 +66,36 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
-      <div className="max-w-sm text-center">
-        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground mb-6">
-          Unexpected Error
+      <div className="max-w-md text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-red-500 mb-4 font-bold">
+          System Recovery Boundary
         </p>
-        <h1 className="font-sans font-bold text-2xl tracking-tight text-foreground">
-          This page didn't load
+        <h1 className="font-sans font-extrabold text-2xl tracking-tight text-foreground">
+          Temporary Loading Disruption
         </h1>
-        <p className="mt-4 text-sm font-sans text-muted-foreground leading-relaxed">
-          Something went wrong. Check your connection and try again.
+        <p className="mt-3 text-sm font-sans text-muted-foreground leading-relaxed">
+          {error?.message || "An unexpected error occurred while loading this view."}
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button
             onClick={() => {
-              router.invalidate();
-              reset();
+              window.location.reload();
             }}
-            className="inline-flex items-center justify-center rounded-full bg-foreground px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-background transition-opacity duration-[120ms] hover:opacity-80"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-6 py-2.5 font-sans text-xs font-bold text-primary-foreground shadow-md transition-opacity hover:opacity-90 cursor-pointer"
           >
-            Try Again
+            Reload Page
           </button>
           <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-full border border-border px-7 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-foreground transition-colors duration-[120ms] hover:bg-accent"
+            href="/app"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-5 py-2.5 font-sans text-xs font-bold text-foreground transition-colors hover:bg-accent"
           >
-            Go Home
+            Go to Student Dashboard
+          </a>
+          <a
+            href="/app/attendance"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-muted/50 px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          >
+            Attendance Engine
           </a>
         </div>
       </div>

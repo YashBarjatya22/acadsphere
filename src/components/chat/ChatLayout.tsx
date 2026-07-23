@@ -5,26 +5,18 @@ import { useServerFn } from "@tanstack/react-start";
 import { listThreads, createThread, deleteThread } from "@/lib/chat.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-<<<<<<< HEAD
 import {
   Plus, MessageSquare, Trash2, LogOut, Menu,
   LayoutDashboard, BookOpen, Calendar, FileText,
   LineChart, CheckCircle2, Search, Bell, Sparkles,
   User, Settings, Code, Volume2, CalendarDays,
-  Users, Sun, Moon, X
+  Users, Sun, Moon, X, Activity, GraduationCap,
+  UserCog, Shield, Radio, Megaphone, TrendingUp, ScrollText, Lock
 } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-=======
-import { Plus, MessageSquare, Trash2, LogOut, Menu, FileCheck2, Compass, BookOpen, Calendar, Target, LineChart, CheckCircle2, Search, Flame, Sparkles } from "lucide-react";
-import logo from "@/assets/studentos-logo.png";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import { AcademicCopilot } from "@/components/chat/AcademicCopilot";
-import { triggerCopilot } from "@/hooks/useCopilot";
->>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
 
 export function ChatLayout({
   activeThreadId,
@@ -49,6 +41,11 @@ export function ChatLayout({
     queryKey: ["threads"],
     queryFn: () => listFn(),
   });
+
+  const userRole = typeof window !== "undefined"
+    ? (localStorage.getItem("demo_user_role") || "student")
+    : "student";
+  const isAdmin = userRole === "admin";
 
   // Sync theme
   useEffect(() => {
@@ -95,27 +92,42 @@ export function ChatLayout({
     localStorage.removeItem("demo_session_token");
     localStorage.removeItem("demo_user_id");
     localStorage.removeItem("demo_user_email");
-    // Fire and forget so we don't block on a paused Supabase project
+    localStorage.removeItem("demo_user_role");
     supabase.auth.signOut().catch(() => {});
     toast.success("Signed out");
     navigate({ to: "/" });
   }
 
-  const navItems = [
+  // Student navigation items
+  const studentNavItems = [
     { label: "Dashboard",         to: "/app",                    icon: LayoutDashboard },
     { label: "AI Assistant",       to: "/app/ai-assistant",       icon: Sparkles },
     { label: "Smart Notes",        to: "/app/notes",              icon: BookOpen },
-    { label: "Study Planner",      to: "/study-planner",          icon: Calendar },
-    { label: "Lab Buddy",          to: "/app/lab-buddy",          icon: Code },
-    { label: "Viva Simulator",     to: "/app/viva-simulator",     icon: Volume2 },
+    { label: "Lab Helper",         to: "/app/lab-buddy",          icon: Code },
     { label: "Resume Builder",     to: "/app/resume-analyzer",    icon: FileText },
-    { label: "Placement Hub",      to: "/analytics",              icon: LineChart },
     { label: "CIA Reminder",       to: "/app/cia-reminder",       icon: CalendarDays },
     { label: "Attendance",         to: "/app/attendance",         icon: CheckCircle2 },
     { label: "Community",          to: "/app/community",          icon: Users },
     { label: "Profile",            to: "/app/profile",            icon: User },
     { label: "Settings",           to: "/app/settings",           icon: Settings },
   ];
+
+  // Administrator navigation items: NO student modules, NO student dashboard
+  const adminNavItems = [
+    { label: "Admin Command Center", to: "/admin font-bold",       icon: LayoutDashboard },
+    { label: "Student Monitoring",   to: "/admin/live-activity",   icon: Activity },
+    { label: "Student Management",   to: "/admin/students",        icon: GraduationCap },
+    { label: "Live Activity",       to: "/admin/live-activity",   icon: Radio },
+    { label: "Analytics",            to: "/admin/analytics",       icon: TrendingUp },
+    { label: "Announcements",        to: "/admin/announcements",   icon: Megaphone },
+    { label: "Reports",              to: "/admin/reports",         icon: FileText },
+    { label: "User & Role Management", to: "/admin/users",         icon: UserCog },
+    { label: "Audit Logs",          to: "/admin/audit-logs",      icon: ScrollText },
+    { label: "Security",             to: "/admin/security",        icon: Lock },
+    { label: "Settings",             to: "/admin/settings",        icon: Settings },
+  ];
+
+  const navItems = isAdmin ? adminNavItems : studentNavItems;
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -140,7 +152,7 @@ export function ChatLayout({
       >
         {/* Logo header */}
         <div className="flex h-14 items-center justify-between px-5 border-b border-border shrink-0">
-          <Link to="/" className="flex items-center gap-2.5 group">
+          <Link to={isAdmin ? "/admin" : "/"} className="flex items-center gap-2.5 group">
             <div className="flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-foreground overflow-hidden">
               <img
                 src={logo}
@@ -149,7 +161,7 @@ export function ChatLayout({
               />
             </div>
             <span className="font-sans font-bold text-sm tracking-tight text-foreground">
-              AcadSphere
+              AcadSphere {isAdmin && <span className="text-[10px] text-blue-500 font-mono">(Admin)</span>}
             </span>
           </Link>
           <button
@@ -161,22 +173,21 @@ export function ChatLayout({
         </div>
 
         {/* Navigation */}
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-          {/* Section label */}
+        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5 scrollbar-thin">
           <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground px-2 mb-3">
-            Modules
+            {isAdmin ? "Admin SIS Monitoring" : "Modules"}
           </p>
 
           <nav className="space-y-0.5">
-            {navItems.map((item) => {
+            {navItems.map((item, idx) => {
               const Icon = item.icon;
               return (
                 <Link
-                  key={item.label}
-                  to={item.to}
+                  key={item.label + idx}
+                  to={item.to.split(" ")[0]}
                   onClick={() => setOpen(false)}
                   activeProps={{
-                    className: "bg-foreground text-background",
+                    className: "bg-foreground text-background font-bold",
                   }}
                   inactiveProps={{
                     className: "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -189,58 +200,6 @@ export function ChatLayout({
               );
             })}
           </nav>
-
-          {/* AI Mentoring threads */}
-          <div className="mt-6 pt-4 border-t border-border">
-            <div className="flex items-center justify-between px-2 mb-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                AI Mentoring
-              </p>
-              <button
-                onClick={() => create.mutate()}
-                disabled={create.isPending}
-                className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors duration-[120ms]"
-                title="New AI Chat"
-              >
-                <Plus className="h-3 w-3" /> New
-              </button>
-            </div>
-
-            {threads.length === 0 ? (
-              <p className="px-2 py-2 text-[11px] font-mono text-muted-foreground">
-                No active threads.
-              </p>
-            ) : (
-              <ul className="space-y-0.5 max-h-40 overflow-y-auto">
-                {threads.map((t: { id: string; title: string }) => {
-                  const active = t.id === activeThreadId;
-                  return (
-                    <li key={t.id} className="group flex items-center gap-0.5 rounded-lg hover:bg-accent">
-                      <Link
-                        to="/app/$threadId"
-                        params={{ threadId: t.id }}
-                        onClick={() => setOpen(false)}
-                        className={cn(
-                          "flex flex-1 items-center gap-2 truncate px-2.5 py-1.5 text-[12px] transition-colors duration-[120ms]",
-                          active ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                        <span className="truncate">{t.title}</span>
-                      </Link>
-                      <button
-                        onClick={() => del.mutate(t.id)}
-                        aria-label="Delete chat"
-                        className="invisible mr-1.5 grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground group-hover:visible transition-all duration-[120ms]"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
         </div>
 
         {/* Sidebar footer */}
@@ -268,7 +227,6 @@ export function ChatLayout({
         </div>
       </aside>
 
-<<<<<<< HEAD
       {/* ─── Main content area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
@@ -289,7 +247,7 @@ export function ChatLayout({
               </span>
               <span className="text-border">/</span>
               <span className="font-sans text-[13px] font-medium text-foreground">
-                AcadSphere Hub
+                {isAdmin ? "Admin SIS Monitoring Center" : "AcadSphere Hub"}
               </span>
             </div>
           </div>
@@ -300,7 +258,7 @@ export function ChatLayout({
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search or ask anything..."
+                placeholder={isAdmin ? "Search students, USNs, or audit logs..." : "Search or ask anything..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={cn(
@@ -318,15 +276,25 @@ export function ChatLayout({
           {/* Right: actions */}
           <div className="flex items-center gap-2">
 
-            {/* Ask AI */}
-            <Button
-              onClick={() => create.mutate()}
-              size="sm"
-              className="h-8 px-4 text-[10px]"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Ask AI</span>
-            </Button>
+            {!isAdmin ? (
+              <Button
+                onClick={() => create.mutate()}
+                size="sm"
+                className="h-8 px-4 text-[10px]"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Ask AI</span>
+              </Button>
+            ) : (
+              <Button
+                onClick={() => navigate({ to: "/admin/students" })}
+                size="sm"
+                className="h-8 px-4 text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold"
+              >
+                <GraduationCap className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Manage Students</span>
+              </Button>
+            )}
 
             {/* Theme toggle */}
             <button
@@ -340,53 +308,6 @@ export function ChatLayout({
               }
             </button>
 
-            {/* Notifications */}
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms]"
-              >
-                <Bell className="h-4 w-4" />
-                <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-foreground" />
-              </button>
-
-              {showNotifications && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
-                  <div className={cn(
-                    "absolute right-0 top-full mt-2 w-76 z-50",
-                    "rounded-xl border border-border bg-popover p-5",
-                    "shadow-none animate-slide-up",
-                  )}>
-                    <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-foreground">
-                        Notifications
-                      </p>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                        2 new
-                      </span>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-foreground shrink-0" />
-                        <div>
-                          <p className="text-[13px] font-sans font-medium text-foreground">CIA-1 Syllabus Update</p>
-                          <p className="text-[11px] font-sans text-muted-foreground mt-0.5">Distributed Systems: Units 1 & 2 are finalized.</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground shrink-0" />
-                        <div>
-                          <p className="text-[13px] font-sans font-medium text-foreground">Viva prep suggested</p>
-                          <p className="text-[11px] font-sans text-muted-foreground mt-0.5">Practice round open for Computer Networks.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
             {/* Profile */}
             <div className="relative">
               <button
@@ -395,7 +316,7 @@ export function ChatLayout({
               >
                 <Avatar className="h-7 w-7">
                   <AvatarImage src="" />
-                  <AvatarFallback>AS</AvatarFallback>
+                  <AvatarFallback>{isAdmin ? "AD" : "AS"}</AvatarFallback>
                 </Avatar>
               </button>
 
@@ -408,23 +329,25 @@ export function ChatLayout({
                     "shadow-none animate-slide-up",
                   )}>
                     <div className="px-4 py-2 border-b border-border mb-1">
-                      <p className="font-sans text-[13px] font-semibold text-foreground">AcadSphere</p>
+                      <p className="font-sans text-[13px] font-semibold text-foreground">
+                        {isAdmin ? "Administrator" : "AcadSphere"}
+                      </p>
                       <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em] truncate mt-0.5">
-                        student@acadsphere.edu
+                        {localStorage.getItem("demo_user_email") || "admin@acadsphere.edu"}
                       </p>
                     </div>
 
                     <Link
-                      to="/app/profile"
+                      to={isAdmin ? "/admin" : "/app/profile"}
                       onClick={() => setShowProfileMenu(false)}
                       className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]"
                     >
                       <User className="h-3.5 w-3.5" />
-                      My Profile
+                      {isAdmin ? "Admin Center" : "My Profile"}
                     </Link>
 
                     <Link
-                      to="/app/settings"
+                      to={isAdmin ? "/admin/settings" : "/app/settings"}
                       onClick={() => setShowProfileMenu(false)}
                       className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]"
                     >
@@ -454,72 +377,6 @@ export function ChatLayout({
           {children}
         </div>
       </div>
-=======
-      {/* Main */}
-      <main className="relative flex flex-1 flex-col overflow-hidden pb-16 md:pb-0">
-        {/* Desktop Header */}
-        <header className="hidden h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6 md:flex">
-          <div className="flex items-center gap-4 flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Ask Academic Copilot... (e.g., Explain recursion, DBMS lab, OS weakness)"
-                className="w-full rounded-full border border-border bg-background py-1.5 pl-10 pr-4 text-xs text-foreground placeholder-muted-foreground outline-none ring-primary focus:border-primary focus:ring-1 focus:ring-primary/45"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                    triggerCopilot(e.currentTarget.value);
-                    e.currentTarget.value = "";
-                  }
-                }}
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden items-center gap-2 rounded-full bg-accent/40 px-3 py-1 text-xs md:flex border border-border/50">
-              <span className="text-muted-foreground text-[10px]">Streak:</span>
-              <span className="flex items-center gap-1 font-bold text-foreground text-[11px]">
-                <Flame className="h-3.5 w-3.5 fill-orange-500 text-orange-500" /> 12 Days
-              </span>
-            </div>
-            <div className="hidden items-center gap-2 rounded-full bg-accent/40 px-3 py-1 text-xs md:flex border border-border/50">
-              <span className="text-muted-foreground text-[10px]">Academic Health:</span>
-              <span className="font-bold text-primary text-[11px]">78/100</span>
-            </div>
-            <Button
-              onClick={() => triggerCopilot("")}
-              variant="outline"
-              className="gap-1.5 border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold"
-              size="sm"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Copilot
-            </Button>
-          </div>
-        </header>
-
-        {/* Mobile Header */}
-        <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4 md:hidden">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setOpen((v) => !v)} className="rounded-md p-2 hover:bg-accent text-foreground">
-              <Menu className="h-4 w-4" />
-            </button>
-            <span className="font-display text-sm font-semibold text-foreground">AcadSphere</span>
-          </div>
-          <button
-            onClick={() => triggerCopilot("")}
-            className="rounded-md p-2 text-primary hover:bg-accent/40"
-          >
-            <Sparkles className="h-4 w-4" />
-          </button>
-        </header>
-        
-        <div className="flex-1 overflow-hidden">{children}</div>
-      </main>
-      
-      {/* Global Academic Copilot */}
-      <AcademicCopilot />
->>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
     </div>
   );
 }

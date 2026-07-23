@@ -11,15 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
-import { Route as AuthenticatedStudyPlannerRouteImport } from './routes/_authenticated/study-planner'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminStudentsRouteImport } from './routes/admin/students'
+import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
+import { Route as AdminSecurityRouteImport } from './routes/admin/security'
+import { Route as AdminRolesRouteImport } from './routes/admin/roles'
+import { Route as AdminReportsRouteImport } from './routes/admin/reports'
+import { Route as AdminNotesMonitoringRouteImport } from './routes/admin/notes-monitoring'
+import { Route as AdminLiveActivityRouteImport } from './routes/admin/live-activity'
+import { Route as AdminAuditLogsRouteImport } from './routes/admin/audit-logs'
+import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
+import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
+import { Route as AdminAcademicMonitoringRouteImport } from './routes/admin/academic-monitoring'
 import { Route as AuthenticatedPaperSimplifierRouteImport } from './routes/_authenticated/paper-simplifier'
 import { Route as AuthenticatedNotesGapAnalyzerRouteImport } from './routes/_authenticated/notes-gap-analyzer'
-import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
-import { Route as AuthenticatedAppVivaSimulatorRouteImport } from './routes/_authenticated/app.viva-simulator'
 import { Route as AuthenticatedAppStudentsRouteImport } from './routes/_authenticated/app.students'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppResumeAnalyzerRouteImport } from './routes/_authenticated/app.resume-analyzer'
@@ -46,6 +57,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRouteRoute = AdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
@@ -55,17 +71,76 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedStudyPlannerRoute =
-  AuthenticatedStudyPlannerRouteImport.update({
-    id: '/study-planner',
-    path: '/study-planner',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminStudentsRoute = AdminStudentsRouteImport.update({
+  id: '/students',
+  path: '/students',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminSecurityRoute = AdminSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminRolesRoute = AdminRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminReportsRoute = AdminReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminNotesMonitoringRoute = AdminNotesMonitoringRouteImport.update({
+  id: '/notes-monitoring',
+  path: '/notes-monitoring',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminLiveActivityRoute = AdminLiveActivityRouteImport.update({
+  id: '/live-activity',
+  path: '/live-activity',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAuditLogsRoute = AdminAuditLogsRouteImport.update({
+  id: '/audit-logs',
+  path: '/audit-logs',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
+  id: '/announcements',
+  path: '/announcements',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAcademicMonitoringRoute = AdminAcademicMonitoringRouteImport.update({
+  id: '/academic-monitoring',
+  path: '/academic-monitoring',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AuthenticatedPaperSimplifierRoute =
   AuthenticatedPaperSimplifierRouteImport.update({
     id: '/paper-simplifier',
@@ -78,22 +153,11 @@ const AuthenticatedNotesGapAnalyzerRoute =
     path: '/notes-gap-analyzer',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/app/',
   path: '/app/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedAppVivaSimulatorRoute =
-  AuthenticatedAppVivaSimulatorRouteImport.update({
-    id: '/app/viva-simulator',
-    path: '/app/viva-simulator',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAppStudentsRoute =
   AuthenticatedAppStudentsRouteImport.update({
     id: '/app/students',
@@ -184,13 +248,25 @@ const AuthenticatedAppThreadIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
-  '/study-planner': typeof AuthenticatedStudyPlannerRoute
+  '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/live-activity': typeof AdminLiveActivityRoute
+  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/roles': typeof AdminRolesRoute
+  '/admin/security': typeof AdminSecurityRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/admin/': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
   '/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
@@ -206,18 +282,28 @@ export interface FileRoutesByFullPath {
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/students': typeof AuthenticatedAppStudentsRoute
-  '/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
-  '/study-planner': typeof AuthenticatedStudyPlannerRoute
+  '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/live-activity': typeof AdminLiveActivityRoute
+  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/roles': typeof AdminRolesRoute
+  '/admin/security': typeof AdminSecurityRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/admin': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
   '/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
@@ -233,20 +319,31 @@ export interface FileRoutesByTo {
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/students': typeof AuthenticatedAppStudentsRoute
-  '/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/app': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/_authenticated/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
-  '/_authenticated/study-planner': typeof AuthenticatedStudyPlannerRoute
+  '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/live-activity': typeof AdminLiveActivityRoute
+  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/roles': typeof AdminRolesRoute
+  '/admin/security': typeof AdminSecurityRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/admin/': typeof AdminIndexRoute
   '/_authenticated/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/_authenticated/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
   '/_authenticated/app/announcements': typeof AuthenticatedAppAnnouncementsRoute
@@ -262,20 +359,31 @@ export interface FileRoutesById {
   '/_authenticated/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
   '/_authenticated/app/students': typeof AuthenticatedAppStudentsRoute
-  '/_authenticated/app/viva-simulator': typeof AuthenticatedAppVivaSimulatorRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/auth'
     | '/sitemap.xml'
-    | '/analytics'
     | '/notes-gap-analyzer'
     | '/paper-simplifier'
-    | '/study-planner'
+    | '/admin/academic-monitoring'
+    | '/admin/analytics'
+    | '/admin/announcements'
+    | '/admin/audit-logs'
+    | '/admin/live-activity'
+    | '/admin/notes-monitoring'
+    | '/admin/reports'
+    | '/admin/roles'
+    | '/admin/security'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/users'
     | '/api/chat'
+    | '/admin/'
     | '/app/$threadId'
     | '/app/ai-assistant'
     | '/app/announcements'
@@ -291,18 +399,28 @@ export interface FileRouteTypes {
     | '/app/resume-analyzer'
     | '/app/settings'
     | '/app/students'
-    | '/app/viva-simulator'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/sitemap.xml'
-    | '/analytics'
     | '/notes-gap-analyzer'
     | '/paper-simplifier'
-    | '/study-planner'
+    | '/admin/academic-monitoring'
+    | '/admin/analytics'
+    | '/admin/announcements'
+    | '/admin/audit-logs'
+    | '/admin/live-activity'
+    | '/admin/notes-monitoring'
+    | '/admin/reports'
+    | '/admin/roles'
+    | '/admin/security'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/users'
     | '/api/chat'
+    | '/admin'
     | '/app/$threadId'
     | '/app/ai-assistant'
     | '/app/announcements'
@@ -318,19 +436,30 @@ export interface FileRouteTypes {
     | '/app/resume-analyzer'
     | '/app/settings'
     | '/app/students'
-    | '/app/viva-simulator'
     | '/app'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/admin'
     | '/auth'
     | '/sitemap.xml'
-    | '/_authenticated/analytics'
     | '/_authenticated/notes-gap-analyzer'
     | '/_authenticated/paper-simplifier'
-    | '/_authenticated/study-planner'
+    | '/admin/academic-monitoring'
+    | '/admin/analytics'
+    | '/admin/announcements'
+    | '/admin/audit-logs'
+    | '/admin/live-activity'
+    | '/admin/notes-monitoring'
+    | '/admin/reports'
+    | '/admin/roles'
+    | '/admin/security'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/users'
     | '/api/chat'
+    | '/admin/'
     | '/_authenticated/app/$threadId'
     | '/_authenticated/app/ai-assistant'
     | '/_authenticated/app/announcements'
@@ -346,13 +475,13 @@ export interface FileRouteTypes {
     | '/_authenticated/app/resume-analyzer'
     | '/_authenticated/app/settings'
     | '/_authenticated/app/students'
-    | '/_authenticated/app/viva-simulator'
     | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AdminRouteRoute: typeof AdminRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiChatRoute: typeof ApiChatRoute
@@ -374,6 +503,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
@@ -388,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -395,12 +538,89 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/study-planner': {
-      id: '/_authenticated/study-planner'
-      path: '/study-planner'
-      fullPath: '/study-planner'
-      preLoaderRoute: typeof AuthenticatedStudyPlannerRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/students': {
+      id: '/admin/students'
+      path: '/students'
+      fullPath: '/admin/students'
+      preLoaderRoute: typeof AdminStudentsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/security': {
+      id: '/admin/security'
+      path: '/security'
+      fullPath: '/admin/security'
+      preLoaderRoute: typeof AdminSecurityRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/roles': {
+      id: '/admin/roles'
+      path: '/roles'
+      fullPath: '/admin/roles'
+      preLoaderRoute: typeof AdminRolesRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/reports': {
+      id: '/admin/reports'
+      path: '/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AdminReportsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/notes-monitoring': {
+      id: '/admin/notes-monitoring'
+      path: '/notes-monitoring'
+      fullPath: '/admin/notes-monitoring'
+      preLoaderRoute: typeof AdminNotesMonitoringRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/live-activity': {
+      id: '/admin/live-activity'
+      path: '/live-activity'
+      fullPath: '/admin/live-activity'
+      preLoaderRoute: typeof AdminLiveActivityRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/audit-logs': {
+      id: '/admin/audit-logs'
+      path: '/audit-logs'
+      fullPath: '/admin/audit-logs'
+      preLoaderRoute: typeof AdminAuditLogsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/announcements': {
+      id: '/admin/announcements'
+      path: '/announcements'
+      fullPath: '/admin/announcements'
+      preLoaderRoute: typeof AdminAnnouncementsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/analytics': {
+      id: '/admin/analytics'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/academic-monitoring': {
+      id: '/admin/academic-monitoring'
+      path: '/academic-monitoring'
+      fullPath: '/admin/academic-monitoring'
+      preLoaderRoute: typeof AdminAcademicMonitoringRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/_authenticated/paper-simplifier': {
       id: '/_authenticated/paper-simplifier'
@@ -416,25 +636,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedNotesGapAnalyzerRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/analytics': {
-      id: '/_authenticated/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/app/': {
       id: '/_authenticated/app/'
       path: '/app'
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/app/viva-simulator': {
-      id: '/_authenticated/app/viva-simulator'
-      path: '/app/viva-simulator'
-      fullPath: '/app/viva-simulator'
-      preLoaderRoute: typeof AuthenticatedAppVivaSimulatorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/students': {
@@ -546,10 +752,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedNotesGapAnalyzerRoute: typeof AuthenticatedNotesGapAnalyzerRoute
   AuthenticatedPaperSimplifierRoute: typeof AuthenticatedPaperSimplifierRoute
-  AuthenticatedStudyPlannerRoute: typeof AuthenticatedStudyPlannerRoute
   AuthenticatedAppThreadIdRoute: typeof AuthenticatedAppThreadIdRoute
   AuthenticatedAppAiAssistantRoute: typeof AuthenticatedAppAiAssistantRoute
   AuthenticatedAppAnnouncementsRoute: typeof AuthenticatedAppAnnouncementsRoute
@@ -565,15 +769,12 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppResumeAnalyzerRoute: typeof AuthenticatedAppResumeAnalyzerRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
   AuthenticatedAppStudentsRoute: typeof AuthenticatedAppStudentsRoute
-  AuthenticatedAppVivaSimulatorRoute: typeof AuthenticatedAppVivaSimulatorRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedNotesGapAnalyzerRoute: AuthenticatedNotesGapAnalyzerRoute,
   AuthenticatedPaperSimplifierRoute: AuthenticatedPaperSimplifierRoute,
-  AuthenticatedStudyPlannerRoute: AuthenticatedStudyPlannerRoute,
   AuthenticatedAppThreadIdRoute: AuthenticatedAppThreadIdRoute,
   AuthenticatedAppAiAssistantRoute: AuthenticatedAppAiAssistantRoute,
   AuthenticatedAppAnnouncementsRoute: AuthenticatedAppAnnouncementsRoute,
@@ -589,16 +790,52 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppResumeAnalyzerRoute: AuthenticatedAppResumeAnalyzerRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
   AuthenticatedAppStudentsRoute: AuthenticatedAppStudentsRoute,
-  AuthenticatedAppVivaSimulatorRoute: AuthenticatedAppVivaSimulatorRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface AdminRouteRouteChildren {
+  AdminAcademicMonitoringRoute: typeof AdminAcademicMonitoringRoute
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
+  AdminAuditLogsRoute: typeof AdminAuditLogsRoute
+  AdminLiveActivityRoute: typeof AdminLiveActivityRoute
+  AdminNotesMonitoringRoute: typeof AdminNotesMonitoringRoute
+  AdminReportsRoute: typeof AdminReportsRoute
+  AdminRolesRoute: typeof AdminRolesRoute
+  AdminSecurityRoute: typeof AdminSecurityRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminStudentsRoute: typeof AdminStudentsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteRouteChildren: AdminRouteRouteChildren = {
+  AdminAcademicMonitoringRoute: AdminAcademicMonitoringRoute,
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
+  AdminAnnouncementsRoute: AdminAnnouncementsRoute,
+  AdminAuditLogsRoute: AdminAuditLogsRoute,
+  AdminLiveActivityRoute: AdminLiveActivityRoute,
+  AdminNotesMonitoringRoute: AdminNotesMonitoringRoute,
+  AdminReportsRoute: AdminReportsRoute,
+  AdminRolesRoute: AdminRolesRoute,
+  AdminSecurityRoute: AdminSecurityRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminStudentsRoute: AdminStudentsRoute,
+  AdminUsersRoute: AdminUsersRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
+  AdminRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AdminRouteRoute: AdminRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiChatRoute: ApiChatRoute,

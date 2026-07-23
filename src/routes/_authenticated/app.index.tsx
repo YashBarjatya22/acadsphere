@@ -1,10 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { getAnalyticsSummary, updateProfile } from "@/lib/analytics.functions";
+import { getAttendanceDashboardData } from "@/lib/attendance.functions";
 import { createThread } from "@/lib/chat.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,7 +28,6 @@ import {
   AlertTriangle,
   MessageSquare,
   RefreshCw,
-<<<<<<< HEAD
   Code,
   Volume2,
   Check,
@@ -54,13 +54,16 @@ import {
   LineChart as RechartsLineChart,
   Line
 } from "recharts";
-=======
-  Brain
-} from "lucide-react";
-import { triggerCopilot } from "@/hooks/useCopilot";
->>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
 
 export const Route = createFileRoute("/_authenticated/app/")({
+  beforeLoad: async () => {
+    if (typeof window !== "undefined") {
+      const role = localStorage.getItem("demo_user_role");
+      if (role === "admin") {
+        throw redirect({ to: "/admin" });
+      }
+    }
+  },
   component: AppIndex,
 });
 
@@ -70,12 +73,18 @@ function AppIndex() {
 
   // Server functions
   const getSummaryFn = useServerFn(getAnalyticsSummary);
+  const getAttendanceFn = useServerFn(getAttendanceDashboardData);
   const updateProfileFn = useServerFn(updateProfile);
   const createThreadFn = useServerFn(createThread);
 
   const { data: analytics, isLoading, error, refetch } = useQuery({
     queryKey: ["analyticsSummary"],
     queryFn: () => getSummaryFn(),
+  });
+
+  const { data: attendanceData } = useQuery({
+    queryKey: ["attendanceDashboardData"],
+    queryFn: () => getAttendanceFn(),
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -233,7 +242,6 @@ function AppIndex() {
 
   return (
     <ChatLayout activeThreadId={null}>
-<<<<<<< HEAD
       <div className="h-full overflow-y-auto bg-background text-foreground p-6 md:p-8">
         
         {/* Main Grid: Left Workspace (8/12) & Right AI Panel/Calendar (4/12) */}
@@ -260,115 +268,6 @@ function AppIndex() {
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Today:</span>
                     <span className="font-sans text-[12px] text-foreground">10:00 AM Distributed Systems · 02:00 PM Mock Viva</span>
                   </div>
-=======
-      <div className="h-full overflow-y-auto bg-[#F8FAFC] text-slate-900 p-6 md:p-8 scrollbar-thin">
-        {/* Flagship Academic Copilot Hero Section */}
-        <div className="mb-8 rounded-3xl border border-primary/20 bg-card p-6 md:p-8 shadow-md relative overflow-hidden bg-gradient-to-br from-card via-[#1E3A8A]/10 to-card">
-          <div className="absolute top-0 right-0 h-40 w-40 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 h-40 w-40 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
-          
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-semibold text-primary mb-4">
-              <Sparkles className="h-3.5 w-3.5" /> AI Academic Copilot Active
-            </span>
-            
-            <h1 className="font-display text-3xl md:text-4xl font-extrabold text-foreground tracking-tight">
-              Good Morning, {profile?.fullName?.split(" ")[0] || "Yash"}!
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1 mb-6 font-display">
-              What would you like to achieve today?
-            </p>
-
-            {/* Hero AI Input Box */}
-            <div className="relative flex items-center gap-2 rounded-2xl border border-border bg-background/80 p-2 shadow-inner focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/45 transition-all">
-              <Brain className="h-5 w-5 text-primary ml-2 shrink-0 animate-pulse" />
-              <input
-                type="text"
-                placeholder="Ask Copilot anything... (e.g., prepare for DBMS lab, Java study plan, OS help)"
-                className="flex-1 bg-transparent py-2 px-2 text-sm text-foreground placeholder-muted-foreground outline-none border-none"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                    triggerCopilot(e.currentTarget.value);
-                    e.currentTarget.value = "";
-                  }
-                }}
-              />
-              <button
-                onClick={(e) => {
-                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
-                  if (inputEl.value.trim()) {
-                    triggerCopilot(inputEl.value);
-                    inputEl.value = "";
-                  }
-                }}
-                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
-              >
-                <span>Ask Copilot</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {/* Prompt Examples / Chips */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              {[
-                "Help me prepare for tomorrow's DBMS lab",
-                "Create a study plan for my Java CIA",
-                "Explain recursion like a beginner",
-                "I only have one hour. Make the best study plan.",
-                "Revise OS in 20 minutes",
-                "Test me before my viva",
-              ].map((p, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => triggerCopilot(p)}
-                  className="rounded-full border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-card transition"
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Success score banner */}
-        <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Student Success Score</p>
-              <h2 className="text-4xl font-extrabold text-[#1E3A8A]">{analytics?.studentSuccessScore || Math.round((readiness * 0.6 + (analytics?.roadmap.percentage || 67) * 0.2 + (stats?.studyHoursThisWeek || 12.2) * 1.5) / 2)}%</h2>
-              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                This score pulls together placement readiness, roadmap progress, exam preparedness, and study momentum to keep your academic journey visible.
-              </p>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold text-slate-600 md:grid-cols-3">
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Profile</div>
-                <div className="text-xl font-bold text-slate-800">{profile?.degree ? "Configured" : "Set up"}</div>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Roadmap</div>
-                <div className="text-xl font-bold text-slate-800">{analytics?.roadmap.percentage || 67}%</div>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-[12px] uppercase tracking-[0.25em] text-slate-400">Momentum</div>
-                <div className="text-xl font-bold text-slate-800">{stats?.studyHoursThisWeek || 12.2}h</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-8 grid gap-4 xl:grid-cols-[1.45fr_0.55fr]">
-          <Card className="bg-white border-slate-200/80 shadow-sm">
-            <CardHeader className="pb-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Student Intelligence</span>
-              <h2 className="mt-2 font-display text-xl font-semibold text-slate-900">Recommended next moves</h2>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Knowledge focus</p>
-                  <p className="mt-2 text-sm text-slate-700">{analytics?.subjectPerformance?.[1]?.name ?? "Operating Systems"} is the next high-impact revision area.</p>
->>>>>>> 0893025717d53e1bb0bd5755fa1b66288cbe235e
                 </div>
 
                 {/* Success ring — monochrome */}
@@ -397,28 +296,75 @@ function AppIndex() {
               </div>
             </div>
 
-            {/* Statistics Cards Grid */}
-            <div className="grid gap-px grid-cols-2 md:grid-cols-3 border border-border rounded-2xl overflow-hidden bg-border">
-              {[
-                { label: "Attendance Rate", value: "93%",     sub: "Required: 75%",      icon: CheckCircle2 },
-                { label: "Upcoming CIAs",   value: "3 exams", sub: "Starting in 6 days", icon: AlertTriangle },
-                { label: "Assignments",     value: "2 tasks", sub: "Due before Monday",  icon: CalendarIcon },
-                { label: "Notes Created",   value: "14",      sub: "4 added recently",   icon: BookOpen },
-                { label: "AI Queries",      value: "38/100",  sub: "Resets in 12 days",  icon: Sparkles },
-                { label: "Weekly Study",    value: "12.2h",   sub: "Goal: 15 hours",     icon: Clock },
-              ].map((card, idx) => {
-                const Icon = card.icon;
-                return (
-                  <div key={idx} className="bg-card p-5 hover:bg-accent transition-colors duration-[120ms]">
-                    <div className="flex items-start justify-between mb-3">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{card.label}</p>
-                      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    </div>
-                    <p className="font-sans font-bold text-xl text-foreground" style={{ letterSpacing: "-0.03em" }}>{card.value}</p>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground mt-1.5">{card.sub}</p>
+            {/* Attendance Health & Statistics Cards Grid */}
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Requirement 6: Attendance Health Compact Widget */}
+              <div className="bg-card border border-border rounded-2xl p-5 hover:border-primary/40 transition-all shadow-xs flex flex-col justify-between md:col-span-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] font-extrabold text-foreground">
+                      Attendance Health
+                    </span>
                   </div>
-                );
-              })}
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    (attendanceData?.overall?.percentage ?? 83) >= 85
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                      : (attendanceData?.overall?.percentage ?? 83) >= 75
+                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                      : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
+                  }`}>
+                    Overall {attendanceData?.overall?.percentage ?? 83}%
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 my-4 bg-muted/20 p-2.5 rounded-xl border border-border/60 text-xs">
+                  <div>
+                    <p className="text-muted-foreground text-[9px] uppercase font-bold">Subjects at Risk</p>
+                    <p className="text-sm font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">
+                      {attendanceData?.overall?.subjectsAtRiskCount ?? 2}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-[9px] uppercase font-bold">Critical Subjects</p>
+                    <p className="text-sm font-extrabold text-red-600 dark:text-red-400 mt-0.5">
+                      {attendanceData?.overall?.criticalSubjectsCount ?? 1}
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  to="/app/attendance"
+                  className="flex items-center justify-between text-xs font-bold text-primary hover:underline group pt-1 border-t border-border/40"
+                >
+                  <span>View Details & Reminders</span>
+                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </div>
+
+              {/* Statistics Grid */}
+              <div className="md:col-span-2 grid gap-px grid-cols-2 sm:grid-cols-3 border border-border rounded-2xl overflow-hidden bg-border">
+                {[
+                  { label: "Upcoming CIAs",   value: "3 exams", sub: "Starting in 6 days", icon: AlertTriangle },
+                  { label: "Assignments",     value: "2 tasks", sub: "Due before Monday",  icon: CalendarIcon },
+                  { label: "Notes Created",   value: "14",      sub: "4 added recently",   icon: BookOpen },
+                  { label: "AI Queries",      value: "38/100",  sub: "Resets in 12 days",  icon: Sparkles },
+                  { label: "Weekly Study",    value: "12.2h",   sub: "Goal: 15 hours",     icon: Clock },
+                  { label: "Lab Projects",    value: "5/5",     sub: "Manuals verified",   icon: Code },
+                ].map((card, idx) => {
+                  const Icon = card.icon;
+                  return (
+                    <div key={idx} className="bg-card p-4 hover:bg-accent transition-colors duration-[120ms]">
+                      <div className="flex items-start justify-between mb-2">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{card.label}</p>
+                        <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      </div>
+                      <p className="font-sans font-bold text-lg text-foreground" style={{ letterSpacing: "-0.03em" }}>{card.value}</p>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground mt-1">{card.sub}</p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Quick Actions Panel */}
@@ -429,9 +375,7 @@ function AppIndex() {
                   { label: "Ask AI",     icon: Sparkles,   action: () => createThreadFn().then(t => navigate({ to: "/app/$threadId", params: { threadId: t.id } })) },
                   { label: "Smart Notes", icon: BookOpen,   action: () => navigate({ to: "/app/notes" }) },
                   { label: "Resume",     icon: FileCheck2, action: () => navigate({ to: "/app/resume-analyzer" }) },
-                  { label: "Viva Prep",  icon: Volume2,    action: () => navigate({ to: "/app/viva-simulator" }) },
-                  { label: "Planner",    icon: CalendarIcon, action: () => navigate({ to: "/study-planner" }) },
-                  { label: "Lab Buddy",  icon: Code,       action: () => navigate({ to: "/app/lab-buddy" }) },
+                  { label: "Lab Helper", icon: Code,       action: () => navigate({ to: "/app/lab-buddy" }) },
                 ].map((act, idx) => {
                   const Icon = act.icon;
                   return (
@@ -457,11 +401,6 @@ function AppIndex() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground mb-1">Analytics</p>
                   <h3 className="font-sans font-semibold text-foreground">Study & Prep Overview</h3>
                 </div>
-                <Button size="sm" variant="ghost" asChild>
-                  <Link to="/analytics">
-                    Full report <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                  </Link>
-                </Button>
               </div>
 
               {/* Charts Grid */}

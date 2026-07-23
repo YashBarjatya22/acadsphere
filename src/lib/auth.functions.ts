@@ -59,7 +59,15 @@ export const localDemoLogin = createServerFn({ method: "POST" })
       }
     }
 
-    // Return a demo token: client stores it and sends as Bearer header
     const token = `demo_${user.id}_${Buffer.from(data.email).toString("base64")}`;
-    return { success: true, userId: user.id, token, email: user.email, name: data.name || user.email.split("@")[0] };
+
+    // Fetch role from profiles
+    let role = "student";
+    try {
+      const profile = db.prepare("SELECT role FROM profiles WHERE id = ?").get(user.id) as any;
+      if (profile?.role) role = profile.role;
+    } catch (_) {}
+
+    return { success: true, userId: user.id, token, email: user.email, name: data.name || (user as any).name || user.email.split("@")[0], role };
+
   });

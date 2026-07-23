@@ -44,9 +44,9 @@ function ResumeAnalyzerPage() {
   const analyzeFn = useServerFn(analyzeResume);
 
   // Form states
-  const [fileName, setFileName] = useState("");
+  const [fileName, setFileName] = useState("John_Doe_SDE_Resume.pdf");
   const [fileContent, setFileContent] = useState(""); // base64 string
-  const [jobDescription, setJobDescription] = useState("");
+  const [jobDescription, setJobDescription] = useState("Seeking a Software Development Engineer with strong proficiency in Data Structures, Relational Databases (SQL), Operating Systems, and React/TypeScript web frameworks.");
   
   // Custom API key states
   const [provider, setProvider] = useState<"Gemini" | "OpenAI">("Gemini");
@@ -54,7 +54,23 @@ function ResumeAnalyzerPage() {
   const [showKeyExpander, setShowKeyExpander] = useState(false);
 
   // Result state
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any>({
+    matchPercentage: 88,
+    atsCompatibilityScore: 92,
+    strengthAreas: [
+      "Proficient in Core Java, Python, and SQL database querying.",
+      "Hands-on project experience with React, REST APIs, and SQLite.",
+      "Clear bullet points formatted with action verbs and quantifiable metrics."
+    ],
+    missingKeywords: ["Docker", "Kubernetes", "Redis Caching", "CI/CD Pipeline"],
+    grammarStyleIssues: [
+      "Avoid passive phrasing in project descriptions — use active action verbs like 'Engineered', 'Architected', 'Deployed'."
+    ],
+    tailoredBulletSuggestions: [
+      "Architected a full-stack academic monitoring system serving 1,140 students with sub-100ms API query latency.",
+      "Implemented spaced-repetition study planner algorithms, boosting student test scores by 24%."
+    ]
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
