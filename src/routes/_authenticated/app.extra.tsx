@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { 
   Clock, Play, Pause, RotateCcw, Briefcase, Plus, Edit3, 
   FileText, Award, Star, BookOpen, Layers, Flame, Trophy, 
-  Calendar, Check, AlertCircle, RefreshCw, Sparkles, User, GraduationCap
+  Calendar, Check, AlertCircle, RefreshCw, Sparkles, User, GraduationCap, X
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/extra")({

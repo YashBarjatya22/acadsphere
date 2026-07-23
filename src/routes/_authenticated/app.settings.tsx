@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { interpretSettlerInstruction } from "@/lib/viva-lab.functions";
 import { updateProfile } from "@/lib/analytics.functions";
 import {
   Settings, Bell, Lock, Monitor, Sun, Moon, Palette, Zap, Shield, Check,
-  Bot, Send, User, Sparkles, MessageSquare, Loader2, RefreshCw
+  Bot, Send, User, Sparkles, MessageSquare, Loader2, RefreshCw, LogOut
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
@@ -27,6 +27,7 @@ interface ChatMessage {
 }
 
 function SettingsPage() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"preferences" | "settler">("preferences");
 
@@ -85,6 +86,16 @@ function SettingsPage() {
     toast.success("Preferences saved!");
     setTimeout(() => setSaved(false), 2000);
   };
+
+  async function handleSignOut() {
+    localStorage.removeItem("demo_session_token");
+    localStorage.removeItem("demo_user_id");
+    localStorage.removeItem("demo_user_email");
+    const { supabase } = await import("@/integrations/supabase/client");
+    supabase.auth.signOut().catch(() => {});
+    toast.success("Signed out successfully");
+    navigate({ to: "/" });
+  }
 
   // Settler executor logic
   const handleInstruction = useMutation({
@@ -348,6 +359,35 @@ function SettingsPage() {
                     {saved ? <><Check className="h-3.5 w-3.5 mr-1.5" /> Saved!</> : "Save Preferences"}
                   </Button>
                 </div>
+
+                {/* Sign Out */}
+                <Card className="border-red-500/20 bg-red-500/5 shadow-sm">
+                  <CardHeader className="pb-3 border-b border-red-500/10">
+                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-red-500 flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg bg-red-500/10 flex items-center justify-center">
+                        <LogOut className="h-3.5 w-3.5 text-red-500" />
+                      </div>
+                      Account
+                    </CardTitle>
+                    <CardDescription className="text-[10px]">Sign out of your current session.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Sign Out</p>
+                        <p className="text-[10px] text-muted-foreground">Clears your local session and returns to the home page.</p>
+                      </div>
+                      <Button
+                        onClick={handleSignOut}
+                        variant="outline"
+                        className="h-8 px-4 text-xs font-bold border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/50"
+                      >
+                        <LogOut className="h-3.5 w-3.5 mr-1.5" />
+                        Log Out
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             ) : (
               /* Settler AI Agent Interface */

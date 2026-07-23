@@ -40,10 +40,8 @@ export function ChatWindow({
       body: () => ({ threadId }),
       headers: async () => {
         const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        const h: Record<string, string> = {};
-        if (token) h.Authorization = `Bearer ${token}`;
-        return h;
+        const token = data.session?.access_token || (typeof window !== "undefined" ? localStorage.getItem("demo_session_token") : null) || "demo_session_token";
+        return { Authorization: `Bearer ${token}` };
       },
     }),
   );

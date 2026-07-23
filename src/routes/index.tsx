@@ -1,11 +1,17 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import logo from "@/assets/studentos-logo.png";
 import { useState, useEffect } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { localDemoLogin } from "@/lib/auth.functions";
+import { toast } from "sonner";
 import {
   Brain, Compass, Calendar, FileCheck2, LineChart, ArrowRight,
   Code, Volume2, Users, Sparkles, Award, Globe, Lock, Sun, Moon,
-  BookOpen, CalendarDays, CheckCircle2, LayoutDashboard, User, Settings
+  BookOpen, CalendarDays, CheckCircle2, LayoutDashboard, User, Settings,
+  Loader2, LogIn, Zap
 } from "lucide-react";
 
 export const Route = createFileRoute("/")(({
@@ -15,7 +21,7 @@ export const Route = createFileRoute("/")(({
       {
         name: "description",
         content:
-          "AcadSphere is a precision-built AI platform for engineering students: career roadmaps, smart notes, viva simulators, placement tracking, and more.",
+          "AcadSphere is a precision-built AI platform for engineering students: career roadmaps, smart notes, lab buddy, placement tracking, and more.",
       },
     ],
   }),
@@ -33,11 +39,8 @@ const FEATURES = [
   { icon: LayoutDashboard, title: "Dashboard",          desc: "A single command center showing attendance, deadlines, AI insights, and progress at a glance." },
   { icon: Sparkles,        title: "AI Study Assistant", desc: "Interactive contextual explanations tailored directly to your syllabus subjects." },
   { icon: BookOpen,        title: "Smart Notes",        desc: "AI-powered notes with auto-summarisation, keyword highlights, and topic clustering." },
-  { icon: Calendar,        title: "Study Planner",      desc: "Spaced repetition schedules mapped intelligently around your academic deadlines." },
-  { icon: Code,            title: "Lab Buddy",          desc: "Upload lab manuals and receive clean code templates, verification tests, and walkthroughs." },
-  { icon: Volume2,         title: "Viva Simulator",     desc: "Simulate rigorous oral examinations with AI questions, audio feedback, and score logs." },
+  { icon: Code,            title: "Lab Helper",         desc: "Lab schedule reminders, experiment walkthroughs, AI code generators, and completion trackers." },
   { icon: FileCheck2,      title: "Resume Builder",     desc: "ATS score optimisation, placement gap suggestions, and bullet-point editing." },
-  { icon: LineChart,       title: "Placement Hub",      desc: "Manage company drives, check roadmap milestones, and track offers in one dashboard." },
   { icon: CalendarDays,    title: "CIA Reminder",       desc: "Never miss a CIA date — smart alerts with countdown timers keyed to your academic calendar." },
   { icon: CheckCircle2,    title: "Attendance Tracker", desc: "Real-time attendance percentage, subject-wise risk flags, and bunk budget calculator." },
   { icon: Users,           title: "Community",          desc: "Connect with batchmates, share resources, ask questions, and collaborate on projects." },
@@ -47,7 +50,7 @@ const FEATURES = [
 
 const TESTIMONIALS = [
   {
-    quote: "AcadSphere turned my exam prep from chaos into a structured game plan. The Viva simulator is scary accurate to what my externals asked.",
+    quote: "AcadSphere turned my exam prep from chaos into a structured game plan. The AI Assistant and Smart Notes are insanely helpful for quick revisions.",
     author: "Aditya Verma",
     role: "MCA Student, RV College of Engineering",
     initials: "AV",
@@ -61,8 +64,51 @@ const TESTIMONIALS = [
 ];
 
 function Landing() {
+  const navigate = useNavigate();
   const [isDark, setIsDark] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const localLoginFn = useServerFn(localDemoLogin);
+
+  async function handleLandingLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginLoading(true);
+    try {
+      const result = await localLoginFn({ data: { email: loginEmail, password: loginPassword } });
+      localStorage.setItem("demo_session_token", result.token);
+      localStorage.setItem("demo_user_id", result.userId);
+      localStorage.setItem("demo_user_email", result.email);
+      localStorage.setItem("demo_user_role", result.role || "student");
+      toast.success(`Welcome back, ${result.name || result.email}!`);
+      navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleDemoAccess() {
+    setDemoLoading(true);
+    try {
+      const result = await localLoginFn({ data: { email: "demo@acadsphere.local", password: "demo123456", name: "Demo Student" } });
+      localStorage.setItem("demo_session_token", result.token);
+      localStorage.setItem("demo_user_id", result.userId);
+      localStorage.setItem("demo_user_email", result.email);
+      localStorage.setItem("demo_user_role", result.role || "student");
+      toast.success("Signed in as Demo Student");
+      navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+    } catch (err) {
+      toast.error("Demo login failed");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
 
   useEffect(() => {
     const theme = localStorage.getItem("theme");
@@ -112,8 +158,8 @@ function Landing() {
 
           {/* Center nav */}
           <nav className="hidden md:flex items-center gap-0">
-            {["#features", "#stats", "#testimonials"].map((href, i) => {
-              const labels = ["Modules", "Impact", "Testimonials"];
+            {["#features", "#stats", "#testimonials", "#login"].map((href, i) => {
+              const labels = ["Modules", "Impact", "Testimonials", "Sign In"];
               return (
                 <a
                   key={href}
@@ -220,7 +266,6 @@ function Landing() {
               {/* Progress bars */}
               <div className="space-y-4">
                 {[
-                  { label: "Viva Readiness",    pct: 85 },
                   { label: "Resume ATS Score",   pct: 92 },
                   { label: "Roadmap Progress",   pct: 67 },
                   { label: "Attendance",         pct: 93 },
@@ -380,6 +425,97 @@ function Landing() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ─── Login Section ───────────────────────────────────── */}
+      <section id="login" className="py-24 border-t border-border bg-card">
+        <div className="mx-auto max-w-5xl px-6 grid lg:grid-cols-2 gap-16 items-center">
+
+          {/* Left: copy */}
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground mb-4">
+              Ready to start?
+            </p>
+            <h2
+              className="font-sans font-extrabold text-foreground"
+              style={{ fontSize: "clamp(1.75rem, 4vw, 2.75rem)", letterSpacing: "-0.04em", lineHeight: 1.05 }}
+            >
+              Sign in to your
+              <br />
+              <span className="text-muted-foreground">AcadSphere workspace.</span>
+            </h2>
+            <p className="mt-6 text-sm font-sans text-muted-foreground leading-relaxed max-w-sm">
+              No email confirmation. Your session is stored locally — works fully offline.
+              New user? Just enter any email + password to create an account instantly.
+            </p>
+            {/* Quick demo access */}
+            <button
+              onClick={handleDemoAccess}
+              disabled={demoLoading}
+              className="mt-8 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground border border-border rounded-full px-4 py-2 transition-colors duration-[120ms] hover:bg-accent disabled:opacity-60"
+            >
+              {demoLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Quick Demo — No sign-up needed
+            </button>
+          </div>
+
+          {/* Right: login form */}
+          <div className="rounded-2xl border border-border bg-background p-8">
+            <div className="flex items-center gap-2.5 mb-6">
+              <div className="h-8 w-8 rounded-lg border border-border bg-foreground flex items-center justify-center overflow-hidden">
+                <img src={logo} alt="AcadSphere" className="h-5 w-5 object-contain invert dark:invert-0" />
+              </div>
+              <div>
+                <p className="font-sans font-bold text-sm text-foreground">AcadSphere</p>
+                <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Sign in · Works offline</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleLandingLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="landing-email" className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Email</Label>
+                <Input
+                  id="landing-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  required
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="landing-password" className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Password</Label>
+                <Input
+                  id="landing-password"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  minLength={6}
+                  required
+                  className="h-10"
+                />
+              </div>
+              <Button type="submit" disabled={loginLoading} className="w-full h-10">
+                {loginLoading ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Signing in...</>
+                ) : (
+                  <><LogIn className="h-4 w-4" /> Sign In / Create Account</>
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-5 pt-5 border-t border-border">
+              <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground text-center">
+                New user? Just enter any email + password above — account is created automatically.
+              </p>
+            </div>
+          </div>
+
         </div>
       </section>
 

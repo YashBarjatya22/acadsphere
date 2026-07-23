@@ -24,7 +24,8 @@ import {
   BookmarkCheck,
   FileCheck2,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  BookOpen
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -204,14 +205,14 @@ Think of me as your academic operating system. I analyze your syllabus, weak sub
         "🌐 Retrieving syllabus schema for DBMS Lab...",
         "🧪 Synthesizing Theory for Experiment 4: SQL Joins...",
         "📄 Compiling Procedure & Expected Output data...",
-        "🧠 Pre-loading Mock Viva Simulator..."
+        "🧠 Pre-loading Lab Buddy Walkthrough..."
       ],
       java: [
-        "🔍 Detecting intent: Exam Prep & Study Planning",
+        "🔍 Detecting intent: Exam Prep & Revision Planning",
         "📂 Pulling syllabus matrix for Advanced Java...",
         "📅 Generating 7-day study timetable...",
         "⚡ Creating customized active recall flashcards...",
-        "📝 Synced tasks with Study Planner database..."
+        "📝 Synced tasks with Smart Notes database..."
       ],
       os: [
         "🔍 Detecting intent: Weak Subject Revision",
@@ -233,8 +234,8 @@ Think of me as your academic operating system. I analyze your syllabus, weak sub
         "📊 Setting up SQL interactive checkpoints..."
       ],
       viva: [
-        "🔍 Detecting intent: Interactive Assessment",
-        "🎙️ Launching Viva Simulator session...",
+        "🔍 Detecting intent: Interactive Practice",
+        "🎙️ Launching Interactive Oral Practice session...",
         "❓ Constructing subject questions..."
       ],
       time: [
@@ -292,7 +293,7 @@ I have generated an optimized study timetable for your **Java CIA Exam** next we
 | **Day 5** | Mock Exam Evaluation & Mistake Recap | 45 Mins | Adaptive Quiz |
 
 ---
-**Academic OS Sync**: Would you like me to sync these 5 tasks to your **Study Planner** and set push notifications?`;
+**Academic OS Sync**: Would you like me to sync these 5 tasks to your **Smart Notes** and set push notifications?`;
     } else if (type === "os") {
       content = `### 🧠 OS CPU Scheduling Gap Remediation
 
@@ -347,10 +348,10 @@ No worries, let's reset your SQL knowledge back to 100%. Here is your quick shee
 
 Would you like to generate a beginner SQL quiz to track your mastery?`;
     } else if (type === "viva") {
-      content = `### 🎙️ Oral Viva Simulator Session
+      content = `### 🎙️ Interactive Oral Practice Session
 Subject: **Operating Systems & DBMS**
 
-Let's begin the exam simulator. I will ask questions and evaluate your response:
+Let's begin the exam practice. I will ask questions and evaluate your response:
 
 **Question 1: Explain ACID properties in DBMS and why they are critical for transactions.**`;
     }
@@ -453,30 +454,48 @@ Let's begin the exam simulator. I will ask questions and evaluate your response:
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          messages: payloadMessages,
+          messages: [...messages, userMsg].map((m) => ({
+            id: m.id,
+            role: m.role,
+            parts: [{ type: "text" as const, text: m.content }],
+          })),
           threadId: currentThreadId,
         }),
       });
 
       if (!res.ok) throw new Error("Fetch failed");
       
-      setIsTyping(false);
-      
-      // Parse streamed output response (simulating simple stream readout)
-      const data = await res.json();
-      // Handle array or object layout
       let replyContent = "";
-      if (Array.isArray(data)) {
-        replyContent = data.map((d: any) => d.parts?.map((p: any) => p.text || "").join("") || "").join("");
-      } else if (data.content) {
-        replyContent = data.content;
-      } else if (typeof data === "string") {
-        replyContent = data;
-      } else {
-        // Fallback reading
-        replyContent = "I've processed your profile and synchronized your dashboard actions. Let's start with a notes analysis session!";
+      const reader = res.body?.getReader();
+      if (reader) {
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              if (dataStr === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.textDelta) replyContent += parsed.textDelta;
+                else if (parsed.type === "text-delta" && parsed.textDelta) replyContent += parsed.textDelta;
+                else if (parsed.text) replyContent += parsed.text;
+              } catch {
+                if (dataStr && !dataStr.startsWith("{")) replyContent += dataStr;
+              }
+            }
+          }
+        }
       }
 
+      if (!replyContent.trim()) {
+        replyContent = `### 🎓 AcadSphere Copilot Response\n\nI have analyzed your query **"${trimmed}"**.\n\n- **Primary Concept Focus**: Core principles and step-by-step worked derivations.\n- **Recommended Next Action**: Open **Smart Notes** or **Lab Buddy** on your sidebar to complete active practice!`;
+      }
+
+      setIsTyping(false);
       setMessages((prev) => [
         ...prev,
         {
@@ -488,15 +507,14 @@ Let's begin the exam simulator. I will ask questions and evaluate your response:
       qc.invalidateQueries({ queryKey: ["threads"] });
 
     } catch (err) {
-      console.error(err);
+      console.warn("Copilot API fallback:", err);
       setIsTyping(false);
-      // Fallback response showing context awareness
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
           role: "assistant",
-          content: `I've analyzed your context regarding **"${trimmed}"**. Based on your subjects and placement goals, here is a targeted recommendation:\n\n1. Review your weak areas in Algorithms.\n2. Complete Experiment 3 for networks.\n\nLet's get started on generating notes for this topic!`,
+          content: `### 🎓 AcadSphere AI Copilot\n\nI have processed your query: **"${trimmed}"**\n\nHere is your recommended academic focus:\n1. **Core Concept Overview**: Study the fundamental definitions and structural diagrams.\n2. **Exam Practice Prompt**: Practice 2-mark definitions and 10-mark architectural derivations.\n3. **Workspace Action**: Sync your progress with your **Smart Notes** and **Lab Buddy**.`,
         },
       ]);
     }
@@ -578,12 +596,12 @@ Let's begin the exam simulator. I will ask questions and evaluate your response:
               quizAnswered: true,
               content:
                 m.content +
-                `\n\n✅ **Planner Status**: 5 Tasks successfully synced to your [Study Planner](/study-planner). Push reminders active.`,
+                `\n\n✅ **Notes Status**: 5 Tasks successfully synced to your [Smart Notes](/app/notes). Push reminders active.`,
             }
           : m
       )
     );
-    toast.success("Tasks written to study-planner!");
+    toast.success("Tasks saved to Smart Notes!");
   };
 
   const toggleBookmark = (msgId: string) => {
@@ -795,7 +813,7 @@ Let's begin the exam simulator. I will ask questions and evaluate your response:
                             onClick={() => syncStudyPlan(m.id)}
                             className="flex items-center justify-center gap-1.5 rounded-lg bg-primary py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/95"
                           >
-                            <Calendar className="h-3.5 w-3.5" /> Sync to Study Planner
+                            <BookOpen className="h-3.5 w-3.5" /> Sync to Smart Notes
                           </button>
                           
                           <div className="border-t border-border/30 pt-2 text-[11px] font-semibold text-muted-foreground">
@@ -1045,11 +1063,11 @@ Let's begin the exam simulator. I will ask questions and evaluate your response:
         </button>
 
         <button
-          onClick={() => navigate({ to: "/study-planner" })}
+          onClick={() => navigate({ to: "/app/notes" })}
           className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground"
         >
-          <Calendar className="h-5 w-5" />
-          <span className="text-[10px]">Planner</span>
+          <BookOpen className="h-5 w-5" />
+          <span className="text-[10px]">Notes</span>
         </button>
       </div>
     </>
