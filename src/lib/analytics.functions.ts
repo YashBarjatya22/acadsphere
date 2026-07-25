@@ -25,15 +25,19 @@ const UpdateProfileSchema = z.object({
 
 // Helper to run query with SQLite fallback
 async function runWithFallback<T>(
-  supabaseOp: () => Promise<{ data: T | null; error: any }>,
+  supabaseOp: () => Promise<any>,
   sqliteOp: () => T
 ): Promise<T> {
   const supabase = getSupabaseServerClient();
   if (supabase) {
     try {
-      const { data, error } = await supabaseOp();
-      if (!error && data !== null) {
-        return data;
+      const res = await supabaseOp();
+      if (res && typeof res === "object" && "data" in res) {
+        if (!res.error && res.data !== null && res.data !== undefined) {
+          return res.data as T;
+        }
+      } else if (res !== null && res !== undefined) {
+        return res as T;
       }
     } catch (_) {}
   }
@@ -485,7 +489,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       profile: {
         fullName: profile?.full_name || "Student Name",
         degree: profile?.degree || "B.Tech CSE",
-        semester: profile?.semester || "Semester 6",
+        semester: (profile as any)?.semester || "Semester 6",
         targetRole: profile?.target_role || "Frontend Engineer",
         skills: userSkills,
         examDates: profile?.updated_at,

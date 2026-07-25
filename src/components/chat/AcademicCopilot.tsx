@@ -1037,7 +1037,7 @@ Let's begin the exam practice. I will ask questions and evaluate your response:
       {/* FLOATING ACTION BUTTON */}
       <div className="fixed bottom-20 right-6 z-40 hidden md:block">
         <button
-          onClick={() => triggerCopilot("")}
+          onClick={() => setIsOpen(true)}
           className="group flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-105 transition hover:bg-primary/90"
           title="Open AI Academic Copilot"
         >
@@ -1056,7 +1056,7 @@ Let's begin the exam practice. I will ask questions and evaluate your response:
         </button>
         
         <button
-          onClick={() => triggerCopilot("")}
+          onClick={() => setIsOpen(true)}
           className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 focus:outline-none ring-4 ring-background"
         >
           <Sparkles className="h-6 w-6" />

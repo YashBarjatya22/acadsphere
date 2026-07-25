@@ -6,18 +6,22 @@ import crypto from "node:crypto";
 
 // Helper to check if a table exists in Supabase, else throw error to trigger SQLite fallback
 async function executeWithFallback<T>(
-  supabaseOp: () => Promise<{ data: T | null; error: any }>,
+  supabaseOp: () => Promise<any>,
   sqliteOp: () => T
 ): Promise<T> {
   const supabase = getSupabaseServerClient();
   if (supabase) {
     try {
-      const { data, error } = await supabaseOp();
-      if (!error && data !== null) {
-        return data;
-      }
-      if (error) {
-        console.warn("[Supabase Query Error] Falling back to SQLite:", error.message);
+      const res = await supabaseOp();
+      if (res && typeof res === "object" && "data" in res) {
+        if (!res.error && res.data !== null && res.data !== undefined) {
+          return res.data as T;
+        }
+        if (res.error) {
+          console.warn("[Supabase Query Error] Falling back to SQLite:", res.error.message);
+        }
+      } else if (res !== null && res !== undefined) {
+        return res as T;
       }
     } catch (e: any) {
       console.warn("[Supabase Call Exception] Falling back to SQLite:", e.message || e);

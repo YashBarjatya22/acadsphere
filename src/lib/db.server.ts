@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 
 // DNS patch to bypass local getaddrinfo failures for Supabase domain
 const originalLookup = dns.lookup;
-dns.lookup = function (hostname: string, options: any, callback: any) {
+dns.lookup = function (this: any, hostname: string, options: any, callback: any) {
   if (hostname === "icyrztdyrucqmeklgpfs.supabase.co") {
     const cb = typeof options === "function" ? options : callback;
     const opts = typeof options === "object" ? options : {};
