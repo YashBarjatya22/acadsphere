@@ -67,9 +67,9 @@ function ProfilePage() {
     : (isAdmin ? "AD" : "AS");
 
   const STUDENT_STAT_CARDS = [
-    { label: "Roadmap Progress", value: `${analytics?.metrics?.roadmapProgress ?? 0}%`, icon: TrendingUp },
-    { label: "Resume Strength", value: `${analytics?.metrics?.resumeStrength ?? 0}%`, icon: Star },
-    { label: "Placement Score", value: `${analytics?.metrics?.placementReadiness ?? 0}%`, icon: Target },
+    { label: "Roadmap Progress", value: `${(analytics as any)?.metrics?.roadmapProgress ?? analytics?.studentMetrics?.roadmap_progress ?? 0}%`, icon: TrendingUp },
+    { label: "Resume Strength", value: `${(analytics as any)?.metrics?.resumeStrength ?? analytics?.studentMetrics?.resume_strength ?? 0}%`, icon: Star },
+    { label: "Placement Score", value: `${(analytics as any)?.metrics?.placementReadiness ?? analytics?.studentMetrics?.placement_readiness ?? 0}%`, icon: Target },
   ];
 
   const ADMIN_STAT_CARDS = [

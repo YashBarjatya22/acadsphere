@@ -94,7 +94,7 @@ function AnnouncementsPage() {
           ) : notices.length === 0 ? (
             <div className="py-16 text-center text-slate-500 text-xs">No active notices broadcasted.</div>
           ) : (
-            notices.map((notice) => {
+            notices.map((notice: any) => {
               const isHigh = notice.priority === "high";
               const isMedium = notice.priority === "medium";
 

@@ -283,7 +283,7 @@ function ExtraModulesPage() {
               {placements.length === 0 ? (
                 <div className="py-12 text-center text-slate-500 text-xs sm:col-span-2">No active applications currently logged.</div>
               ) : (
-                placements.map((p) => (
+                placements.map((p: any) => (
                   <Card key={p.id} className="bg-slate-900/40 border-slate-800 p-4">
                     <div className="flex justify-between items-start">
                       <div>

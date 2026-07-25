@@ -121,7 +121,7 @@ function AssignmentsPage() {
   });
 
   // Calculate submission status maps for students
-  const subMap = new Map(submissions.map(s => [s.assignmentId, s]));
+  const subMap = new Map((submissions || []).map((s: any) => [s.assignmentId, s]));
 
   return (
     <ChatLayout activeThreadId={null}>
@@ -179,8 +179,8 @@ function AssignmentsPage() {
               ) : assignments.length === 0 ? (
                 <div className="py-16 text-center text-slate-500 text-xs">No assignments currently active.</div>
               ) : (
-                assignments.map((as) => {
-                  const submission = subMap.get(as.id);
+                assignments.map((as: any) => {
+                  const submission = subMap.get(as.id) as any;
                   const isSubmitted = !!submission;
                   const isGraded = submission?.status === "graded";
                   const isLate = submission?.status === "late";
@@ -250,7 +250,7 @@ function AssignmentsPage() {
                   <CardTitle className="text-sm font-semibold text-slate-200">Deadlines Timeline</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {assignments.slice(0, 3).map((as, i) => (
+                  {assignments.slice(0, 3).map((as: any, i: number) => (
                     <div key={i} className="flex gap-3 text-left">
                       <div className="w-1 bg-rose-500 rounded"></div>
                       <div>
@@ -295,7 +295,7 @@ function AssignmentsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-850">
-                      {submissions.map((sub) => (
+                      {submissions.map((sub: any) => (
                         <tr key={sub.id} className="hover:bg-slate-900/20">
                           <td className="py-3 px-4 font-semibold text-slate-200">{sub.studentName}</td>
                           <td className="py-3 px-4 text-slate-300">{sub.assignmentTitle}</td>
@@ -360,7 +360,7 @@ function AssignmentsPage() {
                       required
                     >
                       <option value="">Select subject...</option>
-                      {subjects.map(s => (
+                      {subjects.map((s: any) => (
                         <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
                       ))}
                     </select>

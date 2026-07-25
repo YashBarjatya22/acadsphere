@@ -45,7 +45,7 @@ Respond with ONLY the question. No preamble, no numbering, no explanation.`;
 
     try {
       const model = getAiModel(customKey);
-      const { text } = await generateText({ model, prompt, maxTokens: 150 });
+      const { text } = await generateText({ model, prompt, maxOutputTokens: 150 } as any);
       return { question: text.trim() };
     } catch (e: any) {
       // Fallback questions by subject
@@ -119,7 +119,7 @@ Respond ONLY in this exact JSON format:
 
     try {
       const model = getAiModel(customKey);
-      const { text } = await generateText({ model, prompt, maxTokens: 250 });
+      const { text } = await generateText({ model, prompt, maxOutputTokens: 250 } as any);
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -294,7 +294,7 @@ If the instruction doesn't map to any of these, set "action": null and explain h
 
     try {
       const model = getAiModel(customKey);
-      const { text } = await generateText({ model, prompt, maxTokens: 400 });
+      const { text } = await generateText({ model, prompt, maxOutputTokens: 400 } as any);
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);

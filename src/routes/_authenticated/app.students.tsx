@@ -119,7 +119,7 @@ function StudentRegistryPage() {
   const exportCSV = () => {
     if (students.length === 0) return;
     const headers = ["Student ID", "Name", "Department", "Semester", "Section", "CGPA", "Attendance %", "Phone"];
-    const rows = students.map(s => [
+    const rows = students.map((s: any) => [
       s.studentId,
       s.name,
       s.department,
@@ -130,7 +130,7 @@ function StudentRegistryPage() {
       s.phone || ""
     ]);
     const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+      + [headers.join(","), ...rows.map((e: any) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -242,7 +242,7 @@ function StudentRegistryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {students.map((student) => (
+                    {students.map((student: any) => (
                       <tr key={student.id} className="hover:bg-slate-900/30 transition-colors">
                         <td className="py-3.5 px-4 flex items-center gap-2.5">
                           <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-bold text-[11px] grid place-items-center">
