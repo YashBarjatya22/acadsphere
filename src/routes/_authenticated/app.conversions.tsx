@@ -172,33 +172,45 @@ function ConversionsPage() {
     setProgress("uploading");
 
     try {
-      // Get authenticated user
+      // Get authenticated session with access token
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
+      if (!session?.user || !session?.access_token) {
         toast.error("You must be logged in to convert files.");
+        setConverting(false);
         return;
       }
 
-      const userId = session.user.id;
+      const userId    = session.user.id;
       const timestamp = Date.now();
       const sourcePath = `${userId}/${timestamp}_${droppedFile.name}`;
 
-      // Step 1: Upload source file to Supabase storage
+      // Step 1: Upload source file to Supabase storage using session-scoped client
       setProgress("uploading");
-      const { error: uploadError } = await supabase.storage
+      const { createClient } = await import("@supabase/supabase-js");
+      const authClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+        { global: { headers: { Authorization: `Bearer ${session.access_token}` } } }
+      );
+
+      const { error: uploadError } = await authClient.storage
         .from("conversions")
         .upload(sourcePath, droppedFile, { upsert: true });
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      // Step 2: Call edge function to convert
+      // Step 2: Call edge function — supabase.functions.invoke sends session JWT automatically
       setProgress("processing");
       const { data, error: fnError } = await supabase.functions.invoke("file-converter", {
         body: { source_path: sourcePath, target_format: selectedConversion.id },
       });
 
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) {
+        console.error("Edge function error:", fnError);
+        throw new Error(fnError.message || "Edge function failed");
+      }
       if (!data?.success) throw new Error(data?.error || "Conversion failed");
+
 
       setProgress("saving");
 
