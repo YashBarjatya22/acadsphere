@@ -11,7 +11,7 @@ import {
   LineChart, CheckCircle2, Search, Bell, Sparkles,
   User, Settings, Code, Volume2, CalendarDays,
   Users, Sun, Moon, X, Activity, GraduationCap,
-  UserCog, Shield, Radio, Megaphone, TrendingUp, ScrollText, Lock
+  UserCog, Shield, Radio, Megaphone, TrendingUp, ScrollText, Lock, FileOutput
 } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,46 @@ export function ChatLayout({
     ? (localStorage.getItem("demo_user_role") || "student")
     : "student";
   const isAdmin = userRole === "admin";
+
+  const [sessionUser, setSessionUser] = useState<{ name: string; email: string; avatar: string } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        const name = meta.full_name || meta.name || u.email?.split("@")[0] || (isAdmin ? "Administrator" : "Student");
+        const email = u.email || "";
+        const avatar = meta.avatar_url || meta.picture || "";
+
+        setSessionUser({ name, email, avatar });
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem("demo_user_name", name);
+          localStorage.setItem("demo_user_email", email);
+          if (avatar) localStorage.setItem("demo_user_avatar", avatar);
+          if (session.provider_token) localStorage.setItem("google_provider_token", session.provider_token);
+        }
+      }
+    });
+  }, [isAdmin]);
+
+  const userName = sessionUser?.name || (typeof window !== "undefined"
+    ? (localStorage.getItem("demo_user_name") || (isAdmin ? "Administrator" : "Christ Student"))
+    : (isAdmin ? "Administrator" : "Christ Student"));
+  const userEmail = sessionUser?.email || (typeof window !== "undefined"
+    ? (localStorage.getItem("demo_user_email") || "")
+    : "");
+  const userAvatar = sessionUser?.avatar || (typeof window !== "undefined"
+    ? (localStorage.getItem("demo_user_avatar") || "")
+    : "");
+  const userInitials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .filter(Boolean)
+    .join("")
+    .substring(0, 2)
+    .toUpperCase() || "CS";
 
   // Sync theme
   useEffect(() => {
@@ -102,11 +142,12 @@ export function ChatLayout({
   const studentNavItems = [
     { label: "Dashboard",         to: "/app",                    icon: LayoutDashboard },
     { label: "AI Assistant",       to: "/app/ai-assistant",       icon: Sparkles },
+    { label: "Classroom",          to: "/app/classroom",          icon: GraduationCap },
     { label: "Smart Notes",        to: "/app/notes",              icon: BookOpen },
     { label: "Lab Helper",         to: "/app/lab-buddy",          icon: Code },
     { label: "Resume Builder",     to: "/app/resume-analyzer",    icon: FileText },
-    { label: "CIA Reminder",       to: "/app/cia-reminder",       icon: CalendarDays },
     { label: "Attendance",         to: "/app/attendance",         icon: CheckCircle2 },
+    { label: "File Converter",     to: "/app/conversions",        icon: FileOutput },
     { label: "Community",          to: "/app/community",          icon: Users },
     { label: "Profile",            to: "/app/profile",            icon: User },
     { label: "Settings",           to: "/app/settings",           icon: Settings },
@@ -314,9 +355,11 @@ export function ChatLayout({
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="flex items-center p-1 rounded-full hover:bg-accent transition-colors duration-[120ms]"
               >
-                <Avatar className="h-7 w-7">
-                  <AvatarImage src="" />
-                  <AvatarFallback>{isAdmin ? "AD" : "AS"}</AvatarFallback>
+                <Avatar className="h-7 w-7 border border-border">
+                  <AvatarImage src={userAvatar} alt={userName} />
+                  <AvatarFallback className="bg-foreground text-background font-bold text-[10px]">
+                    {userInitials}
+                  </AvatarFallback>
                 </Avatar>
               </button>
 
@@ -324,16 +367,16 @@ export function ChatLayout({
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                   <div className={cn(
-                    "absolute right-0 top-full mt-2 w-48 z-50",
+                    "absolute right-0 top-full mt-2 w-52 z-50",
                     "rounded-xl border border-border bg-popover py-2",
                     "shadow-none animate-slide-up",
                   )}>
                     <div className="px-4 py-2 border-b border-border mb-1">
-                      <p className="font-sans text-[13px] font-semibold text-foreground">
-                        {isAdmin ? "Administrator" : "AcadSphere"}
+                      <p className="font-sans text-[13px] font-semibold text-foreground truncate">
+                        {userName}
                       </p>
                       <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em] truncate mt-0.5">
-                        {localStorage.getItem("demo_user_email") || "admin@acadsphere.edu"}
+                        {userEmail}
                       </p>
                     </div>
 
