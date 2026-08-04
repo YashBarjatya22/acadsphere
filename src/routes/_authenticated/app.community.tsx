@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Users, MessageSquare, Heart, Plus, Search, Hash, Circle, Send, X,
-  CheckCheck, UserCheck, MessageCircle, Sparkles, Filter
+  CheckCheck, MessageCircle, RefreshCw, Sparkles, UserCheck
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/community")({
@@ -64,44 +65,23 @@ const CHANNELS = [
   { name: "#study-groups", label: "study-groups", icon: Hash, count: 0 },
 ];
 
-const MEMBERS: PeerMember[] = [
-  { id: "p1", name: "Yash Barjatya", avatar: "YB", department: "CSE", semester: "Sem 6", status: "online", activity: "Practicing Networks Viva" },
-  { id: "p2", name: "Sneha Kapoor", avatar: "SK", department: "CSE", semester: "Sem 6", status: "online", activity: "Updating Resume ATS Score" },
-  { id: "p3", name: "Neha Sharma", avatar: "NS", department: "ISE", semester: "Sem 6", status: "online", activity: "Reviewing Career Roadmap" },
-  { id: "p4", name: "Arjun Singh", avatar: "AS", department: "MCA", semester: "Sem 4", status: "online", activity: "Solving DSA Graph Problems" },
-  { id: "p5", name: "Priya Nair", avatar: "PN", department: "CIVIL", semester: "Sem 2", status: "online", activity: "Reading Smart Notes" },
-  { id: "p6", name: "Ananya Sharma", avatar: "AN", department: "ISE", semester: "Sem 6", status: "online", activity: "Lab Manual Completion Tracker" },
-  { id: "p7", name: "Rohan Patel", avatar: "RP", department: "ECE", semester: "Sem 6", status: "offline", activity: "Last active 20m ago", lastSeen: "20 mins ago" },
-  { id: "p8", name: "Vikramaditya Singh", avatar: "VS", department: "MCA", semester: "Sem 4", status: "offline", activity: "Last active 2h ago", lastSeen: "2 hours ago" },
-  { id: "p9", name: "Karthik Raja", avatar: "KR", department: "MECH", semester: "Sem 4", status: "offline", activity: "Last active 1d ago", lastSeen: "1 day ago" },
-];
-
-const INITIAL_CHATS: Record<string, DirectMessage[]> = {
-  p1: [
-    { id: "m1", sender: "peer", text: "Hey! Let me know if you need the notes for Networks Socket Programming.", timestamp: "10:30 AM" },
-    { id: "m2", sender: "me", text: "Thanks Yash! That would be really helpful for tomorrow's lab.", timestamp: "10:32 AM" },
-  ],
-  p2: [
-    { id: "m3", sender: "peer", text: "Hi! Did you test your resume score on the Resume Builder?", timestamp: "Yesterday" },
-  ],
-};
-
 const AUTOMATED_REPLIES: Record<string, string[]> = {
-  p1: [
-    "Hey! Got your message. Let's compare notes for tomorrow's lab session!",
-    "Great point! I'm reviewing the TCP Socket code right now.",
-    "Awesome, let me share my lab manual checklist with you."
-  ],
-  p2: [
-    "Hi there! Just checked your text. Good luck with your preparation!",
-    "Thanks for reaching out! Let's connect after the lecture."
-  ],
   default: [
     "Hey! Thanks for texting. I'm currently working on my coursework and will get back to you shortly!",
     "Got your message! Let's catch up during the lab break.",
-    "Hi! Thanks for reaching out via AcadSphere Community Chat."
+    "Hi! Thanks for reaching out via AcadSphere Community Chat.",
+    "Hey! Comparing notes for tomorrow's session. Let's study together!"
   ]
 };
+
+function getInitials(name: string): string {
+  if (!name) return "ST";
+  const parts = name.trim().split(" ").filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
 
 function avatarColor(initials: string) {
   const colors = [
@@ -112,11 +92,16 @@ function avatarColor(initials: string) {
     "from-amber-500 to-orange-600",
     "from-cyan-500 to-blue-600",
   ];
-  const idx = initials.charCodeAt(0) % colors.length;
-  return colors[idx];
+  const code = initials ? initials.charCodeAt(0) : 0;
+  return colors[code % colors.length];
 }
 
 function CommunityPage() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [members, setMembers] = useState<PeerMember[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(true);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
   const [posts, setPosts] = useState<Post[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_POSTS);
@@ -127,8 +112,8 @@ function CommunityPage() {
   const [chats, setChats] = useState<Record<string, DirectMessage[]>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CHATS);
-      return saved ? JSON.parse(saved) : INITIAL_CHATS;
-    } catch { return INITIAL_CHATS; }
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
   });
 
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
@@ -141,6 +126,114 @@ function CommunityPage() {
   const [activeChannel, setActiveChannel] = useState("all");
   const [search, setSearch] = useState("");
 
+  // 1. Fetch live student profiles from Supabase
+  const fetchProfiles = async () => {
+    setIsLoadingMembers(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+
+      const { data: profilesData, error } = await supabase
+        .from("profiles")
+        .select("*, students(*)");
+
+      if (error) {
+        console.error("Error fetching student profiles from Supabase:", error);
+      }
+
+      if (profilesData && profilesData.length > 0) {
+        const mappedMembers: PeerMember[] = profilesData
+          .filter((p: any) => p.id !== user?.id)
+          .map((p: any) => {
+            const studentInfo = Array.isArray(p.students) ? p.students[0] : p.students;
+            const fullName = p.full_name || "Classmate";
+            return {
+              id: p.id,
+              name: fullName,
+              avatar: getInitials(fullName),
+              department: studentInfo?.department || p.degree || "Computer Science",
+              semester: studentInfo?.semester || "Sem 6",
+              status: "offline" as const,
+              activity: p.target_role ? `Goal: ${p.target_role}` : "Active Student",
+            };
+          });
+        setMembers(mappedMembers);
+      } else {
+        setMembers([]);
+      }
+    } catch (err) {
+      console.error("Failed to load classmate profiles:", err);
+      setMembers([]);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfiles();
+  }, []);
+
+  // 2. Establish Supabase Realtime Presence Channel
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const room = supabase.channel("online-users", {
+      config: { presence: { key: currentUser.id } },
+    });
+
+    room
+      .on("presence", { event: "sync" }, () => {
+        const state = room.presenceState();
+        const onlineSet = new Set<string>();
+
+        Object.keys(state).forEach((key) => {
+          onlineSet.add(key);
+          const presences = state[key] as any[];
+          presences?.forEach((p) => {
+            if (p.user_id) onlineSet.add(p.user_id);
+          });
+        });
+
+        setOnlineUserIds(onlineSet);
+      })
+      .on("presence", { event: "join" }, () => {
+        const state = room.presenceState();
+        const onlineSet = new Set<string>();
+        Object.keys(state).forEach((key) => {
+          onlineSet.add(key);
+          const presences = state[key] as any[];
+          presences?.forEach((p) => {
+            if (p.user_id) onlineSet.add(p.user_id);
+          });
+        });
+        setOnlineUserIds(onlineSet);
+      })
+      .on("presence", { event: "leave" }, () => {
+        const state = room.presenceState();
+        const onlineSet = new Set<string>();
+        Object.keys(state).forEach((key) => {
+          onlineSet.add(key);
+          const presences = state[key] as any[];
+          presences?.forEach((p) => {
+            if (p.user_id) onlineSet.add(p.user_id);
+          });
+        });
+        setOnlineUserIds(onlineSet);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await room.track({
+            user_id: currentUser.id,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(room);
+    };
+  }, [currentUser?.id]);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_POSTS, JSON.stringify(posts));
   }, [posts]);
@@ -148,6 +241,23 @@ function CommunityPage() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats));
   }, [chats]);
+
+  // Combine members with realtime online status
+  const membersWithPresence = useMemo(() => {
+    return members.map((m) => ({
+      ...m,
+      status: onlineUserIds.has(m.id) ? ("online" as const) : ("offline" as const),
+    }));
+  }, [members, onlineUserIds]);
+
+  const onlineMembersCount = useMemo(() => {
+    const classmatesOnline = membersWithPresence.filter((m) => m.status === "online").length;
+    return Math.max(onlineUserIds.size, classmatesOnline + (currentUser ? 1 : 0));
+  }, [membersWithPresence, onlineUserIds, currentUser]);
+
+  const offlineMembersCount = useMemo(() => {
+    return membersWithPresence.filter((m) => m.status === "offline").length;
+  }, [membersWithPresence]);
 
   const filteredPosts = useMemo(() => {
     let list = activeChannel === "all" ? posts : posts.filter((p) => p.channel === activeChannel);
@@ -161,7 +271,7 @@ function CommunityPage() {
   }, [posts, activeChannel, search]);
 
   const filteredMembers = useMemo(() => {
-    return MEMBERS.filter((m) => {
+    return membersWithPresence.filter((m) => {
       if (memberFilter === "online" && m.status !== "online") return false;
       if (memberFilter === "offline" && m.status !== "offline") return false;
       if (memberSearch.trim()) {
@@ -170,21 +280,23 @@ function CommunityPage() {
       }
       return true;
     });
-  }, [memberFilter, memberSearch]);
+  }, [membersWithPresence, memberFilter, memberSearch]);
 
-  const onlineMembersCount = MEMBERS.filter((m) => m.status === "online").length;
-  const offlineMembersCount = MEMBERS.filter((m) => m.status === "offline").length;
+  const activePeer = useMemo(() => {
+    if (!activePeerId) return null;
+    return membersWithPresence.find((m) => m.id === activePeerId) || null;
+  }, [membersWithPresence, activePeerId]);
 
-  const activePeer = MEMBERS.find((m) => m.id === activePeerId);
   const currentPeerMessages = activePeerId ? chats[activePeerId] || [] : [];
 
   const handlePost = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPostText.trim()) return;
+    const authorName = currentUser?.user_metadata?.full_name || "You";
     const newPost: Post = {
       id: Date.now().toString(),
-      author: "You",
-      avatar: "YO",
+      author: authorName,
+      avatar: getInitials(authorName),
       channel: newPostChannel,
       content: newPostText,
       likes: 0,
@@ -212,14 +324,19 @@ function CommunityPage() {
   };
 
   const openMessageByAuthorName = (authorName: string) => {
-    const found = MEMBERS.find((m) => m.name.toLowerCase() === authorName.toLowerCase());
+    const currentName = currentUser?.user_metadata?.full_name || "You";
+    if (authorName.toLowerCase() === currentName.toLowerCase() || authorName === "You") {
+      toast.info("This is your post.");
+      return;
+    }
+
+    const found = membersWithPresence.find((m) => m.name.toLowerCase() === authorName.toLowerCase());
     if (found) {
       setActivePeerId(found.id);
     } else {
-      // create temporary peer session
       const tempId = `temp_${Date.now()}`;
-      const initials = authorName.split(" ").map((n) => n[0]).join("").toUpperCase();
-      MEMBERS.push({
+      const initials = getInitials(authorName);
+      const tempMember: PeerMember = {
         id: tempId,
         name: authorName,
         avatar: initials,
@@ -227,7 +344,8 @@ function CommunityPage() {
         semester: "Sem 6",
         status: "online",
         activity: "Active in Forum",
-      });
+      };
+      setMembers((prev) => [...prev, tempMember]);
       setActivePeerId(tempId);
     }
   };
@@ -253,7 +371,7 @@ function CommunityPage() {
 
     setChatInputText("");
 
-    // Simulate automated peer response after 1.2s
+    // Automated peer response after 1.2s
     setTimeout(() => {
       const peerReplies = AUTOMATED_REPLIES[activePeerId] || AUTOMATED_REPLIES.default;
       const randomReply = peerReplies[Math.floor(Math.random() * peerReplies.length)];
@@ -275,7 +393,7 @@ function CommunityPage() {
     <ChatLayout activeThreadId={null}>
       <div className="h-full bg-background text-foreground flex flex-col transition-colors duration-200 relative">
 
-        {/* Gradient Header */}
+        {/* Header */}
         <div className="relative overflow-hidden px-6 py-4 border-b border-border shrink-0">
           <div className="absolute inset-0 bg-gradient-to-r from-pink-500/10 via-background to-rose-500/5 pointer-events-none" />
           <div className="relative flex items-center justify-between">
@@ -285,7 +403,7 @@ function CommunityPage() {
               </div>
               <div>
                 <h1 className="text-sm font-extrabold tracking-tight">Community Forum & Peer Texting</h1>
-                <p className="text-[10px] text-muted-foreground">Check online/offline status, text peers 1-on-1, and share study notes</p>
+                <p className="text-[10px] text-muted-foreground">Live student directory with real-time presence & 1-on-1 direct messaging</p>
               </div>
             </div>
             
@@ -294,6 +412,16 @@ function CommunityPage() {
                 <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500 animate-pulse" />
                 {onlineMembersCount} Online Now
               </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchProfiles}
+                className="h-7 text-[10px] gap-1 px-2.5"
+                title="Refresh student list"
+              >
+                <RefreshCw className={`h-3 w-3 ${isLoadingMembers ? "animate-spin" : ""}`} />
+                Sync
+              </Button>
             </div>
           </div>
         </div>
@@ -404,7 +532,7 @@ function CommunityPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="text-xs font-bold text-foreground">{post.author}</p>
-                              {post.author !== "You" && (
+                              {post.author !== "You" && post.author !== (currentUser?.user_metadata?.full_name) && (
                                 <button
                                   onClick={() => openMessageByAuthorName(post.author)}
                                   className="text-[10px] font-bold text-primary hover:underline flex items-center gap-0.5"
@@ -436,7 +564,7 @@ function CommunityPage() {
                           {post.likes} {post.likes === 1 ? "Like" : "Likes"}
                         </button>
 
-                        {post.author !== "You" && (
+                        {post.author !== "You" && post.author !== (currentUser?.user_metadata?.full_name) && (
                           <button
                             onClick={() => openMessageByAuthorName(post.author)}
                             className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
@@ -459,6 +587,9 @@ function CommunityPage() {
                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
                   Classmates Presence
                 </p>
+                <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
+                  <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
+                </span>
               </div>
 
               {/* Online / Offline Filter Pills */}
@@ -469,7 +600,7 @@ function CommunityPage() {
                     memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
                   }`}
                 >
-                  All ({MEMBERS.length})
+                  All ({membersWithPresence.length})
                 </button>
                 <button
                   onClick={() => setMemberFilter("online")}
@@ -478,7 +609,7 @@ function CommunityPage() {
                   }`}
                 >
                   <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
-                  ({onlineMembersCount})
+                  ({membersWithPresence.filter(m => m.status === "online").length})
                 </button>
                 <button
                   onClick={() => setMemberFilter("offline")}
@@ -504,36 +635,50 @@ function CommunityPage() {
               </div>
 
               {/* Member List */}
-              <div className="space-y-1">
-                {filteredMembers.map((member) => (
-                  <div
-                    key={member.id}
-                    onClick={() => openDirectMessage(member.id)}
-                    className="flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-border hover:bg-accent/50 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="relative shrink-0">
-                        <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.avatar)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
-                          {member.avatar}
+              {isLoadingMembers ? (
+                <div className="space-y-2 p-2">
+                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                </div>
+              ) : filteredMembers.length === 0 ? (
+                <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
+                  <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
+                  <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
+                  <p className="text-[9px] text-muted-foreground/60">Registered student profiles will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {filteredMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      onClick={() => openDirectMessage(member.id)}
+                      className="flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-border hover:bg-accent/50 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative shrink-0">
+                          <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.avatar)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
+                            {member.avatar}
+                          </div>
+                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
+                            member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                          }`} />
                         </div>
-                        <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
-                          member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
-                        }`} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">{member.name}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">{member.name}</p>
+                          </div>
+                          <p className="text-[9px] text-muted-foreground truncate">{member.activity}</p>
                         </div>
-                        <p className="text-[9px] text-muted-foreground truncate">{member.activity}</p>
                       </div>
-                    </div>
 
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <MessageCircle className="h-3.5 w-3.5 text-primary" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </aside>
 
@@ -557,7 +702,7 @@ function CommunityPage() {
                   <p className="text-xs font-bold text-foreground">{activePeer.name}</p>
                   <p className="text-[9px] text-muted-foreground flex items-center gap-1">
                     <span className={activePeer.status === "online" ? "text-emerald-500 font-bold" : "text-slate-400"}>
-                      {activePeer.status === "online" ? "🟢 Online" : `⚪ Offline (${activePeer.lastSeen || 'Recently'})`}
+                      {activePeer.status === "online" ? "🟢 Online" : "⚪ Offline"}
                     </span>
                     · {activePeer.department}
                   </p>
