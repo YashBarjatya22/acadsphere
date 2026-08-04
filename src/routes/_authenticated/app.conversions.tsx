@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   FileOutput, Upload, Download, RefreshCw, FileText, FileImage,
-  FileSpreadsheet, Presentation, ChevronDown, CheckCircle2, X,
+  FileSpreadsheet, Presentation, CheckCircle2, X,
   Sparkles, Zap, Clock, Shield
 } from "lucide-react";
 
@@ -27,21 +27,13 @@ interface ConversionType {
   accept: string;
 }
 
+// Only conversions supported by the iLoveAPI developer REST API:
+//   officepdf (Office → PDF) | pdfjpg (PDF → JPG) | imagepdf (Image → PDF)
 const CONVERSIONS: ConversionType[] = [
-  {
-    id: "pdf-to-word",
-    label: "PDF → Word",
-    description: "Convert PDF documents to editable DOCX files",
-    inputExt: [".pdf"],
-    outputExt: "docx",
-    icon: FileText,
-    gradient: "from-blue-500 to-indigo-600",
-    accept: ".pdf,application/pdf",
-  },
   {
     id: "word-to-pdf",
     label: "Word → PDF",
-    description: "Turn Word documents into polished PDFs",
+    description: "Turn Word documents (.doc/.docx) into polished PDFs",
     inputExt: [".doc", ".docx"],
     outputExt: "pdf",
     icon: FileText,
@@ -49,19 +41,9 @@ const CONVERSIONS: ConversionType[] = [
     accept: ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   },
   {
-    id: "pdf-to-excel",
-    label: "PDF → Excel",
-    description: "Extract tables from PDFs into spreadsheets",
-    inputExt: [".pdf"],
-    outputExt: "xlsx",
-    icon: FileSpreadsheet,
-    gradient: "from-emerald-500 to-teal-600",
-    accept: ".pdf,application/pdf",
-  },
-  {
     id: "excel-to-pdf",
     label: "Excel → PDF",
-    description: "Convert spreadsheets to shareable PDFs",
+    description: "Convert spreadsheets (.xls/.xlsx) to shareable PDFs",
     inputExt: [".xls", ".xlsx"],
     outputExt: "pdf",
     icon: FileSpreadsheet,
@@ -69,19 +51,9 @@ const CONVERSIONS: ConversionType[] = [
     accept: ".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
   {
-    id: "pdf-to-powerpoint",
-    label: "PDF → PowerPoint",
-    description: "Convert PDF slides into editable presentations",
-    inputExt: [".pdf"],
-    outputExt: "pptx",
-    icon: Presentation,
-    gradient: "from-orange-500 to-rose-600",
-    accept: ".pdf,application/pdf",
-  },
-  {
     id: "powerpoint-to-pdf",
     label: "PowerPoint → PDF",
-    description: "Turn presentations into portable PDFs",
+    description: "Turn presentations (.ppt/.pptx) into portable PDFs",
     inputExt: [".ppt", ".pptx"],
     outputExt: "pdf",
     icon: Presentation,

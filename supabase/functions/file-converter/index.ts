@@ -24,20 +24,19 @@ function jsonResp(body: unknown, status: number): Response {
   });
 }
 
-// ── Strict tool map: frontend format ID → exact iLoveAPI tool + output ext ────
-// Tool names are taken verbatim from api.ilovepdf.com/v1/start/{tool}
+// ── Strict tool map: ONLY valid iLoveAPI developer REST API tools ─────────────
+// Confirmed valid: officepdf | pdfjpg | imagepdf
+// NOT supported by the developer API: pdftodoc, pdftoexcel, pdftopowerpoint
 const TOOL_MAP: Record<string, { tool: string; ext: string }> = {
-  "pdf-to-word":        { tool: "pdftodoc",        ext: "docx" },
-  "pdf-to-excel":       { tool: "pdftoexcel",       ext: "xlsx" },
-  "pdf-to-powerpoint":  { tool: "pdftopowerpoint",  ext: "pptx" },
-  "pdf-to-jpg":         { tool: "pdfjpg",           ext: "jpg"  },
-  "word-to-pdf":        { tool: "officepdf",        ext: "pdf"  },
-  "excel-to-pdf":       { tool: "officepdf",        ext: "pdf"  },
-  "powerpoint-to-pdf":  { tool: "officepdf",        ext: "pdf"  },
-  "image-to-pdf":       { tool: "imagepdf",         ext: "pdf"  },
-  "jpg-to-pdf":         { tool: "imagepdf",         ext: "pdf"  },
-  "png-to-pdf":         { tool: "imagepdf",         ext: "pdf"  },
+  "word-to-pdf":        { tool: "officepdf", ext: "pdf" },
+  "excel-to-pdf":       { tool: "officepdf", ext: "pdf" },
+  "powerpoint-to-pdf":  { tool: "officepdf", ext: "pdf" },
+  "pdf-to-jpg":         { tool: "pdfjpg",    ext: "jpg" },
+  "image-to-pdf":       { tool: "imagepdf",  ext: "pdf" },
+  "jpg-to-pdf":         { tool: "imagepdf",  ext: "pdf" },
+  "png-to-pdf":         { tool: "imagepdf",  ext: "pdf" },
 };
+
 
 // ── JWT payload decoder (Supabase gateway already verifies signature) ──────────
 function getUserIdFromJwt(token: string): string | null {
