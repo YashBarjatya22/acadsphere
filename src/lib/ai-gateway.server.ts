@@ -1,50 +1,79 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { config } from "dotenv";
+import path from "node:path";
 
-const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
+// Ensure environment variables from .env.local and .env are loaded
+if (typeof process !== "undefined" && process.cwd) {
+  config({ path: path.resolve(process.cwd(), ".env.local") });
+  config({ path: path.resolve(process.cwd(), ".env") });
+}
 
-export function createLovableAiGatewayProvider(lovableApiKey: string, initialRunId?: string) {
-  let runId = initialRunId?.trim() || undefined;
-  let resolveRunId: (value: string | undefined) => void = () => {};
-  let runIdResolved = false;
-  const runIdReady = new Promise<string | undefined>((resolve) => {
-    resolveRunId = resolve;
+/**
+ * Returns a Vercel AI SDK-compatible model instance using Groq API.
+ * Uses Groq's high-speed OpenAI-compatible REST endpoint (specification version v2).
+ *
+ * Primary Model: llama-3.3-70b-versatile (ultra fast, high intelligence)
+ * Backup Models: llama-3.1-8b-instant, mixtral-8x7b-32768
+ */
+export function getAiModel(modelName: string = "llama-3.3-70b-versatile") {
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (groqKey && !groqKey.includes("your_") && groqKey.length > 5) {
+    const provider = createOpenAICompatible({
+      name: "groq",
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: groqKey,
+    });
+    return provider(modelName);
+  }
+
+  if (openaiKey && !openaiKey.includes("your_") && openaiKey.length > 5) {
+    const provider = createOpenAICompatible({
+      name: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: openaiKey,
+    });
+    return provider("gpt-4o-mini");
+  }
+
+  if (geminiKey && !geminiKey.includes("your_") && geminiKey.length > 5) {
+    const provider = createOpenAICompatible({
+      name: "gemini",
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      apiKey: geminiKey,
+    });
+    return provider("gemini-1.5-flash");
+  }
+
+  return null;
+}
+
+/**
+ * Returns a model using a user-supplied custom key.
+ * Falls back to getAiModel() if no custom key is provided.
+ */
+export function getAiModelWithCustomKey(
+  customKey?: string,
+  provider?: "Groq" | "Gemini" | "OpenAI"
+) {
+  if (!customKey) return getAiModel();
+
+  if (provider === "OpenAI") {
+    const p = createOpenAICompatible({
+      name: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: customKey,
+    });
+    return p("gpt-4o-mini");
+  }
+
+  // Default: Groq API key
+  const p = createOpenAICompatible({
+    name: "groq-custom",
+    baseURL: "https://api.groq.com/openai/v1",
+    apiKey: customKey,
   });
-
-  const publishRunId = (value?: string) => {
-    const next = value?.trim() || undefined;
-    if (!runId && next) runId = next;
-    if (!runIdResolved) {
-      runIdResolved = true;
-      resolveRunId(runId);
-    }
-  };
-  if (runId) publishRunId(runId);
-
-  const provider = createOpenAICompatible({
-    name: "lovable",
-    baseURL: "https://ai.gateway.lovable.dev/v1",
-    headers: {
-      "Lovable-API-Key": lovableApiKey,
-      "X-Lovable-AIG-SDK": "vercel-ai-sdk",
-    },
-    fetch: async (input, init) => {
-      const headers = new Headers(init?.headers);
-      if (runId && !headers.has(LOVABLE_AIG_RUN_ID_HEADER)) {
-        headers.set(LOVABLE_AIG_RUN_ID_HEADER, runId);
-      }
-      try {
-        const response = await fetch(input, { ...init, headers });
-        publishRunId(response.headers.get(LOVABLE_AIG_RUN_ID_HEADER) ?? undefined);
-        return response;
-      } catch (error) {
-        publishRunId(undefined);
-        throw error;
-      }
-    },
-  });
-
-  return Object.assign(provider, {
-    getRunId: () => runId,
-    waitForRunId: () => (runId ? Promise.resolve(runId) : runIdReady),
-  });
+  return p("llama-3.3-70b-versatile");
 }

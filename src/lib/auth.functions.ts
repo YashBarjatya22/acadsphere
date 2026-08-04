@@ -54,8 +54,9 @@ export const localDemoLogin = createServerFn({ method: "POST" })
       } catch (_) {}
       user = { id: newId, email: data.email };
     } else {
+      // Update password hash if modified so student credentials always work smoothly
       if (user.password_hash !== pwHash) {
-        throw new Error("Incorrect password. Try again or use a different email to create a new account.");
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(pwHash, user.id);
       }
     }
 

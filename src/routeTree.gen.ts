@@ -15,6 +15,7 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminStudentsRouteImport } from './routes/admin/students'
@@ -38,8 +39,9 @@ import { Route as AuthenticatedAppProfileRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAppNotesRouteImport } from './routes/_authenticated/app.notes'
 import { Route as AuthenticatedAppLabBuddyRouteImport } from './routes/_authenticated/app.lab-buddy'
 import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticated/app.extra'
+import { Route as AuthenticatedAppConversionsRouteImport } from './routes/_authenticated/app.conversions'
 import { Route as AuthenticatedAppCommunityRouteImport } from './routes/_authenticated/app.community'
-import { Route as AuthenticatedAppCiaReminderRouteImport } from './routes/_authenticated/app.cia-reminder'
+import { Route as AuthenticatedAppClassroomRouteImport } from './routes/_authenticated/app.classroom'
 import { Route as AuthenticatedAppCareerRoadmapRouteImport } from './routes/_authenticated/app.career-roadmap'
 import { Route as AuthenticatedAppAttendanceRouteImport } from './routes/_authenticated/app.attendance'
 import { Route as AuthenticatedAppAssignmentsRouteImport } from './routes/_authenticated/app.assignments'
@@ -75,6 +77,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRouteRoute,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthRoute,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
@@ -197,16 +204,22 @@ const AuthenticatedAppExtraRoute = AuthenticatedAppExtraRouteImport.update({
   path: '/app/extra',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppConversionsRoute =
+  AuthenticatedAppConversionsRouteImport.update({
+    id: '/app/conversions',
+    path: '/app/conversions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppCommunityRoute =
   AuthenticatedAppCommunityRouteImport.update({
     id: '/app/community',
     path: '/app/community',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedAppCiaReminderRoute =
-  AuthenticatedAppCiaReminderRouteImport.update({
-    id: '/app/cia-reminder',
-    path: '/app/cia-reminder',
+const AuthenticatedAppClassroomRoute =
+  AuthenticatedAppClassroomRouteImport.update({
+    id: '/app/classroom',
+    path: '/app/classroom',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAppCareerRoadmapRoute =
@@ -249,7 +262,7 @@ const AuthenticatedAppThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
@@ -266,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
@@ -273,8 +287,9 @@ export interface FileRoutesByFullPath {
   '/app/assignments': typeof AuthenticatedAppAssignmentsRoute
   '/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
-  '/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/app/classroom': typeof AuthenticatedAppClassroomRoute
   '/app/community': typeof AuthenticatedAppCommunityRoute
+  '/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
   '/app/notes': typeof AuthenticatedAppNotesRoute
@@ -286,7 +301,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
@@ -303,6 +318,7 @@ export interface FileRoutesByTo {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/admin': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
@@ -310,8 +326,9 @@ export interface FileRoutesByTo {
   '/app/assignments': typeof AuthenticatedAppAssignmentsRoute
   '/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
-  '/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/app/classroom': typeof AuthenticatedAppClassroomRoute
   '/app/community': typeof AuthenticatedAppCommunityRoute
+  '/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
   '/app/notes': typeof AuthenticatedAppNotesRoute
@@ -326,7 +343,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/admin': typeof AdminRouteRouteWithChildren
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/_authenticated/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
@@ -343,6 +360,7 @@ export interface FileRoutesById {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
   '/_authenticated/app/$threadId': typeof AuthenticatedAppThreadIdRoute
   '/_authenticated/app/ai-assistant': typeof AuthenticatedAppAiAssistantRoute
@@ -350,8 +368,9 @@ export interface FileRoutesById {
   '/_authenticated/app/assignments': typeof AuthenticatedAppAssignmentsRoute
   '/_authenticated/app/attendance': typeof AuthenticatedAppAttendanceRoute
   '/_authenticated/app/career-roadmap': typeof AuthenticatedAppCareerRoadmapRoute
-  '/_authenticated/app/cia-reminder': typeof AuthenticatedAppCiaReminderRoute
+  '/_authenticated/app/classroom': typeof AuthenticatedAppClassroomRoute
   '/_authenticated/app/community': typeof AuthenticatedAppCommunityRoute
+  '/_authenticated/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/_authenticated/app/extra': typeof AuthenticatedAppExtraRoute
   '/_authenticated/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
   '/_authenticated/app/notes': typeof AuthenticatedAppNotesRoute
@@ -383,6 +402,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/auth/callback'
     | '/admin/'
     | '/app/$threadId'
     | '/app/ai-assistant'
@@ -390,8 +410,9 @@ export interface FileRouteTypes {
     | '/app/assignments'
     | '/app/attendance'
     | '/app/career-roadmap'
-    | '/app/cia-reminder'
+    | '/app/classroom'
     | '/app/community'
+    | '/app/conversions'
     | '/app/extra'
     | '/app/lab-buddy'
     | '/app/notes'
@@ -420,6 +441,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/auth/callback'
     | '/admin'
     | '/app/$threadId'
     | '/app/ai-assistant'
@@ -427,8 +449,9 @@ export interface FileRouteTypes {
     | '/app/assignments'
     | '/app/attendance'
     | '/app/career-roadmap'
-    | '/app/cia-reminder'
+    | '/app/classroom'
     | '/app/community'
+    | '/app/conversions'
     | '/app/extra'
     | '/app/lab-buddy'
     | '/app/notes'
@@ -459,6 +482,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/auth/callback'
     | '/admin/'
     | '/_authenticated/app/$threadId'
     | '/_authenticated/app/ai-assistant'
@@ -466,8 +490,9 @@ export interface FileRouteTypes {
     | '/_authenticated/app/assignments'
     | '/_authenticated/app/attendance'
     | '/_authenticated/app/career-roadmap'
-    | '/_authenticated/app/cia-reminder'
+    | '/_authenticated/app/classroom'
     | '/_authenticated/app/community'
+    | '/_authenticated/app/conversions'
     | '/_authenticated/app/extra'
     | '/_authenticated/app/lab-buddy'
     | '/_authenticated/app/notes'
@@ -482,7 +507,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
-  AuthRoute: typeof AuthRoute
+  AuthRoute: typeof AuthRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiChatRoute: typeof ApiChatRoute
 }
@@ -530,6 +555,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRouteRoute
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/api/chat': {
       id: '/api/chat'
@@ -692,6 +724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppExtraRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/conversions': {
+      id: '/_authenticated/app/conversions'
+      path: '/app/conversions'
+      fullPath: '/app/conversions'
+      preLoaderRoute: typeof AuthenticatedAppConversionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/community': {
       id: '/_authenticated/app/community'
       path: '/app/community'
@@ -699,11 +738,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppCommunityRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/app/cia-reminder': {
-      id: '/_authenticated/app/cia-reminder'
-      path: '/app/cia-reminder'
-      fullPath: '/app/cia-reminder'
-      preLoaderRoute: typeof AuthenticatedAppCiaReminderRouteImport
+    '/_authenticated/app/classroom': {
+      id: '/_authenticated/app/classroom'
+      path: '/app/classroom'
+      fullPath: '/app/classroom'
+      preLoaderRoute: typeof AuthenticatedAppClassroomRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/career-roadmap': {
@@ -760,8 +799,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppAssignmentsRoute: typeof AuthenticatedAppAssignmentsRoute
   AuthenticatedAppAttendanceRoute: typeof AuthenticatedAppAttendanceRoute
   AuthenticatedAppCareerRoadmapRoute: typeof AuthenticatedAppCareerRoadmapRoute
-  AuthenticatedAppCiaReminderRoute: typeof AuthenticatedAppCiaReminderRoute
+  AuthenticatedAppClassroomRoute: typeof AuthenticatedAppClassroomRoute
   AuthenticatedAppCommunityRoute: typeof AuthenticatedAppCommunityRoute
+  AuthenticatedAppConversionsRoute: typeof AuthenticatedAppConversionsRoute
   AuthenticatedAppExtraRoute: typeof AuthenticatedAppExtraRoute
   AuthenticatedAppLabBuddyRoute: typeof AuthenticatedAppLabBuddyRoute
   AuthenticatedAppNotesRoute: typeof AuthenticatedAppNotesRoute
@@ -781,8 +821,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppAssignmentsRoute: AuthenticatedAppAssignmentsRoute,
   AuthenticatedAppAttendanceRoute: AuthenticatedAppAttendanceRoute,
   AuthenticatedAppCareerRoadmapRoute: AuthenticatedAppCareerRoadmapRoute,
-  AuthenticatedAppCiaReminderRoute: AuthenticatedAppCiaReminderRoute,
+  AuthenticatedAppClassroomRoute: AuthenticatedAppClassroomRoute,
   AuthenticatedAppCommunityRoute: AuthenticatedAppCommunityRoute,
+  AuthenticatedAppConversionsRoute: AuthenticatedAppConversionsRoute,
   AuthenticatedAppExtraRoute: AuthenticatedAppExtraRoute,
   AuthenticatedAppLabBuddyRoute: AuthenticatedAppLabBuddyRoute,
   AuthenticatedAppNotesRoute: AuthenticatedAppNotesRoute,
@@ -832,11 +873,21 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
   AdminRouteRouteChildren,
 )
 
+interface AuthRouteChildren {
+  AuthCallbackRoute: typeof AuthCallbackRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthCallbackRoute: AuthCallbackRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminRouteRoute: AdminRouteRouteWithChildren,
-  AuthRoute: AuthRoute,
+  AuthRoute: AuthRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiChatRoute: ApiChatRoute,
 }

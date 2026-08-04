@@ -17,7 +17,7 @@ const ROLES = [
 const MODULES = [
   "Dashboard", "AI Assistant", "Smart Notes",
   "Lab Helper", "Resume Builder",
-  "CIA Reminder", "Attendance", "Community", "Profile",
+  "Attendance", "Community", "Profile",
   "Student Management", "User Management", "Announcements",
   "Reports", "Analytics", "Audit Logs", "System Settings",
 ];

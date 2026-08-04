@@ -2,8 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { generateText } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { getAiModel, getAiModelWithCustomKey } from "./ai-gateway.server";
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
 import crypto from "node:crypto";
 
@@ -121,16 +120,10 @@ export const generateStudyPlan = createServerFn({ method: "POST" })
     } else {
       let model: any;
       try {
-        if (data.provider === "OpenAI" && customKey) {
-          model = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${customKey}` } })("gpt-4o-mini");
-        } else if (data.provider === "Gemini" && customKey) {
-          model = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${customKey}` } })("gemini-1.5-flash");
-        } else if (systemLovableKey) {
-          model = createLovableAiGatewayProvider(systemLovableKey)("google/gemini-3-flash-preview");
-        } else if (systemGeminiKey) {
-          model = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${systemGeminiKey}` } })("gemini-1.5-flash");
-        } else if (systemOpenaiKey) {
-          model = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${systemOpenaiKey}` } })("gpt-4o-mini");
+        if (customKey) {
+          model = getAiModelWithCustomKey(customKey, data.provider);
+        } else {
+          model = getAiModel();
         }
 
         const prompt = `You are a premium AI Academic Coach. Generate a comprehensive Study Plan as valid JSON (no markdown blocks). Student: Degree=${data.degree}, Semester=${data.semester}, Hours=${data.studyHoursPerDay}/day, Weak=${data.weakSubjects}, Strong=${data.strongSubjects}, StudyTime=${data.preferredStudyTime}, Target=${data.targetGrade}, Subjects=${JSON.stringify(data.subjects)}. Schema: {"timetable":{"Monday":[{"time":"","subject":"","activity":""}]},"spacedRepetition":[],"weeklyGoals":[],"subjectProgress":[],"recommendations":[],"tasks":[]}`;

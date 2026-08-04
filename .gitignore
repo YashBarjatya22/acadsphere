@@ -31,7 +31,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local SQLite databases
-local.db
-*.db
+# Local environment and temp files
+.env
+.env.*
+supabase/.temp/
 

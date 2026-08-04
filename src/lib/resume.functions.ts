@@ -2,8 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { generateText } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { getAiModel, getAiModelWithCustomKey } from "./ai-gateway.server";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -163,37 +162,11 @@ export const analyzeResume = createServerFn({ method: "POST" })
     // Initialize AI provider
     let model: any;
     try {
-      if (data.provider === "OpenAI" && customKey) {
-        const provider = createOpenAICompatible({
-          name: "openai",
-          baseURL: "https://api.openai.com/v1",
-          headers: { Authorization: `Bearer ${customKey}` },
-        });
-        model = provider("gpt-4o-mini");
-      } else if (data.provider === "Gemini" && customKey) {
-        const provider = createOpenAICompatible({
-          name: "gemini",
-          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-          headers: { Authorization: `Bearer ${customKey}` },
-        });
-        model = provider("gemini-1.5-flash");
-      } else if (systemLovableKey) {
-        const gateway = createLovableAiGatewayProvider(systemLovableKey);
-        model = gateway("google/gemini-3-flash-preview");
-      } else if (systemGeminiKey) {
-        const provider = createOpenAICompatible({
-          name: "gemini",
-          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-          headers: { Authorization: `Bearer ${systemGeminiKey}` },
-        });
-        model = provider("gemini-1.5-flash");
-      } else if (systemOpenaiKey) {
-        const provider = createOpenAICompatible({
-          name: "openai",
-          baseURL: "https://api.openai.com/v1",
-          headers: { Authorization: `Bearer ${systemOpenaiKey}` },
-        });
-        model = provider("gpt-4o-mini");
+      let model: any;
+      if (customKey) {
+        model = getAiModelWithCustomKey(customKey, data.provider);
+      } else {
+        model = getAiModel();
       }
 
       const prompt = `

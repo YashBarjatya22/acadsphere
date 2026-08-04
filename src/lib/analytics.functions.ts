@@ -158,7 +158,22 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
       async () => {
         let { data } = await supabaseServer.from("profiles").select("*").eq("id", userId).single();
         if (!data) {
-          await supabaseServer.from("profiles").insert([{ id: userId, full_name: "Student Name", degree: "B.Tech CSE", target_role: "Frontend Engineer", current_skills: [] }]);
+          let nameFromAuth = "Christ Student";
+          try {
+            const { data: authUser } = await supabaseServer.auth.admin.getUserById(userId);
+            if (authUser?.user) {
+              const meta = authUser.user.user_metadata || {};
+              nameFromAuth = meta.full_name || meta.name || authUser.user.email?.split("@")[0] || "Christ Student";
+            }
+          } catch (_) {}
+
+          await supabaseServer.from("profiles").insert([{
+            id: userId,
+            full_name: nameFromAuth,
+            degree: "MSc Big Data Analytics",
+            target_role: "Software Engineer / Data Scientist",
+            current_skills: []
+          }]);
           const res = await supabaseServer.from("profiles").select("*").eq("id", userId).single();
           data = res.data;
         }
@@ -168,7 +183,7 @@ export const getAnalyticsSummary = createServerFn({ method: "GET" })
         const db = getDb();
         let row = db.prepare("SELECT * FROM profiles WHERE id = ?").get(userId) as any;
         if (!row) {
-          db.prepare("INSERT INTO profiles (id, full_name, degree, target_role, current_skills) VALUES (?, 'Student Name', 'B.Tech CSE', 'Frontend Engineer', '[]')").run(userId);
+          db.prepare("INSERT INTO profiles (id, full_name, degree, target_role, current_skills) VALUES (?, 'Christ Student', 'MSc Big Data Analytics', 'Software Engineer / Data Scientist', '[]')").run(userId);
           row = db.prepare("SELECT * FROM profiles WHERE id = ?").get(userId);
         }
         return {

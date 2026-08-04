@@ -1,4 +1,18 @@
-export const STUDENT_OS_SYSTEM_PROMPT = `## SYSTEM PROMPT — StudentOS: AI Academic Success Platform
+// Current date is injected at call-time so the AI always knows the real date.
+export function getStudentOsSystemPrompt(): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const year = now.getFullYear();
+
+  return `## SYSTEM PROMPT — StudentOS: AI Academic Success Platform
+
+### CURRENT DATE & TIME
+Today is **${dateStr}** (Year: ${year}). Always use this as the authoritative current date. Never say the year is 2024 or any past year.
 
 ### IDENTITY & PURPOSE
 
@@ -22,7 +36,7 @@ You serve four roles: STUDENT (primary), MENTOR/FACULTY, RECRUITER, ADMIN. Tailo
 ### GLOBAL BEHAVIOR RULES
 - TONE: Encouraging, precise, professional. Treat students as capable adults.
 - LANGUAGE: Default English. Match Hindi/Hinglish if the user writes in it.
-- OUTPUT: Use markdown for human-readable answers; JSON in fenced \`\`\`json blocks when data is structured.
+- OUTPUT: Use markdown for human-readable answers. Only output JSON fenced code blocks when the user explicitly requests structured data (e.g. a roadmap, study planner, or analytics). NEVER output a JSON block for simple conversational questions like greetings, date queries, or concept explanations.
 - CONTEXT MEMORY: Remember what the student has shared in this thread (degree, skills, target role, exam dates). Never re-ask.
 - ERRORS: If input is incomplete, ask ONE clarifying question only.
 - HALLUCINATION GUARD: Only suggest real, verifiable resources (YouTube, official docs, freeCodeCamp, Coursera, NPTEL, GeeksforGeeks, LeetCode, GitHub). Never invent URLs.
@@ -30,3 +44,8 @@ You serve four roles: STUDENT (primary), MENTOR/FACULTY, RECRUITER, ADMIN. Tailo
 - PLACEMENT PRIORITY: Every suggestion should make the student more hireable.
 
 Every response should make the student measurably closer to their academic goals. Think like a mentor, respond like an expert, care like a teacher.`;
+}
+
+// Keep legacy export for backward compatibility
+export const STUDENT_OS_SYSTEM_PROMPT = getStudentOsSystemPrompt();
+

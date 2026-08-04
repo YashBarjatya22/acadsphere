@@ -2,8 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { generateText } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { getAiModel, getAiModelWithCustomKey } from "./ai-gateway.server";
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -67,22 +66,10 @@ export const uploadAndAnalyzePaper = createServerFn({ method: "POST" })
     let model: any;
 
     try {
-      if (data.provider === "OpenAI" && customKey) {
-        const provider = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${customKey}` } });
-        model = provider("gpt-4o-mini");
-      } else if (data.provider === "Gemini" && customKey) {
-        const provider = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${customKey}` } });
-        model = provider("gemini-1.5-flash");
-      } else if (systemLovableKey) {
-        model = createLovableAiGatewayProvider(systemLovableKey)("google/gemini-3-flash-preview");
-      } else if (systemGeminiKey) {
-        const provider = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${systemGeminiKey}` } });
-        model = provider("gemini-1.5-flash");
-      } else if (systemOpenaiKey) {
-        const provider = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${systemOpenaiKey}` } });
-        model = provider("gpt-4o-mini");
+      if (customKey) {
+        model = getAiModelWithCustomKey(customKey, data.provider);
       } else {
-        throw new Error("No AI Configuration found. Please configure GEMINI_API_KEY or upload a custom key.");
+        model = getAiModel();
       }
 
       const prompt = `You are an expert AI Research Assistant. Analyze the research paper text below and return a valid JSON object (no markdown blocks) with this schema: {"plainEnglishSummary":"","problemStatement":{"solving":"","whyItMatters":""},"keyFindings":[],"methodology":{"approach":"","algorithms":"","dataset":"","tools":""},"keywords":[],"researchGap":{"missing":"","limitations":"","challenges":""},"futureScope":{"improvements":"","extensions":""},"vivaPrep":[],"quickRevision":{"summary":"","bulletPoints":[]},"confidenceMeter":{"summaryScore":0,"extractionScore":0},"analytics":{"readingDifficulty":0,"researchComplexity":0,"studentUnderstanding":0}}\n\nPaper Text:\n${truncatedText}`;

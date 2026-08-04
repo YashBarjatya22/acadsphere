@@ -280,9 +280,9 @@ To mark this preparation as complete and raise your **Academic Health Score**, a
 
 **What is the primary difference between a LEFT JOIN and an INNER JOIN?**`;
     } else if (type === "java") {
-      content = `### 📅 7-Day Java CIA Study Roadmap
+      content = `### 📅 7-Day Java Exam Study Roadmap
 
-I have generated an optimized study timetable for your **Java CIA Exam** next week, prioritized by past exam weightage.
+I have generated an optimized study timetable for your **Java Exam** next week, prioritized by past exam weightage.
 
 | Day | Topic Focus | Daily Commitment | Active Practice |
 | :--- | :--- | :--- | :--- |
@@ -524,7 +524,7 @@ Let's begin the exam practice. I will ask questions and evaluate your response:
     if (action === "dbms") {
       handleSend("Help me prepare for tomorrow's DBMS lab");
     } else if (action === "java") {
-      handleSend("Create a study plan for my Java CIA");
+      handleSend("Create a study plan for my Java exam");
     } else if (action === "os") {
       handleSend("I am weak in Operating Systems");
     } else if (action === "recursion") {
@@ -930,7 +930,7 @@ Let's begin the exam practice. I will ask questions and evaluate your response:
                 onClick={() => handleActionClick("java")}
                 className="flex items-center gap-1 shrink-0 rounded-full border border-border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:border-primary hover:text-foreground transition"
               >
-                📅 Java CIA Study Plan
+                📅 Java Study Plan
               </button>
               <button
                 onClick={() => handleActionClick("os")}

@@ -2,8 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { generateText } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { getAiModel, getAiModelWithCustomKey } from "./ai-gateway.server";
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -134,25 +133,15 @@ export const uploadAndAnalyzeNotes = createServerFn({ method: "POST" })
 
     let auditResult: any;
 
-    if (!hasKeys) {
+    if (!customKey && !systemGeminiKey && !systemOpenaiKey && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       auditResult = generateLocalNotesAnalysis(data.subject);
     } else {
       let model: any;
       try {
-        if (data.provider === "OpenAI" && customKey) {
-          const provider = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${customKey}` } });
-          model = provider("gpt-4o-mini");
-        } else if (data.provider === "Gemini" && customKey) {
-          const provider = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${customKey}` } });
-          model = provider("gemini-1.5-flash");
-        } else if (systemLovableKey) {
-          model = createLovableAiGatewayProvider(systemLovableKey)("google/gemini-3-flash-preview");
-        } else if (systemGeminiKey) {
-          const provider = createOpenAICompatible({ name: "gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", headers: { Authorization: `Bearer ${systemGeminiKey}` } });
-          model = provider("gemini-1.5-flash");
-        } else if (systemOpenaiKey) {
-          const provider = createOpenAICompatible({ name: "openai", baseURL: "https://api.openai.com/v1", headers: { Authorization: `Bearer ${systemOpenaiKey}` } });
-          model = provider("gpt-4o-mini");
+        if (customKey) {
+          model = getAiModelWithCustomKey(customKey, data.provider);
+        } else {
+          model = getAiModel();
         }
 
         const prompt = `You are an expert academic coach and syllabus auditor. Review the student's notes for: ${data.subject}.\n\nNotes:\n${truncatedText}\n\nReturn a valid JSON object (no markdown blocks) with this schema: {"coverageScore":0,"missingTopics":[],"conceptDepth":[],"weakAreas":{"highRisk":[],"mediumRisk":[],"lowRisk":[]},"recommendations":[],"revisionSheet":{"summary":"","formulas":[],"tips":[]},"readinessScore":0,"healthStatus":""}`;

@@ -2,68 +2,70 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
+import { getDb } from "@/lib/db.server";
 
-// Fallback in-memory store for demo/offline threads
-const localThreadsStore: Array<{ id: string; user_id: string; title: string; module: string | null; updated_at: string }> = [
-  {
-    id: "demo-thread-1",
-    user_id: "demo-user-id",
-    title: "DBMS Normalization & BCNF Notes",
-    module: "smart-notes",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-thread-2",
-    user_id: "demo-user-id",
-    title: "Operating Systems Viva Simulator",
-    module: "viva",
-    updated_at: new Date().toISOString(),
-  },
-];
+export interface ThreadItem {
+  id: string;
+  user_id?: string;
+  title: string;
+  module: string | null;
+  updated_at: string;
+}
 
-const localMessagesStore: Array<{ id: string; thread_id: string; role: string; parts: any; created_at: string }> = [
-  {
-    id: "m-1",
-    thread_id: "demo-thread-1",
-    role: "user",
-    parts: [{ type: "text", text: "Explain 3NF vs BCNF normalization." }],
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: "m-2",
-    thread_id: "demo-thread-1",
-    role: "assistant",
-    parts: [
-      {
-        type: "text",
-        text: "### 📚 Database Normalization: 3NF vs BCNF\n\n- **3NF**: A table is in 3NF if for every functional dependency X -> Y, X is a superkey OR Y is a prime attribute.\n- **BCNF**: Strictly requires X to be a superkey for ALL non-trivial dependencies X -> Y.\n\nBCNF eliminates redundancy caused by candidate key overlaps.",
-      },
-    ],
-    created_at: new Date(Date.now() - 3500000).toISOString(),
-  },
-];
+export interface MessageItem {
+  id: string;
+  role: "user" | "assistant";
+  parts: any;
+  created_at?: string;
+}
 
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId } = context;
+    const threadsMap = new Map<string, ThreadItem>();
 
+    // 1. Try Supabase
     try {
-      const { data, error } = await supabaseServer
-        .from("threads")
-        .select("id, title, module, updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-        .limit(100);
+      if (supabaseServer) {
+        const { data, error } = await supabaseServer
+          .from("threads")
+          .select("id, user_id, title, module, updated_at")
+          .eq("user_id", userId)
+          .order("updated_at", { ascending: false })
+          .limit(100);
 
-      if (!error && data && data.length > 0) {
-        return data;
+        if (!error && data) {
+          for (const t of data) {
+            threadsMap.set(t.id, t);
+          }
+        }
       }
     } catch (e) {
-      console.warn("Supabase thread list fallback", e);
+      console.warn("[chat.functions] Supabase thread list warning", e);
     }
 
-    return localThreadsStore.filter((t) => t.user_id === userId || userId === "demo-user-id");
+    // 2. Query persistent local SQLite database
+    try {
+      const db = getDb();
+      if (db) {
+        const rows = db.prepare(
+          "SELECT id, user_id, title, module, updated_at FROM threads WHERE user_id = ? ORDER BY updated_at DESC"
+        ).all(userId) as ThreadItem[];
+
+        for (const row of rows) {
+          if (!threadsMap.has(row.id)) {
+            threadsMap.set(row.id, row);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite thread list warning", e);
+    }
+
+    return Array.from(threadsMap.values()).sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
   });
 
 export const createThread = createServerFn({ method: "POST" })
@@ -71,66 +73,87 @@ export const createThread = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
+        id: z.string().optional(),
         title: z.string().min(1).max(120).optional(),
         module: z.string().max(80).optional(),
       })
-      .parse(input ?? {}),
+      .parse(input ?? {})
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const threadId = data.id || crypto.randomUUID();
     const title = data.title ?? "New Chat Thread";
     const module = data.module ?? null;
+    const nowIso = new Date().toISOString();
 
-    try {
-      const { data: thread, error } = await supabaseServer
-        .from("threads")
-        .insert([{ user_id: userId, title, module }])
-        .select("id, title, module, updated_at")
-        .single();
-
-      if (!error && thread) {
-        return thread;
-      }
-    } catch (e) {
-      console.warn("Supabase create thread fallback", e);
-    }
-
-    const newThread = {
-      id: crypto.randomUUID(),
+    const newThread: ThreadItem = {
+      id: threadId,
       user_id: userId,
       title,
       module,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
-    localThreadsStore.unshift(newThread);
+
+    // 1. Save to Supabase
+    try {
+      if (supabaseServer) {
+        await supabaseServer.from("threads").upsert([
+          { id: threadId, user_id: userId, title, module, updated_at: nowIso },
+        ]);
+      }
+    } catch (e) {
+      console.warn("[chat.functions] Supabase create thread warning", e);
+    }
+
+    // 2. Save to persistent SQLite
+    try {
+      const db = getDb();
+      if (db) {
+        db.prepare(
+          "INSERT OR REPLACE INTO threads (id, user_id, title, module, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run(threadId, userId, title, module, nowIso);
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite create thread warning", e);
+    }
+
     return newThread;
   });
 
 export const renameThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ id: z.string(), title: z.string().min(1).max(120) }).parse(input),
+    z.object({ id: z.string(), title: z.string().min(1).max(120) }).parse(input)
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const nowIso = new Date().toISOString();
 
+    // 1. Supabase
     try {
-      const { error } = await supabaseServer
-        .from("threads")
-        .update({ title: data.title, updated_at: new Date().toISOString() })
-        .eq("id", data.id)
-        .eq("user_id", userId);
-
-      if (!error) return { ok: true };
+      if (supabaseServer) {
+        await supabaseServer
+          .from("threads")
+          .update({ title: data.title, updated_at: nowIso })
+          .eq("id", data.id)
+          .eq("user_id", userId);
+      }
     } catch (e) {
-      console.warn("Supabase rename thread fallback", e);
+      console.warn("[chat.functions] Supabase rename thread warning", e);
     }
 
-    const item = localThreadsStore.find((t) => t.id === data.id);
-    if (item) {
-      item.title = data.title;
-      item.updated_at = new Date().toISOString();
+    // 2. SQLite
+    try {
+      const db = getDb();
+      if (db) {
+        db.prepare(
+          "UPDATE threads SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+        ).run(data.title, nowIso, data.id, userId);
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite rename thread warning", e);
     }
+
     return { ok: true };
   });
 
@@ -140,23 +163,91 @@ export const deleteThread = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
 
+    // 1. Supabase
     try {
-      const { error } = await supabaseServer
-        .from("threads")
-        .delete()
-        .eq("id", data.id)
-        .eq("user_id", userId);
-
-      if (!error) return { ok: true };
+      if (supabaseServer) {
+        await supabaseServer
+          .from("threads")
+          .delete()
+          .eq("id", data.id)
+          .eq("user_id", userId);
+      }
     } catch (e) {
-      console.warn("Supabase delete thread fallback", e);
+      console.warn("[chat.functions] Supabase delete thread warning", e);
     }
 
-    const index = localThreadsStore.findIndex((t) => t.id === data.id);
-    if (index !== -1) {
-      localThreadsStore.splice(index, 1);
+    // 2. SQLite
+    try {
+      const db = getDb();
+      if (db) {
+        db.prepare("DELETE FROM messages WHERE thread_id = ?").run(data.id);
+        db.prepare("DELETE FROM threads WHERE id = ? AND user_id = ?").run(data.id, userId);
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite delete thread warning", e);
     }
+
     return { ok: true };
+  });
+
+export const saveMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().optional(),
+        threadId: z.string(),
+        role: z.enum(["user", "assistant"]),
+        parts: z.any(),
+      })
+      .parse(input)
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const msgId = data.id || crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const partsJson = typeof data.parts === "string" ? data.parts : JSON.stringify(data.parts);
+
+    // 1. Supabase
+    try {
+      if (supabaseServer) {
+        await supabaseServer.from("messages").upsert([
+          {
+            id: msgId,
+            thread_id: data.threadId,
+            user_id: userId,
+            role: data.role,
+            parts: data.parts,
+            created_at: nowIso,
+          },
+        ]);
+        await supabaseServer
+          .from("threads")
+          .update({ updated_at: nowIso })
+          .eq("id", data.threadId);
+      }
+    } catch (e) {
+      console.warn("[chat.functions] Supabase save message warning", e);
+    }
+
+    // 2. SQLite
+    try {
+      const db = getDb();
+      if (db) {
+        db.prepare(
+          "INSERT OR REPLACE INTO messages (id, thread_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)"
+        ).run(msgId, data.threadId, data.role, partsJson, nowIso);
+
+        db.prepare("UPDATE threads SET updated_at = ? WHERE id = ?").run(
+          nowIso,
+          data.threadId
+        );
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite save message warning", e);
+    }
+
+    return { ok: true, id: msgId };
   });
 
 export const getThreadMessages = createServerFn({ method: "GET" })
@@ -165,47 +256,86 @@ export const getThreadMessages = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
 
+    // 1. Try Supabase
     try {
-      const { data: thread, error: threadError } = await supabaseServer
-        .from("threads")
-        .select("id, title, module")
-        .eq("id", data.threadId)
-        .single();
+      if (supabaseServer) {
+        const { data: thread } = await supabaseServer
+          .from("threads")
+          .select("id, title, module, updated_at")
+          .eq("id", data.threadId)
+          .single();
 
-      if (!threadError && thread) {
         const { data: rows } = await supabaseServer
           .from("messages")
           .select("id, role, parts, created_at")
           .eq("thread_id", data.threadId)
           .order("created_at", { ascending: true });
 
-        const messages = (rows ?? []).map((r: any) => ({
-          id: r.id,
-          role: r.role,
-          parts: typeof r.parts === "string" ? JSON.parse(r.parts) : r.parts,
-        }));
-
-        return { thread, messages };
+        if (rows && rows.length > 0) {
+          const messages = rows.map((r: any) => ({
+            id: r.id,
+            role: r.role,
+            parts: typeof r.parts === "string" ? JSON.parse(r.parts) : r.parts,
+            created_at: r.created_at,
+          }));
+          return { thread, messages };
+        }
       }
     } catch (e) {
-      console.warn("Supabase get messages fallback", e);
+      console.warn("[chat.functions] Supabase get messages warning", e);
     }
 
-    let localThread = localThreadsStore.find((t) => t.id === data.threadId);
-    if (!localThread) {
-      localThread = {
+    // 2. Query persistent SQLite
+    try {
+      const db = getDb();
+      if (db) {
+        const thread = db
+          .prepare("SELECT id, title, module, updated_at FROM threads WHERE id = ?")
+          .get(data.threadId) as ThreadItem | undefined;
+
+        const rows = db
+          .prepare(
+            "SELECT id, role, content as parts, created_at FROM messages WHERE thread_id = ? ORDER BY created_at ASC"
+          )
+          .all(data.threadId) as any[];
+
+        const messages = rows.map((r) => {
+          let parsedParts = r.parts;
+          try {
+            parsedParts = typeof r.parts === "string" ? JSON.parse(r.parts) : r.parts;
+          } catch (_) {}
+          return {
+            id: r.id,
+            role: r.role,
+            parts: parsedParts,
+            created_at: r.created_at,
+          };
+        });
+
+        return {
+          thread: thread || {
+            id: data.threadId,
+            user_id: userId,
+            title: "Academic AI Assistant",
+            module: null,
+            updated_at: new Date().toISOString(),
+          },
+          messages,
+        };
+      }
+    } catch (e) {
+      console.warn("[chat.functions] SQLite get messages warning", e);
+    }
+
+    return {
+      thread: {
         id: data.threadId,
         user_id: userId,
         title: "Academic AI Assistant",
         module: null,
         updated_at: new Date().toISOString(),
-      };
-      localThreadsStore.unshift(localThread);
-    }
-
-    const localMsgs = localMessagesStore.filter((m) => m.thread_id === data.threadId);
-    return {
-      thread: localThread,
-      messages: localMsgs.map((r) => ({ id: r.id, role: r.role, parts: r.parts })),
+      },
+      messages: [],
     };
   });
+
