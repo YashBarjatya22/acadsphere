@@ -1,22 +1,21 @@
 // supabase/functions/file-converter/index.ts
-// iLoveAPI-powered file conversion bridge for AcadSphere.
-// Auth: POST /v1/auth with public key → Bearer token (no HMAC needed).
+// CloudConvert v2 — full PDF ↔ Office conversion bridge for AcadSphere.
+// Flow: Signed URL (import) → Convert → Export URL → Download → Save to Storage → Return signed URL
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ── Environment (Deno only — never process.env) ───────────────────────────────
-const SUPABASE_URL        = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY         = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ILOVEPDF_PUBLIC_KEY = Deno.env.get("ILOVEPDF_PUBLIC_KEY")!;
+// ── Environment ───────────────────────────────────────────────────────────────
+const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_KEY          = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const CLOUDCONVERT_API_KEY = Deno.env.get("CLOUDCONVERT_API_KEY")!;
 
-// ── Mandatory CORS headers — included in EVERY response ───────────────────────
+// ── CORS headers — on EVERY response ─────────────────────────────────────────
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Helper: build JSON response with CORS headers always attached
 function jsonResp(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -24,34 +23,31 @@ function jsonResp(body: unknown, status: number): Response {
   });
 }
 
-// ── Strict tool map: ONLY valid iLoveAPI developer REST API tools ─────────────
-// Confirmed valid: officepdf | pdfjpg | imagepdf
-// NOT supported by the developer API: pdftodoc, pdftoexcel, pdftopowerpoint
-const TOOL_MAP: Record<string, { tool: string; ext: string }> = {
-  "word-to-pdf":        { tool: "officepdf", ext: "pdf" },
-  "excel-to-pdf":       { tool: "officepdf", ext: "pdf" },
-  "powerpoint-to-pdf":  { tool: "officepdf", ext: "pdf" },
-  "pdf-to-jpg":         { tool: "pdfjpg",    ext: "jpg" },
-  "image-to-pdf":       { tool: "imagepdf",  ext: "pdf" },
-  "jpg-to-pdf":         { tool: "imagepdf",  ext: "pdf" },
-  "png-to-pdf":         { tool: "imagepdf",  ext: "pdf" },
+// ── Conversion map: frontend ID → { inputFmt, outputFmt, outputExt } ──────────
+const FORMAT_MAP: Record<string, { input: string; output: string; ext: string }> = {
+  "word-to-pdf":        { input: "docx", output: "pdf",  ext: "pdf"  },
+  "excel-to-pdf":       { input: "xlsx", output: "pdf",  ext: "pdf"  },
+  "powerpoint-to-pdf":  { input: "pptx", output: "pdf",  ext: "pdf"  },
+  "pdf-to-word":        { input: "pdf",  output: "docx", ext: "docx" },
+  "pdf-to-excel":       { input: "pdf",  output: "xlsx", ext: "xlsx" },
+  "pdf-to-powerpoint":  { input: "pdf",  output: "pptx", ext: "pptx" },
+  "pdf-to-jpg":         { input: "pdf",  output: "jpg",  ext: "jpg"  },
+  "image-to-pdf":       { input: "jpg",  output: "pdf",  ext: "pdf"  },
+  "jpg-to-pdf":         { input: "jpg",  output: "pdf",  ext: "pdf"  },
+  "png-to-pdf":         { input: "png",  output: "pdf",  ext: "pdf"  },
 };
 
-
-// ── JWT payload decoder (Supabase gateway already verifies signature) ──────────
-function getUserIdFromJwt(token: string): string | null {
+// ── JWT payload decoder ───────────────────────────────────────────────────────
+function getUserId(token: string): string | null {
   try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const b64  = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const json = atob(b64);
-    return (JSON.parse(json) as { sub?: string }).sub ?? null;
+    const b64  = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return (JSON.parse(atob(b64)) as { sub?: string }).sub ?? null;
   } catch {
     return null;
   }
 }
 
-// ── MIME type lookup ──────────────────────────────────────────────────────────
+// ── MIME helper ───────────────────────────────────────────────────────────────
 function getMime(ext: string): string {
   const m: Record<string, string> = {
     pdf:  "application/pdf",
@@ -65,173 +61,174 @@ function getMime(ext: string): string {
   return m[ext] ?? "application/octet-stream";
 }
 
+// ── CloudConvert API helper ───────────────────────────────────────────────────
+async function ccFetch(path: string, method: string, body?: unknown): Promise<any> {
+  const res = await fetch(`https://api.cloudconvert.com/v2${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${CLOUDCONVERT_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const json = await res.json();
+  if (!res.ok) {
+    const msg = json?.message ?? json?.error ?? `CloudConvert ${res.status}`;
+    throw new Error(msg);
+  }
+  return json;
+}
+
+// ── Poll job until finished or error (max 120 s) ──────────────────────────────
+async function waitForJob(jobId: string): Promise<any> {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));   // poll every 3 s
+    const { data: job } = await ccFetch(`/jobs/${jobId}`, "GET");
+    console.log(`[cc] job ${jobId} status: ${job.status}`);
+
+    if (job.status === "finished") return job;
+    if (job.status === "error") {
+      const errTask = (job.tasks as any[]).find((t: any) => t.status === "error");
+      throw new Error(`CloudConvert error in task "${errTask?.name}": ${errTask?.message ?? "unknown"}`);
+    }
+  }
+  throw new Error("CloudConvert job timed out after 120 s");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main handler
 // ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request): Promise<Response> => {
 
-  // ── CORS preflight — MUST be first, before any other logic ────────────────
+  // CORS preflight — must be first
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS });
   }
 
   try {
-
-    // ── Step 1: Extract user ID from JWT ────────────────────────────────────
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const token      = authHeader.replace(/^Bearer\s+/i, "").trim();
-    const userId     = getUserIdFromJwt(token);
-
+    // ── 1. Auth ───────────────────────────────────────────────────────────────
+    const token  = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    const userId = getUserId(token);
     if (!userId) {
-      return jsonResp({ error: "Unauthorized: invalid or missing session token. Please log in again." }, 401);
+      return jsonResp({ error: "Unauthorized: invalid or missing session token." }, 401);
     }
 
-    // ── Step 2: Parse + validate request body ────────────────────────────────
-    let source_path: string, target_format: string;
-    try {
-      ({ source_path, target_format } = await req.json());
-    } catch {
-      return jsonResp({ error: "Invalid JSON body" }, 400);
-    }
+    // ── 2. Parse body ─────────────────────────────────────────────────────────
+    const { source_path, target_format } = await req.json() as {
+      source_path: string;
+      target_format: string;
+    };
 
     if (!source_path || !target_format) {
-      return jsonResp({ error: "Missing fields: source_path and target_format are required" }, 400);
+      return jsonResp({ error: "Missing required fields: source_path, target_format" }, 400);
     }
 
-    const conversion = TOOL_MAP[target_format];
-    if (!conversion) {
+    const fmt = FORMAT_MAP[target_format];
+    if (!fmt) {
       return jsonResp({
-        error: `Unsupported format: "${target_format}". Valid values: ${Object.keys(TOOL_MAP).join(", ")}`,
+        error: `Unsupported format: "${target_format}". Valid: ${Object.keys(FORMAT_MAP).join(", ")}`,
       }, 400);
     }
 
-    // Path-level security: users can only access their own folder
     if (!source_path.startsWith(`${userId}/`)) {
-      return jsonResp({ error: "Forbidden: file path does not belong to your account" }, 403);
+      return jsonResp({ error: "Forbidden: file path does not belong to your account." }, 403);
     }
 
-    // ── Step 3: Download source file from Supabase Storage ───────────────────
+    // ── 3. Generate a short-lived signed URL for CloudConvert to import ────────
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: blob, error: dlError } = await admin
-      .storage.from("conversions").download(source_path);
+    const { data: signedSrc, error: srcErr } = await admin.storage
+      .from("conversions")
+      .createSignedUrl(source_path, 300);   // 5-min URL for import
 
-    if (dlError || !blob) {
-      throw new Error(`Storage download failed: ${dlError?.message ?? "no data returned"}`);
+    if (srcErr || !signedSrc) {
+      throw new Error(`Could not create source signed URL: ${srcErr?.message}`);
     }
 
-    const fileBuffer = await blob.arrayBuffer();
-    const fileName   = source_path.split("/").pop() ?? "input.pdf";
+    const fileName = source_path.split("/").pop() ?? `file.${fmt.input}`;
+    console.log(`[cc] user=${userId} | file="${fileName}" | ${fmt.input} → ${fmt.output}`);
 
-    console.log(`[file-converter] user=${userId} | file="${fileName}" | ${fileBuffer.byteLength} bytes | tool=${conversion.tool}`);
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // iLoveAPI 4-Step REST Flow
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // ── Step A: Auth — POST /v1/auth with public key → get Bearer token ───────
-    const authRes = await fetch("https://api.ilovepdf.com/v1/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_key: ILOVEPDF_PUBLIC_KEY }),
-    });
-    if (!authRes.ok) {
-      const txt = await authRes.text();
-      throw new Error(`iLoveAPI auth failed (${authRes.status}): ${txt}`);
-    }
-    const { token: iloveToken } = (await authRes.json()) as { token: string };
-    console.log("[file-converter] iLoveAPI auth ✅");
-
-    // ── Step B: Start — GET /v1/start/{tool} → task ID + server ───────────────
-    const startRes = await fetch(`https://api.ilovepdf.com/v1/start/${conversion.tool}`, {
-      headers: { Authorization: `Bearer ${iloveToken}` },
-    });
-    if (!startRes.ok) {
-      const txt = await startRes.text();
-      throw new Error(`iLoveAPI start failed (${startRes.status}): ${txt}`);
-    }
-    const { server, task } = (await startRes.json()) as { server: string; task: string };
-    console.log(`[file-converter] task=${task} | server=${server}`);
-
-    // ── Step C: Upload — POST multipart/form-data to assigned server ───────────
-    const form = new FormData();
-    form.append("task", task);
-    form.append("file", new Blob([fileBuffer]), fileName);
-
-    const uploadRes = await fetch(`https://${server}/v1/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${iloveToken}` },
-      body: form,
-    });
-    if (!uploadRes.ok) {
-      const txt = await uploadRes.text();
-      throw new Error(`iLoveAPI upload failed (${uploadRes.status}): ${txt}`);
-    }
-    const { server_filename } = (await uploadRes.json()) as { server_filename: string };
-    console.log(`[file-converter] uploaded → server_filename=${server_filename}`);
-
-    // ── Step D1: Process — POST conversion job ────────────────────────────────
-    const processRes = await fetch(`https://${server}/v1/process`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${iloveToken}`,
-        "Content-Type": "application/json",
+    // ── 4. Create CloudConvert job with 3 tasks ───────────────────────────────
+    //   import/url → convert → export/url
+    const { data: job } = await ccFetch("/jobs", "POST", {
+      tasks: {
+        "import-1": {
+          operation: "import/url",
+          url: signedSrc.signedUrl,
+          filename: fileName,
+        },
+        "task-1": {
+          operation: "convert",
+          input: "import-1",
+          input_format: fmt.input,
+          output_format: fmt.output,
+          // Quality settings for image conversions
+          ...(fmt.output === "jpg" ? { quality: 90 } : {}),
+        },
+        "export-1": {
+          operation: "export/url",
+          input: "task-1",
+          inline: false,
+          archive_multiple_files: false,
+        },
       },
-      body: JSON.stringify({
-        task,
-        tool: conversion.tool,
-        files: [{ server_filename, filename: fileName }],
-      }),
     });
-    if (!processRes.ok) {
-      const txt = await processRes.text();
-      throw new Error(`iLoveAPI process failed (${processRes.status}): ${txt}`);
-    }
-    console.log("[file-converter] processing complete ✅");
 
-    // ── Step D2: Download — GET converted file binary ─────────────────────────
-    const downloadRes = await fetch(`https://${server}/v1/download/${task}`, {
-      headers: { Authorization: `Bearer ${iloveToken}` },
-    });
-    if (!downloadRes.ok) {
-      const txt = await downloadRes.text();
-      throw new Error(`iLoveAPI download failed (${downloadRes.status}): ${txt}`);
-    }
-    const convertedBuffer = await downloadRes.arrayBuffer();
-    console.log(`[file-converter] download complete: ${convertedBuffer.byteLength} bytes`);
+    console.log(`[cc] job created: ${job.id}`);
 
-    // ── Step 4: Save converted file back to Supabase Storage ─────────────────
+    // ── 5. Poll until finished ────────────────────────────────────────────────
+    const finishedJob = await waitForJob(job.id);
+
+    // ── 6. Grab exported file URL from export task ────────────────────────────
+    const exportTask = (finishedJob.tasks as any[]).find(
+      (t: any) => t.name === "export-1" && t.status === "finished"
+    );
+    if (!exportTask?.result?.files?.[0]?.url) {
+      throw new Error("CloudConvert: export task missing result file URL");
+    }
+
+    const exportUrl = exportTask.result.files[0].url as string;
+    console.log(`[cc] export URL ready: ${exportUrl}`);
+
+    // ── 7. Download converted file buffer ─────────────────────────────────────
+    const dlRes = await fetch(exportUrl);
+    if (!dlRes.ok) throw new Error(`Failed to download converted file: ${dlRes.status}`);
+    const convertedBuffer = await dlRes.arrayBuffer();
+    console.log(`[cc] downloaded ${convertedBuffer.byteLength} bytes`);
+
+    // ── 8. Save to Supabase Storage ───────────────────────────────────────────
     const ts         = Date.now();
     const baseName   = fileName.replace(/\.[^.]+$/, "");
-    const outputPath = `${userId}/${ts}_${baseName}_converted.${conversion.ext}`;
+    const outputPath = `${userId}/${ts}_${baseName}_converted.${fmt.ext}`;
 
     const { error: saveErr } = await admin.storage
       .from("conversions")
       .upload(outputPath, convertedBuffer, {
-        contentType: getMime(conversion.ext),
+        contentType: getMime(fmt.ext),
         upsert: true,
       });
     if (saveErr) throw new Error(`Storage save failed: ${saveErr.message}`);
 
-    // ── Step 5: Generate signed download URL (1 hour) ─────────────────────────
-    const { data: signed, error: signErr } = await admin.storage
+    // ── 9. Create signed download URL (1 hour) ────────────────────────────────
+    const { data: signedOut, error: signErr } = await admin.storage
       .from("conversions")
       .createSignedUrl(outputPath, 3600);
-    if (signErr || !signed) throw new Error(`Signed URL failed: ${signErr?.message}`);
+    if (signErr || !signedOut) throw new Error(`Signed URL failed: ${signErr?.message}`);
 
-    console.log(`[file-converter] ✅ DONE → ${outputPath}`);
+    console.log(`[cc] ✅ DONE → ${outputPath}`);
 
     return jsonResp({
       success:     true,
       output_path: outputPath,
-      signed_url:  signed.signedUrl,
-      file_name:   `${baseName}_converted.${conversion.ext}`,
+      signed_url:  signedOut.signedUrl,
+      file_name:   `${baseName}_converted.${fmt.ext}`,
     }, 200);
 
   } catch (err: unknown) {
     const msg = (err as Error)?.message ?? String(err);
     console.error("[file-converter] ❌ ERROR:", msg);
-    // Return 400 (not 500) with the full error message so frontend can display it
     return jsonResp({ error: msg }, 400);
   }
 });
