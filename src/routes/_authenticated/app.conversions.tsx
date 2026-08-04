@@ -199,10 +199,11 @@ function ConversionsPage() {
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      // Step 2: Call edge function — supabase.functions.invoke sends session JWT automatically
+      // Step 2: Call edge function — pass session JWT explicitly so edge fn can identify user
       setProgress("processing");
       const { data, error: fnError } = await supabase.functions.invoke("file-converter", {
         body: { source_path: sourcePath, target_format: selectedConversion.id },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (fnError) {
