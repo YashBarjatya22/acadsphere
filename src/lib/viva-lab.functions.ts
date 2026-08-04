@@ -2,17 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { generateText } from "ai";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
-
-// ─── Shared AI provider helper ───────────────────────────────────────────────
-function getAiModel(customKey?: string, provider?: string) {
-  const key = customKey?.trim() || process.env.LOVABLE_API_KEY || "";
-  if (!key) {
-    throw new Error("No AI API key available. Please configure a key in Settings.");
-  }
-  const gateway = createLovableAiGatewayProvider(key);
-  return gateway("gemini-2.0-flash");
-}
+import { getAiModel, getAiModelWithCustomKey } from "./ai-gateway.server";
 
 // ─── Viva Simulator: Generate a Question ────────────────────────────────────
 export const generateVivaQuestion = createServerFn({ method: "POST" })
@@ -44,7 +34,7 @@ Generate ONE ${difficulty}-level examination question on ${subject} that:
 Respond with ONLY the question. No preamble, no numbering, no explanation.`;
 
     try {
-      const model = getAiModel(customKey);
+      const model = getAiModelWithCustomKey(customKey);
       const { text } = await generateText({ model, prompt, maxOutputTokens: 150 } as any);
       return { question: text.trim() };
     } catch (e: any) {
@@ -118,7 +108,7 @@ Respond ONLY in this exact JSON format:
 }`;
 
     try {
-      const model = getAiModel(customKey);
+      const model = getAiModelWithCustomKey(customKey);
       const { text } = await generateText({ model, prompt, maxOutputTokens: 250 } as any);
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -276,14 +266,13 @@ Based on the user's instruction, determine if it maps to any of these action typ
 1. "theme": Change theme. Params: {"value": "dark" | "light"}
 2. "accent": Change color accent. Params: {"value": "blue" | "violet" | "emerald" | "rose" | "amber" | "cyan"}
 3. "profile": Update academic details. Params: {"fullName": string, "degree": string, "semester": string, "targetRole": string, "skills": string} (Include only updated params)
-4. "exam": Add a new CIA exam countdown. Params: {"subject": string, "date": "YYYY-MM-DD" (calculate relative to today), "syllabus": string, "type": "CIA-1" | "CIA-2" | "Model" | "Semester"}
-5. "community": Write a community post. Params: {"content": string, "channel": "#placement-prep" | "#dbms-lab" | "#viva-questions" | "#general-chat" | "#study-groups"}
+4. "community": Write a community post. Params: {"content": string, "channel": "#placement-prep" | "#dbms-lab" | "#viva-questions" | "#general-chat" | "#study-groups"}
 
 Respond ONLY in this exact JSON format:
 {
   "response": "<friendly, professional confirmation message detailing what you successfully configured or fixed>",
   "action": {
-    "type": "theme" | "accent" | "profile" | "exam" | "community" | null,
+    "type": "theme" | "accent" | "profile" | "community" | null,
     "params": { ... }
   }
 }

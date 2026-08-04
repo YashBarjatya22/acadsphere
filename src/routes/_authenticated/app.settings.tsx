@@ -13,7 +13,7 @@ import { interpretSettlerInstruction } from "@/lib/viva-lab.functions";
 import { updateProfile } from "@/lib/analytics.functions";
 import {
   Settings, Bell, Lock, Monitor, Sun, Moon, Palette, Zap, Shield, Check,
-  Bot, Send, User, Sparkles, MessageSquare, Loader2, RefreshCw, LogOut
+  Bot, Send, User, Sparkles, MessageSquare, Loader2, RefreshCw, LogOut, Phone, MessageCircle
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
@@ -33,12 +33,17 @@ function SettingsPage() {
 
   // General state
   const [emailAlerts, setEmailAlerts] = useState(true);
-  const [ciaReminders, setCiaReminders] = useState(true);
   const [vivaAudits, setVivaAudits] = useState(false);
   const [analyticsSharing, setAnalyticsSharing] = useState(true);
   const [isDark, setIsDark] = useState(true);
   const [saved, setSaved] = useState(false);
   const [accentColor, setAccentColor] = useState("blue");
+
+  // SMS Notifications state
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [smsEnabled, setSmsEnabled] = useState(true);
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneSaved, setPhoneSaved] = useState(false);
 
   // Settler Chat state
   const [chatInput, setChatInput] = useState("");
@@ -59,6 +64,24 @@ function SettingsPage() {
     setIsDark(theme !== "light");
     const accent = localStorage.getItem("accent") || "blue";
     setAccentColor(accent);
+
+    // Load phone number and SMS prefs from Supabase profiles
+    (async () => {
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select("phone_number, sms_notifications_enabled")
+          .eq("id", user.id)
+          .single();
+        if (data) {
+          setPhoneNumber(data.phone_number || "");
+          setSmsEnabled(data.sms_notifications_enabled ?? true);
+        }
+      } catch (_) {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -79,12 +102,36 @@ function SettingsPage() {
 
   const handleSave = () => {
     localStorage.setItem("settings_email_alerts", String(emailAlerts));
-    localStorage.setItem("settings_cia_reminders", String(ciaReminders));
     localStorage.setItem("settings_viva_audits", String(vivaAudits));
     localStorage.setItem("settings_analytics", String(analyticsSharing));
     setSaved(true);
     toast.success("Preferences saved!");
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSavePhone = async () => {
+    if (!phoneNumber.trim()) {
+      toast.error("Please enter a valid phone number.");
+      return;
+    }
+    setPhoneSaving(true);
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not logged in");
+      const { error } = await supabase
+        .from("profiles")
+        .update({ phone_number: phoneNumber.trim(), sms_notifications_enabled: smsEnabled })
+        .eq("id", user.id);
+      if (error) throw error;
+      setPhoneSaved(true);
+      toast.success("Phone number saved! You'll receive SMS reminders for upcoming assignments.");
+      setTimeout(() => setPhoneSaved(false), 3000);
+    } catch (e: any) {
+      toast.error(`Failed to save phone number: ${e.message}`);
+    } finally {
+      setPhoneSaving(false);
+    }
   };
 
   async function handleSignOut() {
@@ -142,25 +189,6 @@ function SettingsPage() {
           } catch (e: any) {
             toast.error("Failed to update profile: " + e.message);
           }
-        }
-
-        // 4. CIA Exam countdown scheduling
-        else if (type === "exam") {
-          try {
-            const savedExamsStr = localStorage.getItem("acadsphere_cia_exams") || "[]";
-            const exams = JSON.parse(savedExamsStr);
-            const newExam = {
-              id: Date.now().toString(),
-              subject: params.subject || "Custom Topic",
-              date: params.date || new Date().toISOString().split("T")[0],
-              syllabus: params.syllabus || "Units 1 & 2",
-              reminderSet: true,
-              type: params.type || "CIA-1"
-            };
-            exams.push(newExam);
-            localStorage.setItem("acadsphere_cia_exams", JSON.stringify(exams));
-            toast.success(`Exam scheduled for ${newExam.subject}!`);
-          } catch (_) {}
         }
 
         // 5. Community Forum post
@@ -327,10 +355,6 @@ function SettingsPage() {
                         checked: emailAlerts, onChange: setEmailAlerts
                       },
                       {
-                        key: "cia", label: "CIA Exam Deadlines", desc: "Automated alerts 3 days before scheduled assessments",
-                        checked: ciaReminders, onChange: setCiaReminders
-                      },
-                      {
                         key: "viva", label: "Viva Score Reports", desc: "Instant grading reports after simulator completions",
                         checked: vivaAudits, onChange: setVivaAudits
                       },
@@ -343,6 +367,69 @@ function SettingsPage() {
                         <Switch checked={item.checked} onCheckedChange={item.onChange} />
                       </div>
                     ))}
+                  </CardContent>
+                </Card>
+
+                {/* SMS Assignment Reminders */}
+                <Card className="card-gradient border-border shadow-sm">
+                  <CardHeader className="pb-3 border-b border-border/60">
+                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                        <MessageCircle className="h-3.5 w-3.5 text-white" />
+                      </div>
+                      SMS Assignment Reminders
+                    </CardTitle>
+                    <CardDescription className="text-[10px]">Get SMS alerts at 24h, 6h, and 1h before deadlines — even when the app is closed. Powered by Twilio.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-4">
+                    {/* Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Enable SMS Reminders</p>
+                        <p className="text-[10px] text-muted-foreground">Receive automated SMS for pre-due and overdue assignments</p>
+                      </div>
+                      <Switch checked={smsEnabled} onCheckedChange={setSmsEnabled} />
+                    </div>
+
+                    {/* Phone number input */}
+                    {smsEnabled && (
+                      <div className="space-y-2">
+                        <Label htmlFor="phone-number" className="text-xs font-semibold">
+                          <span className="flex items-center gap-1.5">
+                            <Phone className="h-3 w-3" /> Mobile Number (with country code)
+                          </span>
+                        </Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="phone-number"
+                            type="tel"
+                            placeholder="e.g. +919876543210"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            className="h-8 text-xs font-mono bg-background border-border flex-1"
+                          />
+                          <Button
+                            onClick={handleSavePhone}
+                            disabled={phoneSaving}
+                            className={`h-8 text-xs px-4 font-semibold ${
+                              phoneSaved
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                                : "bg-primary hover:bg-blue-700 text-white"
+                            }`}
+                          >
+                            {phoneSaving ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : phoneSaved ? (
+                              <><Check className="h-3 w-3 mr-1" /> Saved!</>
+                            ) : "Save"}
+                          </Button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          You'll get SMS: 24h before, 6h before, 1h before, and daily overdue alerts (up to 14 days).
+                          Sync Classroom after saving to activate reminders.
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

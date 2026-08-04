@@ -7,20 +7,7 @@ import crypto from "node:crypto";
 // DNS patch to bypass local getaddrinfo failures for Supabase domain
 const originalLookup = dns.lookup;
 dns.lookup = function (this: any, hostname: string, options: any, callback: any) {
-  if (hostname === "icyrztdyrucqmeklgpfs.supabase.co") {
-    const cb = typeof options === "function" ? options : callback;
-    const opts = typeof options === "object" ? options : {};
-    const ip = "172.67.75.143";
-    if (cb) {
-      if (opts.all) {
-        cb(null, [{ address: ip, family: 4 }]);
-      } else {
-        cb(null, ip, 4);
-      }
-      return;
-    }
-  }
-  return originalLookup.apply(this, arguments as any);
+  return (originalLookup as any)(hostname, options, callback);
 } as any;
 
 let db: any;
@@ -105,7 +92,7 @@ export function seedMCAStudents(database: any) {
 
   const insertUser = database.prepare("INSERT OR REPLACE INTO users (id, email, password_hash, status) VALUES (?, ?, ?, 'active')");
   const insertProfile = database.prepare("INSERT OR REPLACE INTO profiles (id, full_name, role, degree, semester, target_role) VALUES (?, ?, 'student', 'MCA', 'Semester 4', 'Software Engineer')");
-  const insertStudent = database.prepare("INSERT OR REPLACE INTO students (id, student_id, department, semester, section, phone, cgpa, attendance_percentage) VALUES (?, ?, 'MCA', 'Semester 4', 'A', ?, 8.5, ?)");
+  const insertStudent = database.prepare("INSERT OR REPLACE INTO students (id, student_id, department, semester, section, phone, cgpa, attendance_percentage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   const insertMetrics = database.prepare("INSERT OR REPLACE INTO student_metrics (id, user_id, roadmap_progress, study_consistency, notes_coverage, resume_strength, placement_readiness, skill_growth, success_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
   const insertSubAtt = database.prepare("INSERT OR REPLACE INTO subject_attendance (id, student_id, subject_id, subject_name, subject_code, classes_attended, classes_conducted, attendance_percentage) VALUES (?, ?, ?, ?, ?, ?, 50, ?)");
 
@@ -129,7 +116,7 @@ export function seedMCAStudents(database: any) {
 
     insertUser.run(userId, email, pwHash);
     insertProfile.run(userId, s.name);
-    insertStudent.run(userId, s.regNo, phone, cgpa, overallAtt);
+    insertStudent.run(userId, s.regNo, 'MCA', 'Semester 4', 'A', phone, cgpa, overallAtt);
     insertMetrics.run(
       crypto.randomUUID(),
       userId,
@@ -235,15 +222,57 @@ try {
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
+      module TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    try { db.exec("ALTER TABLE threads ADD COLUMN module TEXT;"); } catch (_) {}
 
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       thread_id TEXT REFERENCES threads(id) ON DELETE CASCADE,
       role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
       content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS study_plans (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      degree TEXT NOT NULL,
+      semester TEXT NOT NULL,
+      subjects TEXT NOT NULL,
+      result TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS study_tasks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      plan_id TEXT REFERENCES study_plans(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      completed INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS paper_analyses (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      num_pages INTEGER,
+      status TEXT NOT NULL,
+      result TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS notes_analyses (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      num_pages INTEGER,
+      subject TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -284,6 +313,20 @@ try {
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(student_id, subject_id)
     );
+
+    CREATE TABLE IF NOT EXISTS student_activities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      subject TEXT,
+      duration_minutes INTEGER DEFAULT 0,
+      score REAL DEFAULT 0,
+      details TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS student_activities_user_id_idx ON student_activities (user_id);
+    CREATE INDEX IF NOT EXISTS student_activities_created_at_idx ON student_activities (created_at);
   `);
 
   // ─── Seed Admin User (admin@gmail.com / iamadmin@1) ──────────────────────
@@ -316,6 +359,49 @@ try {
 }
 
 export function getDb() {
+  if (!db) {
+    db = new DatabaseSync(path.join(process.cwd(), "local.db"));
+  }
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS study_plans (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        degree TEXT NOT NULL,
+        semester TEXT NOT NULL,
+        subjects TEXT NOT NULL,
+        result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS study_tasks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        plan_id TEXT REFERENCES study_plans(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS paper_analyses (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        num_pages INTEGER,
+        status TEXT NOT NULL,
+        result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS notes_analyses (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        num_pages INTEGER,
+        subject TEXT NOT NULL,
+        status TEXT NOT NULL,
+        result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
   return db;
 }
 

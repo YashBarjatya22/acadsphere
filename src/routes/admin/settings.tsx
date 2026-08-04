@@ -11,8 +11,8 @@ export const Route = createFileRoute("/admin/settings")({
 });
 
 function AdminSettingsPage() {
-  const [collegeName, setCollegeName] = useState("CMR Institute of Technology");
-  const [univCode, setUnivCode] = useState("1CR");
+  const [collegeName, setCollegeName] = useState("Christ University (Deemed to be University)");
+  const [univCode, setUnivCode] = useState("CU");
   const [acadYear, setAcadYear] = useState("2025-2026");
   const [term, setTerm] = useState("Even Semester");
   const [minAttendance, setMinAttendance] = useState("75");

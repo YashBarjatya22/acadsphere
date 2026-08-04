@@ -41,7 +41,6 @@ const FEATURES = [
   { icon: BookOpen,        title: "Smart Notes",        desc: "AI-powered notes with auto-summarisation, keyword highlights, and topic clustering." },
   { icon: Code,            title: "Lab Helper",         desc: "Lab schedule reminders, experiment walkthroughs, AI code generators, and completion trackers." },
   { icon: FileCheck2,      title: "Resume Builder",     desc: "ATS score optimisation, placement gap suggestions, and bullet-point editing." },
-  { icon: CalendarDays,    title: "CIA Reminder",       desc: "Never miss a CIA date — smart alerts with countdown timers keyed to your academic calendar." },
   { icon: CheckCircle2,    title: "Attendance Tracker", desc: "Real-time attendance percentage, subject-wise risk flags, and bunk budget calculator." },
   { icon: Users,           title: "Community",          desc: "Connect with batchmates, share resources, ask questions, and collaborate on projects." },
   { icon: User,            title: "Profile",            desc: "Maintain your academic profile, skill tags, certifications, and placement preferences." },

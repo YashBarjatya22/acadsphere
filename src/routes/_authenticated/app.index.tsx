@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -95,6 +95,20 @@ function AppIndex() {
     targetRole: "",
     skills: "",
   });
+
+  const [sessionUser, setSessionUser] = useState<{ name: string; email: string } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
+      if (session?.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        const name = meta.full_name || meta.name || u.email?.split("@")[0] || "Student";
+        const email = u.email || "";
+        setSessionUser({ name, email });
+      }
+    });
+  }, []);
 
   const [aiInput, setAiInput] = useState("");
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "user" | "ai"; text: string }>>([
@@ -255,7 +269,7 @@ function AppIndex() {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <h1 className="font-sans font-extrabold text-foreground" style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", letterSpacing: "-0.03em" }}>
-                      Welcome back, {profile?.fullName || "Student"}
+                      Welcome back, {sessionUser?.name || profile?.fullName || "Student"}
                     </h1>
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded-full border border-border bg-muted text-muted-foreground">
                       <Flame className="inline h-3 w-3 mr-1" />{stats?.currentStreak || 12} Day Streak
@@ -345,7 +359,7 @@ function AppIndex() {
               {/* Statistics Grid */}
               <div className="md:col-span-2 grid gap-px grid-cols-2 sm:grid-cols-3 border border-border rounded-2xl overflow-hidden bg-border">
                 {[
-                  { label: "Upcoming CIAs",   value: "3 exams", sub: "Starting in 6 days", icon: AlertTriangle },
+                  { label: "Active Courses",  value: "5 Subjects", sub: "Classroom Synced",   icon: GraduationCap },
                   { label: "Assignments",     value: "2 tasks", sub: "Due before Monday",  icon: CalendarIcon },
                   { label: "Notes Created",   value: "14",      sub: "4 added recently",   icon: BookOpen },
                   { label: "AI Queries",      value: "38/100",  sub: "Resets in 12 days",  icon: Sparkles },
@@ -636,7 +650,7 @@ function AppIndex() {
                 <div className="flex items-center gap-2.5">
                   <div className="h-1.5 w-1.5 rounded-full bg-foreground shrink-0" />
                   <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-foreground">July 13</span>
-                  <span className="font-sans text-[12px] text-muted-foreground truncate">CIA-1 DBMS prep deadline</span>
+                  <span className="font-sans text-[12px] text-muted-foreground truncate">DBMS Project Milestone 1</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground shrink-0" />
