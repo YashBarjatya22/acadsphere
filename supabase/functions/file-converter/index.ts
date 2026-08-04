@@ -32,6 +32,20 @@ const TOOL_MAP: Record<string, { tool: string; ext: string }> = {
   "png-to-pdf":         { tool: "imagepdf",         ext: "pdf"  },
 };
 
+// ── Decode JWT payload (no verification needed — Supabase already validated it) ──
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // atob requires standard base64, not base64url
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(b64);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 // ── iLoveAPI JWT Auth (HS256 HMAC) ────────────────────────────────────────────
 function base64url(data: Uint8Array): string {
   return btoa(String.fromCharCode(...data))
@@ -63,21 +77,19 @@ async function getIloveToken(): Promise<string> {
   return `${sigInput}.${signature}`;
 }
 
-// ── iLoveAPI fetch helper ─────────────────────────────────────────────────────
-// path can be a relative path (e.g. "/start/pdftodoc") OR a full URL
+// ── iLoveAPI fetch helpers ────────────────────────────────────────────────────
 async function iloveJSON(
   method: string,
   url: string,
   token: string,
   body?: unknown,
 ): Promise<any> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
   const res = await fetch(url, {
     method,
-    headers,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -87,11 +99,7 @@ async function iloveJSON(
   return res.json();
 }
 
-async function iloveUpload(
-  url: string,
-  token: string,
-  form: FormData,
-): Promise<any> {
+async function iloveUpload(url: string, token: string, form: FormData): Promise<any> {
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -116,6 +124,20 @@ async function iloveDownload(url: string, token: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+// ── MIME type helper ──────────────────────────────────────────────────────────
+function getMimeType(ext: string): string {
+  const map: Record<string, string> = {
+    pdf:  "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    jpg:  "image/jpeg",
+    jpeg: "image/jpeg",
+    png:  "image/png",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -123,9 +145,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // ── 1. Authenticate caller using service-role client ──────────────────────
+    // ── 1. Extract and decode the caller's JWT ─────────────────────────────────
+    // The frontend passes the Supabase session JWT via the Authorization header.
+    // We decode the payload to get user.id — Supabase's gateway already verifies
+    // the signature before invoking the function, so we don't need to re-verify.
     const authHeader = req.headers.get("Authorization") || "";
-    const userJwt    = authHeader.replace("Bearer ", "").trim();
+    const userJwt    = authHeader.replace(/^Bearer\s+/i, "").trim();
 
     if (!userJwt) {
       return new Response(
@@ -134,18 +159,19 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use the admin client to verify the user JWT — correct pattern
-    const adminClient = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: { user }, error: authError } = await adminClient.auth.getUser(userJwt);
+    const payload = decodeJwtPayload(userJwt);
+    const userId  = payload?.sub as string | undefined;
 
-    if (authError || !user) {
+    if (!userId) {
       return new Response(
-        JSON.stringify({ success: false, error: "Unauthorized: " + (authError?.message || "invalid token") }),
+        JSON.stringify({ success: false, error: "Invalid token: cannot determine user ID. Please log in again." }),
         { status: 401, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
 
-    // ── 2. Parse body ─────────────────────────────────────────────────────────
+    console.log(`Request from user: ${userId}`);
+
+    // ── 2. Parse request body ─────────────────────────────────────────────────
     const { source_path, target_format } = await req.json() as {
       source_path:   string;
       target_format: string;
@@ -166,53 +192,62 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── 3. Download source file from Supabase storage ─────────────────────────
+    // Security: ensure the source_path is within the user's own folder
+    if (!source_path.startsWith(`${userId}/`)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Access denied: path does not belong to your account" }),
+        { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 3. Service-role client for storage ────────────────────────────────────
+    const adminClient = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // ── 4. Download source file from storage ──────────────────────────────────
     const { data: fileBlob, error: downloadErr } = await adminClient
       .storage.from("conversions").download(source_path);
 
     if (downloadErr || !fileBlob) {
-      throw new Error(`Storage download failed: ${downloadErr?.message ?? "no data"}`);
+      throw new Error(`Storage download failed: ${downloadErr?.message ?? "no data returned"}`);
     }
 
-    const fileBuffer  = await fileBlob.arrayBuffer();
-    const fileName    = source_path.split("/").pop() || "file.pdf";
+    const fileBuffer = await fileBlob.arrayBuffer();
+    const fileName   = source_path.split("/").pop() || "file.pdf";
 
-    console.log(`Converting "${fileName}" (${fileBuffer.byteLength} bytes) via tool: ${conversion.tool}`);
+    console.log(`Converting "${fileName}" (${fileBuffer.byteLength} bytes) → tool: ${conversion.tool}`);
 
-    // ── 4. Authenticate with iLoveAPI ─────────────────────────────────────────
+    // ── 5. iLoveAPI: Get auth token ───────────────────────────────────────────
     const iloveToken = await getIloveToken();
 
-    // ── 5. Start task ─────────────────────────────────────────────────────────
+    // ── 6. iLoveAPI: Start task ───────────────────────────────────────────────
     const task = await iloveJSON(
       "GET",
       `https://api.ilovepdf.com/v1/start/${conversion.tool}`,
       iloveToken,
     ) as { server: string; task: string };
 
-    console.log(`iLoveAPI task started: ${task.task} on server: ${task.server}`);
+    console.log(`iLoveAPI task: ${task.task} | server: ${task.server}`);
 
-    // Fresh token for subsequent calls
-    const taskToken = await getIloveToken();
-
-    // ── 6. Upload file to iLoveAPI ────────────────────────────────────────────
-    const form = new FormData();
+    // ── 7. iLoveAPI: Upload file ──────────────────────────────────────────────
+    const uploadToken = await getIloveToken();
+    const form        = new FormData();
     form.append("task", task.task);
     form.append("file", new Blob([fileBuffer]), fileName);
 
     const uploaded = await iloveUpload(
       `https://${task.server}/v1/upload`,
-      taskToken,
+      uploadToken,
       form,
     ) as { server_filename: string };
 
-    console.log(`File uploaded to iLoveAPI: ${uploaded.server_filename}`);
+    console.log(`Uploaded to iLoveAPI: ${uploaded.server_filename}`);
 
-    // ── 7. Process the file ───────────────────────────────────────────────────
-    const freshToken = await getIloveToken();
+    // ── 8. iLoveAPI: Process ──────────────────────────────────────────────────
+    const processToken = await getIloveToken();
     await iloveJSON(
       "POST",
       `https://${task.server}/v1/process`,
-      freshToken,
+      processToken,
       {
         task:  task.task,
         tool:  conversion.tool,
@@ -220,10 +255,10 @@ Deno.serve(async (req) => {
       },
     );
 
-    console.log(`iLoveAPI processing complete`);
+    console.log("iLoveAPI processing complete");
 
-    // ── 8. Download converted file ────────────────────────────────────────────
-    const dlToken       = await getIloveToken();
+    // ── 9. iLoveAPI: Download result ──────────────────────────────────────────
+    const dlToken         = await getIloveToken();
     const convertedBuffer = await iloveDownload(
       `https://${task.server}/v1/download/${task.task}`,
       dlToken,
@@ -231,10 +266,10 @@ Deno.serve(async (req) => {
 
     console.log(`Downloaded converted file: ${convertedBuffer.byteLength} bytes`);
 
-    // ── 9. Save output to Supabase storage ────────────────────────────────────
+    // ── 10. Save output to Supabase storage ───────────────────────────────────
     const ts         = Date.now();
     const baseName   = fileName.replace(/\.[^.]+$/, "");
-    const outputPath = `${user.id}/${ts}_${baseName}_converted.${conversion.ext}`;
+    const outputPath = `${userId}/${ts}_${baseName}_converted.${conversion.ext}`;
 
     const { error: uploadErr } = await adminClient
       .storage.from("conversions").upload(outputPath, convertedBuffer, {
@@ -246,7 +281,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to save converted file: ${uploadErr.message}`);
     }
 
-    // ── 10. Create signed download URL (1 hour) ───────────────────────────────
+    // ── 11. Create signed download URL (1 hour) ───────────────────────────────
     const { data: signedData, error: signErr } = await adminClient
       .storage.from("conversions").createSignedUrl(outputPath, 3600);
 
@@ -254,7 +289,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to create signed URL: ${signErr?.message}`);
     }
 
-    console.log(`Conversion complete → ${outputPath}`);
+    console.log(`✅ Conversion complete → ${outputPath}`);
 
     return new Response(
       JSON.stringify({
@@ -267,24 +302,10 @@ Deno.serve(async (req) => {
     );
 
   } catch (err: any) {
-    console.error("file-converter error:", err?.message || err);
+    console.error("file-converter error:", err?.message ?? err);
     return new Response(
-      JSON.stringify({ success: false, error: err?.message || "Internal server error" }),
+      JSON.stringify({ success: false, error: err?.message ?? "Internal server error" }),
       { status: 500, headers: { ...CORS, "Content-Type": "application/json" } },
     );
   }
 });
-
-// ── MIME type helper ──────────────────────────────────────────────────────────
-function getMimeType(ext: string): string {
-  const map: Record<string, string> = {
-    pdf:  "application/pdf",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    jpg:  "image/jpeg",
-    jpeg: "image/jpeg",
-    png:  "image/png",
-  };
-  return map[ext] || "application/octet-stream";
-}
