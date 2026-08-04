@@ -199,7 +199,7 @@ function ConversionsPage() {
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      // Step 2: Call edge function — pass session JWT explicitly so edge fn can identify user
+      // Step 2: Call edge function — pass session JWT explicitly
       setProgress("processing");
       const { data, error: fnError } = await supabase.functions.invoke("file-converter", {
         body: { source_path: sourcePath, target_format: selectedConversion.id },
@@ -207,11 +207,17 @@ function ConversionsPage() {
       });
 
       if (fnError) {
-        console.error("Edge function error:", fnError);
-        throw new Error(fnError.message || "Edge function failed");
+        // supabase.functions.invoke wraps the actual body in fnError.context
+        // Extract the real error message from the JSON body if possible
+        let actualMsg = fnError.message;
+        try {
+          const body = await (fnError as any).context?.json?.();
+          if (body?.error) actualMsg = body.error;
+        } catch { /* fallback to generic message */ }
+        console.error("Edge function error:", actualMsg);
+        throw new Error(actualMsg);
       }
       if (!data?.success) throw new Error(data?.error || "Conversion failed");
-
 
       setProgress("saving");
 
