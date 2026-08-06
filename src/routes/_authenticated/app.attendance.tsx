@@ -97,6 +97,62 @@ function AttendancePage() {
     } catch { return null; }
   });
 
+  const [showCueModal, setShowCueModal] = useState(false);
+  const [cueUsername, setCueUsername] = useState("");
+  const [cuePassword, setCuePassword] = useState("");
+  const [isSyncingCue, setIsSyncingCue] = useState(false);
+  const [cueError, setCueError] = useState<string | null>(null);
+
+  const handleCueSync = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cueUsername || !cuePassword) {
+      toast.error("Please enter both CUE username and password.");
+      return;
+    }
+
+    setIsSyncingCue(true);
+    setCueError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("kp-scraper", {
+        body: { username: cueUsername.trim(), password: cuePassword },
+      });
+
+      if (error || !data || data.error) {
+        const errMsg = data?.error || error?.message || "Authentication failed. Please verify credentials.";
+        setCueError(errMsg);
+        toast.error(errMsg);
+        setIsSyncingCue(false);
+        return;
+      }
+
+      if (data.subjects && Array.isArray(data.subjects)) {
+        const syncedAt = new Date().toISOString();
+        const sessionPayload = {
+          subjects: data.subjects,
+          lastSynced: syncedAt,
+        };
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(sessionPayload));
+        }
+        setCueData(data.subjects);
+        setCueLastSynced(syncedAt);
+        setShowCueModal(false);
+        setCuePassword("");
+        toast.success(`Successfully synced ${data.subjects.length} subjects from CUE Portal!`);
+      } else {
+        setCueError("No attendance subjects returned from CUE Portal.");
+        toast.error("No attendance subjects returned from CUE Portal.");
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || "Could not connect to CUE sync service.";
+      setCueError(errMsg);
+      toast.error(errMsg);
+    } finally {
+      setIsSyncingCue(false);
+    }
+  };
+
   // ── Purge sessionStorage when tab closes ──
   useEffect(() => {
     const purge = () => sessionStorage.removeItem(CUE_SESSION_KEY);
@@ -1085,6 +1141,98 @@ function AttendancePage() {
         )}
 
 
+
+        {/* ── CUE Login Modal ── */}
+        {showCueModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">
+              <button
+                type="button"
+                onClick={() => setShowCueModal(false)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="flex items-center gap-3 border-b border-border/60 pb-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <Lock className="h-5 w-5 text-blue-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-foreground">Sync from CUE Portal</h3>
+                  <p className="text-xs text-muted-foreground">Authenticates directly with cue.christuniversity.in internal API</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCueSync} className="space-y-4">
+                {cueError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    <span>{cueError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">CUE Register / Roll Number</label>
+                  <input
+                    type="text"
+                    required
+                    value={cueUsername}
+                    onChange={(e) => setCueUsername(e.target.value)}
+                    placeholder="e.g. 2340123"
+                    className="w-full bg-background border border-border rounded-xl px-3.5 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">CUE Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={cuePassword}
+                    onChange={(e) => setCuePassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-background border border-border rounded-xl px-3.5 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-1.5 bg-muted/40 p-2.5 rounded-xl border border-border/40">
+                  <Lock className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  <span>Credentials are held strictly in memory for token extraction and never saved or logged.</span>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCueModal(false)}
+                    disabled={isSyncingCue}
+                    className="text-xs font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={isSyncingCue}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2"
+                  >
+                    {isSyncingCue ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Authenticating...
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="h-3.5 w-3.5" /> Sync Live Attendance
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         <style>{`
           @keyframes slideUpFade {
