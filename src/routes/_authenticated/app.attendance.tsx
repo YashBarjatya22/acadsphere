@@ -152,44 +152,54 @@ function AttendancePage() {
     setCueSyncing(true);
     setCueError("");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/kp-scraper`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
-          },
-          body: JSON.stringify({
-            username: cueUsername.trim(),
-            password: cuePassword,
-            portal: portalChoice,
-          }),
-        }
-      );
-      const json = await res.json().catch(() => ({ error: "Failed to parse response from server" }));
-      if (!res.ok) throw new Error(json.error || `Portal returned error ${res.status}`);
+      // 1. Invoke Supabase Edge Function with automatic JWT & CORS handling
+      const { data, error: fnError } = await supabase.functions.invoke("kp-scraper", {
+        body: {
+          username: cueUsername.trim(),
+          password: cuePassword,
+          portal: portalChoice,
+        },
+      });
+
+      if (fnError) {
+        let errMessage = fnError.message || "Edge function invocation failed";
+        try {
+          if (fnError.context) {
+            const body = await fnError.context.json();
+            if (body?.error) errMessage = body.error;
+          }
+        } catch (_) {}
+        throw new Error(errMessage);
+      }
+
+      if (!data || data.error) {
+        throw new Error(data?.error || "Failed to fetch attendance data from CUE Portal");
+      }
+
+      const subjects = (data.subjects || []) as CueSubject[];
+      if (!subjects || subjects.length === 0) {
+        throw new Error("No attendance records found for this account.");
+      }
 
       // Cache subjects in sessionStorage (NOT credentials)
-      const payload = { subjects: json.subjects as CueSubject[], lastSynced: new Date().toISOString() };
+      const payload = { subjects, lastSynced: new Date().toISOString() };
       if (typeof window !== "undefined") {
         sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(payload));
       }
-      setCueData(payload.subjects);
+      setCueData(subjects);
       setCueLastSynced(payload.lastSynced);
 
       // ✅ Wipe credentials from state immediately after use
       setCuePassword("");
       setCueUsername("");
       setShowCueModal(false);
-      toast.success(`Synced ${json.count || json.subjects?.length || 0} subjects from ${portalChoice.toUpperCase()} Portal!`);
+      toast.success(`Synced ${data.count || subjects.length} subjects from ${portalChoice.toUpperCase()} Portal!`);
     } catch (err: any) {
       const errMsg = err.message || "Failed to connect to CUE Portal. Check your credentials.";
       setCueError(errMsg);
       toast.error(errMsg);
-      setCuePassword(""); // Always clear password on error
-      setShowCueModal(true); // Keep modal open for retry
+      setCuePassword(""); // Clear password on error
+      setShowCueModal(true); // Keep modal visible for retry
     } finally {
       setCueSyncing(false);
     }
