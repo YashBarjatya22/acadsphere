@@ -78,7 +78,6 @@ function AttendancePage() {
   const [showCueModal, setShowCueModal] = useState(false);
   const [cueSyncing, setCueSyncing] = useState(false);
   const [cueError, setCueError] = useState("");
-  const [portalChoice, setPortalChoice] = useState<"kp" | "cue">("kp");
 
   // CUE data is cached in sessionStorage — cleared on tab close (see beforeunload below)
   // NOTE: must guard with typeof window check — this initializer runs during SSR on Node.js
@@ -152,12 +151,11 @@ function AttendancePage() {
     setCueSyncing(true);
     setCueError("");
     try {
-      // 1. Invoke Supabase Edge Function with automatic JWT & CORS handling
+      // 1. Invoke Supabase Edge Function (targets cue.christuniversity.in)
       const { data, error: fnError } = await supabase.functions.invoke("kp-scraper", {
         body: {
           username: cueUsername.trim(),
           password: cuePassword,
-          portal: portalChoice,
         },
       });
 
@@ -178,7 +176,7 @@ function AttendancePage() {
 
       const subjects = (data.subjects || []) as CueSubject[];
       if (!subjects || subjects.length === 0) {
-        throw new Error("No attendance records found for this account.");
+        throw new Error("No attendance records found for this account on CUE Portal.");
       }
 
       // Cache subjects in sessionStorage (NOT credentials)
@@ -193,7 +191,7 @@ function AttendancePage() {
       setCuePassword("");
       setCueUsername("");
       setShowCueModal(false);
-      toast.success(`Synced ${data.count || subjects.length} subjects from ${portalChoice.toUpperCase()} Portal!`);
+      toast.success(`Synced ${data.count || subjects.length} subjects from CUE Portal!`);
     } catch (err: any) {
       const errMsg = err.message || "Failed to connect to CUE Portal. Check your credentials.";
       setCueError(errMsg);
@@ -321,8 +319,8 @@ function AttendancePage() {
                   <Lock className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-extrabold text-foreground">Connect CUE/KP Portal</h2>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Christ University attendance sync</p>
+                  <h2 className="text-sm font-extrabold text-foreground">Connect CUE Portal</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Christ University CUE Portal sync</p>
                 </div>
               </div>
               <button onClick={() => setShowCueModal(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
@@ -334,35 +332,13 @@ function AttendancePage() {
             <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
               <p className="text-[11px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
-                <strong>Privacy Guarantee:</strong> Your credentials are used only for this single sync request, then immediately discarded. They are never stored in any database or file.
+                <strong>Privacy Guarantee:</strong> Your credentials are used only for this single sync request to cue.christuniversity.in, then immediately discarded. They are never stored in any database or file.
               </p>
             </div>
           </div>
 
           {/* Modal Form */}
           <form onSubmit={handleCueSync} className="p-6 space-y-4">
-            {/* Portal selector */}
-            <div>
-              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Portal</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["kp", "cue"] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPortalChoice(p)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      portalChoice === p
-                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                        : "bg-card border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                    {p === "kp" ? "KP Portal (kp.christuniversity.in)" : "CUE Portal (cue.christuniversity.in)"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Username */}
             <div>
               <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
