@@ -12,13 +12,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const CORS = {
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const JSON_HEADERS = { ...CORS, "Content-Type": "application/json" };
+const JSON_HEADERS = { ...corsHeaders, "Content-Type": "application/json" };
 
 // ── Portal base URLs ──────────────────────────────────────────────────────────
 const PORTAL_BASES: Record<string, string> = {
@@ -218,7 +217,7 @@ function parseAttendanceHtml(html: string): CueSubject[] {
 serve(async (req) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: CORS });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
