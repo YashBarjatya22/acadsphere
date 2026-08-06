@@ -1,12 +1,12 @@
 /**
  * Supabase Edge Function: kp-scraper
  * ─────────────────────────────────
- * Securely logs into the Christ University KP/CUE portal with the user-provided
- * credentials (held only for the duration of this function call), scrapes the
- * attendance table, and returns structured JSON.
+ * Exclusively authenticates and scrapes Christ University's CUE Portal (cue.christuniversity.in).
+ * Credentials are held ONLY in memory for the single request duration and never logged or stored.
  *
- * Credentials are NEVER stored, logged, or forwarded anywhere.
- * The calling client must supply a valid Supabase JWT.
+ * Supported CUE routes:
+ *   - Login: https://cue.christuniversity.in/KnowledgePro/LoginAction.do
+ *   - Dashboard / Attendance: https://cue.christuniversity.in/main/attendence
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -19,13 +19,8 @@ const corsHeaders = {
 
 const JSON_HEADERS = { ...corsHeaders, "Content-Type": "application/json" };
 
-// ── Portal base URLs ──────────────────────────────────────────────────────────
-const PORTAL_BASES: Record<string, string> = {
-  kp: "https://kp.christuniversity.in",
-  cue: "https://cue.christuniversity.in",
-};
+const CUE_BASE = "https://cue.christuniversity.in";
 
-// ── Common browser-like headers ───────────────────────────────────────────────
 const BROWSER = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -36,7 +31,6 @@ const BROWSER = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Strip HTML tags and decode common entities. */
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]+>/g, "")
@@ -49,7 +43,6 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-/** Extract all <input type="hidden" name="..." value="..."> pairs. */
 function extractHiddenFields(html: string): Record<string, string> {
   const fields: Record<string, string> = {};
   const re = /<input[^>]+type=["']?hidden["']?[^>]*>/gi;
@@ -61,10 +54,8 @@ function extractHiddenFields(html: string): Record<string, string> {
   return fields;
 }
 
-/** Extract Set-Cookie values matching the key pattern (JSESSIONID etc.). */
 function buildCookieString(setCookieHeader: string | null): string {
   if (!setCookieHeader) return "";
-  // set-cookie may arrive as comma-separated list of individual cookie directives
   return setCookieHeader
     .split(/,(?=[^ ])/)
     .map((c) => c.split(";")[0].trim())
@@ -72,7 +63,6 @@ function buildCookieString(setCookieHeader: string | null): string {
     .join("; ");
 }
 
-/** Merge two cookie strings, with later values winning for duplicate keys. */
 function mergeCookies(a: string, b: string): string {
   const map = new Map<string, string>();
   const parse = (s: string) =>
@@ -87,7 +77,6 @@ function mergeCookies(a: string, b: string): string {
     .join("; ");
 }
 
-/** Determine if login failed (we were redirected back to login page). */
 function isLoginFailure(html: string): boolean {
   const lower = html.toLowerCase();
   return (
@@ -97,7 +86,6 @@ function isLoginFailure(html: string): boolean {
     lower.includes("incorrect password") ||
     lower.includes("authentication failed") ||
     lower.includes("invalid credentials") ||
-    // Still on login page with a form
     (lower.includes("loginpassword") && lower.includes("<form"))
   );
 }
@@ -112,110 +100,173 @@ interface CueSubject {
 }
 
 /**
- * Parse the attendance HTML table.
- *
- * The KP portal renders a table with columns roughly:
- * [S.No] [Course Code] [Course Name] [T/P] [Conducted] [Attended] [Percentage]
- *
- * We detect columns heuristically rather than relying on fixed column indices,
- * so we're robust to minor layout changes.
+ * Multi-strategy HTML parser for CUE Portal.
+ * Handles:
+ * 1. Modern CUE Card/Grid layout (<div class="..."> cards)
+ * 2. Table layout (<tr/td>)
+ * 3. Raw text regex fallback
  */
 function parseAttendanceHtml(html: string): CueSubject[] {
   const subjects: CueSubject[] = [];
 
-  // --- Attempt 1: row-by-row table parsing ---
-  const tableMatch = html.match(/<table[^>]*>[\s\S]*?<\/table>/gi) || [];
+  // ── Strategy 1: Div / Card Grid Layout (Modern CUE Portal) ───────────────
+  const containerMatches =
+    html.match(/<div[^>]*class=["']?[^"']*(?:card|subject|course|item|grid|box|col|row|panel|attendance)[^"']*["']?[^>]*>[\s\S]*?<\/div>/gi) || [];
 
-  for (const table of tableMatch) {
-    const rows = table.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || [];
-    for (const row of rows) {
-      // Skip header rows
-      if (/<th[^>]*>/i.test(row)) continue;
+  for (const block of containerMatches) {
+    const text = stripHtml(block);
+    if (!text || text.length < 10) continue;
 
-      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || []).map(stripHtml);
-      if (cells.length < 4) continue;
+    const ratioMatch = block.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/) || text.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/);
+    const pctMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
 
-      // Find numeric cells (class counts, percentage)
-      const numericCells = cells
-        .map((c, i) => ({ i, v: parseFloat(c.replace("%", "").trim()) }))
-        .filter(({ v }) => !isNaN(v) && v >= 0 && v <= 1000);
+    if (ratioMatch || pctMatch) {
+      const codeMatch = text.match(/\b([A-Z]{2,4}\d{3,4}[A-Z]?)\b/);
+      const code = codeMatch ? codeMatch[1] : "N/A";
 
-      if (numericCells.length < 2) continue;
+      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 3);
+      const nameLine = lines.find((l) => !l.includes("%") && !/\b\d+\/\d+\b/.test(l) && !/^\d+$/.test(l) && l !== code);
+      const name = nameLine || (code !== "N/A" ? code : "");
 
-      // Percentage is likely the last numeric cell OR has a % sign
-      let percentage = 0;
-      let conducted = 0;
-      let attended = 0;
+      if (name && name.length >= 3) {
+        let attended = 0;
+        let conducted = 0;
+        let percentage = 0;
 
-      const pctCell = cells.findIndex((c) => c.includes("%") && parseFloat(c) <= 100);
-      if (pctCell >= 0) {
-        percentage = parseFloat(cells[pctCell]);
-        // The two numeric cells just before percentage should be conducted / attended
-        const numericsBeforePct = numericCells.filter(({ i }) => i < pctCell);
-        if (numericsBeforePct.length >= 2) {
-          const last2 = numericsBeforePct.slice(-2);
-          conducted = Math.max(last2[0].v, last2[1].v);
-          attended = Math.min(last2[0].v, last2[1].v);
-        }
-      } else {
-        // No % sign — use last 3 numerics as conducted, attended, pct
-        if (numericCells.length >= 3) {
-          const last3 = numericCells.slice(-3);
-          conducted = last3[0].v;
-          attended = last3[1].v;
-          percentage = last3[2].v;
-        } else if (numericCells.length === 2) {
-          conducted = Math.max(numericCells[0].v, numericCells[1].v);
-          attended = Math.min(numericCells[0].v, numericCells[1].v);
+        if (ratioMatch) {
+          const n1 = parseInt(ratioMatch[1], 10);
+          const n2 = parseInt(ratioMatch[2], 10);
+          attended = Math.min(n1, n2);
+          conducted = Math.max(n1, n2);
           percentage = conducted > 0 ? Math.round((attended / conducted) * 100) : 0;
+        } else if (pctMatch) {
+          percentage = Math.round(parseFloat(pctMatch[1]));
         }
+
+        const isLab = text.toLowerCase().includes("lab") || text.toLowerCase().includes("practical");
+
+        subjects.push({
+          name: name.replace(/\s+/g, " "),
+          code,
+          type: isLab ? "Practical" : "Theory",
+          attended,
+          total: conducted,
+          percentage,
+        });
       }
+    }
+  }
 
-      if (conducted <= 0) continue;
+  // ── Strategy 2: Table Row Parsing (Classic CUE / JSP Tables) ─────────────
+  if (subjects.length === 0) {
+    const tableMatch = html.match(/<table[^>]*>[\s\S]*?<\/table>/gi) || [];
 
-      // Extract course code (alphanumeric string that looks like a code)
-      const codeCell = cells.find((c) => /^[A-Z0-9]{3,12}$/i.test(c.trim()) && !/^\d+$/.test(c));
-      const code = codeCell?.trim() || "N/A";
+    for (const table of tableMatch) {
+      const rows = table.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || [];
+      for (const row of rows) {
+        if (/<th[^>]*>/i.test(row)) continue;
 
-      // Subject name: longest non-numeric, non-code text cell
-      const name = cells
-        .filter((c) => c !== code && !/^\d+\.?\d*%?$/.test(c) && c.length > 3 && isNaN(Number(c)))
-        .sort((a, b) => b.length - a.length)[0] || "";
+        const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || []).map(stripHtml);
+        if (cells.length < 3) continue;
 
-      if (!name || name.length < 3) continue;
+        const numericCells = cells
+          .map((c, i) => ({ i, v: parseFloat(c.replace("%", "").trim()) }))
+          .filter(({ v }) => !isNaN(v) && v >= 0 && v <= 1000);
 
-      // Determine theory vs practical
-      const rowText = row.toLowerCase();
-      const type =
-        rowText.includes("practical") || rowText.includes("lab") || cells.some((c) => /^p$/i.test(c.trim()))
-          ? "Practical"
-          : "Theory";
+        if (numericCells.length < 2) continue;
 
+        let percentage = 0;
+        let conducted = 0;
+        let attended = 0;
+
+        const pctCell = cells.findIndex((c) => c.includes("%") && parseFloat(c) <= 100);
+        if (pctCell >= 0) {
+          percentage = parseFloat(cells[pctCell]);
+          const numericsBeforePct = numericCells.filter(({ i }) => i < pctCell);
+          if (numericsBeforePct.length >= 2) {
+            const last2 = numericsBeforePct.slice(-2);
+            conducted = Math.max(last2[0].v, last2[1].v);
+            attended = Math.min(last2[0].v, last2[1].v);
+          }
+        } else {
+          if (numericCells.length >= 3) {
+            const last3 = numericCells.slice(-3);
+            conducted = last3[0].v;
+            attended = last3[1].v;
+            percentage = last3[2].v;
+          } else if (numericCells.length === 2) {
+            conducted = Math.max(numericCells[0].v, numericCells[1].v);
+            attended = Math.min(numericCells[0].v, numericCells[1].v);
+            percentage = conducted > 0 ? Math.round((attended / conducted) * 100) : 0;
+          }
+        }
+
+        if (conducted <= 0) continue;
+
+        const codeCell = cells.find((c) => /^[A-Z0-9]{3,12}$/i.test(c.trim()) && !/^\d+$/.test(c));
+        const code = codeCell?.trim() || "N/A";
+        const name =
+          cells
+            .filter((c) => c !== code && !/^\d+\.?\d*%?$/.test(c) && c.length > 3 && isNaN(Number(c)))
+            .sort((a, b) => b.length - a.length)[0] || "";
+
+        if (!name || name.length < 3) continue;
+
+        const rowText = row.toLowerCase();
+        const type =
+          rowText.includes("practical") || rowText.includes("lab") || cells.some((c) => /^p$/i.test(c.trim()))
+            ? "Practical"
+            : "Theory";
+
+        subjects.push({
+          name: name.trim(),
+          code,
+          type,
+          attended: Math.round(attended),
+          total: Math.round(conducted),
+          percentage: Math.round(percentage),
+        });
+      }
+      if (subjects.length > 0) break;
+    }
+  }
+
+  // ── Strategy 3: Global Text Regex Pattern Matching ───────────────────────
+  if (subjects.length === 0) {
+    const rawText = stripHtml(html);
+    const lineRegex = /([A-Z]{2,4}\d{3,4}[A-Z]?)\s*[-:]?\s*([A-Za-z0-9\s&,.-]{4,50})\s+(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/gi;
+    for (const match of rawText.matchAll(lineRegex)) {
+      const code = match[1];
+      const name = match[2].trim();
+      const n1 = parseInt(match[3], 10);
+      const n2 = parseInt(match[4], 10);
+      const attended = Math.min(n1, n2);
+      const total = Math.max(n1, n2);
+      const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
       subjects.push({
         name,
         code,
-        type,
-        attended: Math.round(attended),
-        total: Math.round(conducted),
-        percentage: Math.round(percentage),
+        type: name.toLowerCase().includes("lab") ? "Practical" : "Theory",
+        attended,
+        total,
+        percentage: pct,
       });
     }
-    if (subjects.length > 0) break; // Use first table that yielded results
   }
 
-  // Deduplicate by name
+  // Deduplicate
   const seen = new Set<string>();
   return subjects.filter((s) => {
-    if (seen.has(s.name)) return false;
-    seen.add(s.name);
+    const key = (s.code + "-" + s.name).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
 
-// ── Main handler ─────────────────────────────────────────────────────────────
+// ── Serve Handler ────────────────────────────────────────────────────────────
 
 serve(async (req) => {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -228,7 +279,7 @@ serve(async (req) => {
   }
 
   try {
-    // ── 1. Verify Supabase JWT ────────────────────────────────────────────────
+    // 1. Verify Supabase Auth JWT
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
@@ -247,8 +298,8 @@ serve(async (req) => {
       });
     }
 
-    // ── 2. Parse request body ─────────────────────────────────────────────────
-    let body: { username?: string; password?: string; portal?: "kp" | "cue" };
+    // 2. Parse request body (expects { username, password })
+    let body: { username?: string; password?: string };
     try {
       body = await req.json();
     } catch {
@@ -258,7 +309,7 @@ serve(async (req) => {
       });
     }
 
-    const { username, password, portal = "kp" } = body;
+    const { username, password } = body;
     if (!username || !password) {
       return new Response(JSON.stringify({ error: "Username and password are required" }), {
         status: 400,
@@ -266,15 +317,15 @@ serve(async (req) => {
       });
     }
 
-    const BASE = PORTAL_BASES[portal] ?? PORTAL_BASES.kp;
-    const LOGIN_PAGE = `${BASE}/KnowledgePro/Login.jsp`;
-    const LOGIN_POST = `${BASE}/KnowledgePro/LoginAction.do`;
-    const ATTENDANCE_URL = `${BASE}/KnowledgePro/StudentAttendanceAction.do?method=showAttendance`;
-    const ALT_ATTENDANCE = `${BASE}/KnowledgePro/viewStudentAttendance`;
+    // CUE Portal endpoints
+    const LOGIN_PAGE = `${CUE_BASE}/KnowledgePro/Login.jsp`;
+    const LOGIN_POST = `${CUE_BASE}/KnowledgePro/LoginAction.do`;
+    const CUE_ATTENDANCE_URL = `${CUE_BASE}/main/attendence`;
+    const ALT_ATTENDANCE_URL = `${CUE_BASE}/KnowledgePro/StudentAttendanceAction.do?method=showAttendance`;
 
-    // ── 3. GET login page (grab cookies + hidden fields) ──────────────────────
+    // 3. GET CUE login page for session cookie + hidden CSRF inputs
     const loginPageRes = await fetch(LOGIN_PAGE, {
-      headers: { ...BROWSER, Referer: BASE },
+      headers: { ...BROWSER, Referer: CUE_BASE },
       redirect: "follow",
     });
 
@@ -282,16 +333,13 @@ serve(async (req) => {
     let cookieStr = buildCookieString(loginPageRes.headers.get("set-cookie"));
     const hiddenFields = extractHiddenFields(loginPageHtml);
 
-    // ── 4. POST credentials ───────────────────────────────────────────────────
+    // 4. POST credentials to CUE login route
     const formBody = new URLSearchParams();
-    // Common username field names used by JSP portals
     formBody.set("userName", username);
     formBody.set("loginPassword", password);
-    // Some portals use alternative field names
     formBody.set("username", username);
     formBody.set("password", password);
     formBody.set("userId", username);
-    // Append any hidden CSRF / viewstate fields
     for (const [k, v] of Object.entries(hiddenFields)) {
       formBody.set(k, v);
     }
@@ -315,18 +363,18 @@ serve(async (req) => {
     if (isLoginFailure(loginHtml)) {
       return new Response(
         JSON.stringify({
-          error: "Invalid username or password. Please check your CUE/KP portal credentials and try again.",
+          error: "Invalid username or password. Please check your CUE portal (cue.christuniversity.in) credentials and try again.",
         }),
         { status: 401, headers: JSON_HEADERS }
       );
     }
 
-    // ── 5. Fetch attendance page ──────────────────────────────────────────────
-    const attendRes = await fetch(ATTENDANCE_URL, {
+    // 5. Scrape CUE Attendance dashboard (/main/attendence)
+    const attendRes = await fetch(CUE_ATTENDANCE_URL, {
       headers: {
         ...BROWSER,
         Cookie: cookieStr,
-        Referer: `${BASE}/KnowledgePro/StudentDashboard.do`,
+        Referer: `${CUE_BASE}/main/home`,
       },
       redirect: "follow",
     });
@@ -337,9 +385,9 @@ serve(async (req) => {
 
     let subjects = parseAttendanceHtml(attendHtml);
 
-    // ── 6. Try alternative URL if no subjects found ───────────────────────────
+    // Try alternative CUE route if no subjects parsed
     if (subjects.length === 0) {
-      const altRes = await fetch(ALT_ATTENDANCE, {
+      const altRes = await fetch(ALT_ATTENDANCE_URL, {
         headers: { ...BROWSER, Cookie: cookieStr },
         redirect: "follow",
       });
@@ -351,8 +399,8 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           error:
-            "Login succeeded but no attendance records were found. " +
-            "The portal layout may have changed. Please check kp.christuniversity.in directly.",
+            "Login succeeded but no attendance records were found on CUE Portal. " +
+            "Please verify your account details on cue.christuniversity.in directly.",
         }),
         { status: 422, headers: JSON_HEADERS }
       );
@@ -361,13 +409,12 @@ serve(async (req) => {
     return new Response(JSON.stringify({ subjects, count: subjects.length }), {
       headers: JSON_HEADERS,
     });
-
   } catch (err) {
-    console.error("[kp-scraper] Unhandled error:", err);
+    console.error("[cue-scraper] Unhandled error:", err);
     return new Response(
       JSON.stringify({
         error:
-          "Could not reach the CUE/KP portal. The university server may be down or unreachable. Try again in a few minutes.",
+          "Could not reach CUE Portal (cue.christuniversity.in). The university server may be down or unreachable. Try again in a few minutes.",
       }),
       { status: 502, headers: JSON_HEADERS }
     );
