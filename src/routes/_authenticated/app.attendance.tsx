@@ -45,6 +45,7 @@ import {
   Zap,
   ChevronDown,
   FlaskConical,
+  Copy,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/attendance")({
@@ -71,15 +72,15 @@ function AttendancePage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "simulator" | "notifications" | "faculty">("dashboard");
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("sub1");
 
-  // ── CUE Portal state (credentials ONLY in component state, NEVER persisted) ──
-  const [cueUsername, setCueUsername] = useState("");
-  const [cuePassword, setCuePassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showCueModal, setShowCueModal] = useState(false);
-  const [cueSyncing, setCueSyncing] = useState(false);
-  const [cueError, setCueError] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // CUE data is cached in sessionStorage — cleared on tab close (see beforeunload below)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.id) setUserId(data.user.id);
+    });
+  }, []);
+
+  // CUE data is cached in sessionStorage or updated via Chrome Extension
   // NOTE: must guard with typeof window check — this initializer runs during SSR on Node.js
   const [cueData, setCueData] = useState<CueSubject[] | null>(() => {
     if (typeof window === "undefined") return null;
@@ -96,7 +97,7 @@ function AttendancePage() {
     } catch { return null; }
   });
 
-  // ── Purge sessionStorage when tab closes (credentials already cleared earlier) ──
+  // ── Purge sessionStorage when tab closes ──
   useEffect(() => {
     const purge = () => sessionStorage.removeItem(CUE_SESSION_KEY);
     window.addEventListener("beforeunload", purge);
@@ -112,7 +113,7 @@ function AttendancePage() {
   const { data: dashboardData, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ["attendanceDashboardData"],
     queryFn: () => getDashboardFn(),
-    retry: 2,           // retry twice before reporting error
+    retry: 2,
     retryDelay: 1000,
   });
 
@@ -139,77 +140,13 @@ function AttendancePage() {
     },
   });
 
-  // ── CUE Sync ──────────────────────────────────────────────────────────────────
-  const handleCueSync = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cueUsername.trim() || !cuePassword.trim()) {
-      const msg = "Both username and password are required.";
-      setCueError(msg);
-      toast.error(msg);
-      return;
-    }
-    setCueSyncing(true);
-    setCueError("");
-    try {
-      // 1. Invoke Supabase Edge Function (targets cue.christuniversity.in)
-      const { data, error: fnError } = await supabase.functions.invoke("kp-scraper", {
-        body: {
-          username: cueUsername.trim(),
-          password: cuePassword,
-        },
-      });
-
-      if (fnError) {
-        let errMessage = fnError.message || "Edge function invocation failed";
-        try {
-          if (fnError.context) {
-            const body = await fnError.context.json();
-            if (body?.error) errMessage = body.error;
-          }
-        } catch (_) {}
-        throw new Error(errMessage);
-      }
-
-      if (!data || data.error) {
-        throw new Error(data?.error || "Failed to fetch attendance data from CUE Portal");
-      }
-
-      const subjects = (data.subjects || []) as CueSubject[];
-      if (!subjects || subjects.length === 0) {
-        throw new Error("No attendance records found for this account on CUE Portal.");
-      }
-
-      // Cache subjects in sessionStorage (NOT credentials)
-      const payload = { subjects, lastSynced: new Date().toISOString() };
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(payload));
-      }
-      setCueData(subjects);
-      setCueLastSynced(payload.lastSynced);
-
-      // ✅ Wipe credentials from state immediately after use
-      setCuePassword("");
-      setCueUsername("");
-      setShowCueModal(false);
-      toast.success(`Synced ${data.count || subjects.length} subjects from CUE Portal!`);
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to connect to CUE Portal. Check your credentials.";
-      setCueError(errMsg);
-      toast.error(errMsg);
-      setCuePassword(""); // Clear password on error
-      setShowCueModal(true); // Keep modal visible for retry
-    } finally {
-      setCueSyncing(false);
-    }
-  };
-
   const handleCueClear = () => {
-    sessionStorage.removeItem(CUE_SESSION_KEY);
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem(CUE_SESSION_KEY);
+    }
     setCueData(null);
     setCueLastSynced(null);
-    setCueUsername("");
-    setCuePassword("");
-    toast.info("CUE Portal data cleared from this session.");
+    toast.info("CUE Portal session data cleared.");
   };
 
   const lastSyncedLabel = useMemo(() => {
@@ -301,124 +238,45 @@ function AttendancePage() {
     );
   };
 
-  // ── Render CUE Modal ──────────────────────────────────────────────────────────
-  const renderCueModal = () => {
-    if (!showCueModal) return null;
-    return (
-      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCueModal(false)}>
-        <div
-          className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-          style={{ animation: "slideUpFade 0.2s ease-out" }}
-        >
-          {/* Modal Header */}
-          <div className="relative overflow-hidden p-6 border-b border-border bg-gradient-to-br from-blue-600/10 to-indigo-600/5">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg">
-                  <Lock className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-extrabold text-foreground">Connect CUE Portal</h2>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Christ University CUE Portal sync</p>
-                </div>
-              </div>
-              <button onClick={() => setShowCueModal(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Security notice */}
-            <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-              <p className="text-[11px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
-                <strong>Privacy Guarantee:</strong> Your credentials are used only for this single sync request to cue.christuniversity.in, then immediately discarded. They are never stored in any database or file.
-              </p>
-            </div>
+  // ── Render Extension Sync Banner ─────────────────────────────────────────────
+  const renderExtensionSyncBanner = () => (
+    <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-600/10 via-indigo-600/5 to-purple-600/10 border border-blue-500/20 shadow-sm space-y-4">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shrink-0">
+            <Globe className="h-5 w-5" />
           </div>
-
-          {/* Modal Form */}
-          <form onSubmit={handleCueSync} className="p-6 space-y-4">
-            {/* Username */}
-            <div>
-              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
-                Registration Number / Username
-              </label>
-              <input
-                type="text"
-                value={cueUsername}
-                onChange={(e) => setCueUsername(e.target.value)}
-                placeholder="e.g. 2547244"
-                autoComplete="off"
-                className="w-full h-10 px-4 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
-                required
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={cuePassword}
-                  onChange={(e) => setCuePassword(e.target.value)}
-                  placeholder="Your portal password"
-                  autoComplete="current-password"
-                  className="w-full h-10 px-4 pr-10 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Error */}
-            {cueError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-red-600 dark:text-red-400 font-medium">{cueError}</p>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => { setShowCueModal(false); setCueError(""); setCuePassword(""); }}
-                className="flex-1 h-10 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={cueSyncing || !cueUsername.trim() || !cuePassword.trim()}
-                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-sm"
-              >
-                {cueSyncing ? (
-                  <><div className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /> Connecting...</>
-                ) : (
-                  <><LogIn className="h-3.5 w-3.5" /> Sync Attendance</>
-                )}
-              </button>
-            </div>
-
-            <p className="text-[10px] text-muted-foreground text-center">
-              <Lock className="h-2.5 w-2.5 inline mr-0.5" />
-              Session-only · Cleared on tab close · Never stored
+          <div>
+            <h3 className="text-sm font-extrabold text-foreground">Sync via AcadSphere Chrome Extension</h3>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              To update your attendance, open your CUE Portal (<strong>cue.christuniversity.in</strong>) and click the AcadSphere Chrome Extension.
             </p>
-          </form>
+          </div>
         </div>
+        <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 uppercase tracking-wider shrink-0 hidden sm:inline-block">
+          Extension Sync Ready
+        </span>
       </div>
-    );
-  };
+
+      {userId && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl bg-background/70 border border-border/80 text-xs gap-2">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-muted-foreground uppercase text-[10px]">Your Sync User ID:</span>
+            <code className="font-mono text-primary font-bold text-xs select-all">{userId}</code>
+          </div>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(userId);
+              toast.success("User ID copied to clipboard!");
+            }}
+            className="px-3 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-[11px] transition-all flex items-center gap-1 shrink-0"
+          >
+            <Copy className="h-3 w-3" /> Copy User ID
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   // ── CASE 1: Still fetching — show spinner ────────────────────────────────────
   if (isLoading) {
@@ -528,29 +386,10 @@ function AttendancePage() {
                 </div>
               </>
             ) : (
-              /* No CUE data — prompt to sync */
-              <div
-                onClick={() => setShowCueModal(true)}
-                className="flex items-center justify-between p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 border-dashed cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/10 transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                    <Globe className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-extrabold text-foreground">Sync from CUE/KP Portal</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Since the local database is unavailable, you can still load live attendance directly from your university portal.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 shrink-0">
-                  <Lock className="h-3.5 w-3.5" /> Secure Login
-                </div>
-              </div>
+              /* No CUE data — prompt to sync via Chrome Extension */
+              renderExtensionSyncBanner()
             )}
           </div>
-
-          {/* CUE Modal always accessible */}
-          {showCueModal && renderCueModal()}
         </div>
       </ChatLayout>
     );
@@ -1245,8 +1084,7 @@ function AttendancePage() {
           </div>
         )}
 
-        {/* CUE Modal */}
-        {renderCueModal()}
+
 
         <style>{`
           @keyframes slideUpFade {

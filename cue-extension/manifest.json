@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "AcadSphere CUE Attendance Sync",
+  "version": "1.0.0",
+  "description": "Extracts live CUE attendance from cue.christuniversity.in and pushes directly to AcadSphere.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://cue.christuniversity.in/*",
+    "https://*.supabase.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AcadSphere CUE Sync"
+  }
+}
