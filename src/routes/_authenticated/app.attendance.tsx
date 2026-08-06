@@ -81,13 +81,16 @@ function AttendancePage() {
   const [portalChoice, setPortalChoice] = useState<"kp" | "cue">("kp");
 
   // CUE data is cached in sessionStorage — cleared on tab close (see beforeunload below)
+  // NOTE: must guard with typeof window check — this initializer runs during SSR on Node.js
   const [cueData, setCueData] = useState<CueSubject[] | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
       const s = sessionStorage.getItem(CUE_SESSION_KEY);
       return s ? JSON.parse(s).subjects : null;
     } catch { return null; }
   });
   const [cueLastSynced, setCueLastSynced] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
       const s = sessionStorage.getItem(CUE_SESSION_KEY);
       return s ? JSON.parse(s).lastSynced : null;
