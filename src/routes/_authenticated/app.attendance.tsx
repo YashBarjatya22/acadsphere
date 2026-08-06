@@ -110,9 +110,11 @@ function AttendancePage() {
   const markReadFn = useServerFn(markNotificationRead);
   const deleteNotifFn = useServerFn(deleteNotification);
 
-  const { data: dashboardData, isLoading, refetch } = useQuery({
+  const { data: dashboardData, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ["attendanceDashboardData"],
     queryFn: () => getDashboardFn(),
+    retry: 2,           // retry twice before reporting error
+    retryDelay: 1000,
   });
 
   const updateMutation = useMutation({
@@ -142,7 +144,9 @@ function AttendancePage() {
   const handleCueSync = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cueUsername.trim() || !cuePassword.trim()) {
-      setCueError("Both username and password are required.");
+      const msg = "Both username and password are required.";
+      setCueError(msg);
+      toast.error(msg);
       return;
     }
     setCueSyncing(true);
@@ -164,12 +168,14 @@ function AttendancePage() {
           }),
         }
       );
-      const json = await res.json();
+      const json = await res.json().catch(() => ({ error: "Failed to parse response from server" }));
       if (!res.ok) throw new Error(json.error || `Portal returned error ${res.status}`);
 
-      // Cache subjects in sessionStorage (NOT credentials — they're wiped next)
+      // Cache subjects in sessionStorage (NOT credentials)
       const payload = { subjects: json.subjects as CueSubject[], lastSynced: new Date().toISOString() };
-      sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(payload));
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(payload));
+      }
       setCueData(payload.subjects);
       setCueLastSynced(payload.lastSynced);
 
@@ -177,10 +183,13 @@ function AttendancePage() {
       setCuePassword("");
       setCueUsername("");
       setShowCueModal(false);
-      toast.success(`Synced ${json.count} subjects from ${portalChoice.toUpperCase()} Portal!`);
+      toast.success(`Synced ${json.count || json.subjects?.length || 0} subjects from ${portalChoice.toUpperCase()} Portal!`);
     } catch (err: any) {
-      setCueError(err.message || "Failed to connect to CUE Portal. Check your credentials.");
+      const errMsg = err.message || "Failed to connect to CUE Portal. Check your credentials.";
+      setCueError(errMsg);
+      toast.error(errMsg);
       setCuePassword(""); // Always clear password on error
+      setShowCueModal(true); // Keep modal open for retry
     } finally {
       setCueSyncing(false);
     }
@@ -215,22 +224,6 @@ function AttendancePage() {
       margins: calculateAttendanceMargins(totalAttended, totalTotal),
     };
   }, [cueData]);
-
-  // ── Loading ───────────────────────────────────────────────────────────────────
-  if (isLoading || !dashboardData) {
-    return (
-      <ChatLayout activeThreadId={null}>
-        <div className="h-full bg-background flex flex-col items-center justify-center gap-3">
-          <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Loading Attendance Engine...</p>
-        </div>
-      </ChatLayout>
-    );
-  }
-
-  const { overall, subjects, notifications, recentLogs } = dashboardData;
-  const unreadNotifications = notifications.filter((n) => !n.isRead);
-  const activeSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
 
   // ── Color helpers ─────────────────────────────────────────────────────────────
   const getBadgeStyle = (color: "green" | "blue" | "yellow" | "red") => {
@@ -299,6 +292,287 @@ function AttendancePage() {
       </div>
     );
   };
+
+  // ── Render CUE Modal ──────────────────────────────────────────────────────────
+  const renderCueModal = () => {
+    if (!showCueModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCueModal(false)}>
+        <div
+          className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+          style={{ animation: "slideUpFade 0.2s ease-out" }}
+        >
+          {/* Modal Header */}
+          <div className="relative overflow-hidden p-6 border-b border-border bg-gradient-to-br from-blue-600/10 to-indigo-600/5">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg">
+                  <Lock className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-extrabold text-foreground">Connect CUE/KP Portal</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Christ University attendance sync</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCueModal(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Security notice */}
+            <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
+                <strong>Privacy Guarantee:</strong> Your credentials are used only for this single sync request, then immediately discarded. They are never stored in any database or file.
+              </p>
+            </div>
+          </div>
+
+          {/* Modal Form */}
+          <form onSubmit={handleCueSync} className="p-6 space-y-4">
+            {/* Portal selector */}
+            <div>
+              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Portal</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["kp", "cue"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPortalChoice(p)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      portalChoice === p
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "bg-card border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    {p === "kp" ? "KP Portal (kp.christuniversity.in)" : "CUE Portal (cue.christuniversity.in)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Username */}
+            <div>
+              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                Registration Number / Username
+              </label>
+              <input
+                type="text"
+                value={cueUsername}
+                onChange={(e) => setCueUsername(e.target.value)}
+                placeholder="e.g. 2547244"
+                autoComplete="off"
+                className="w-full h-10 px-4 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
+                required
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={cuePassword}
+                  onChange={(e) => setCuePassword(e.target.value)}
+                  placeholder="Your portal password"
+                  autoComplete="current-password"
+                  className="w-full h-10 px-4 pr-10 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Error */}
+            {cueError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-red-600 dark:text-red-400 font-medium">{cueError}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowCueModal(false); setCueError(""); setCuePassword(""); }}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={cueSyncing || !cueUsername.trim() || !cuePassword.trim()}
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                {cueSyncing ? (
+                  <><div className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /> Connecting...</>
+                ) : (
+                  <><LogIn className="h-3.5 w-3.5" /> Sync Attendance</>
+                )}
+              </button>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground text-center">
+              <Lock className="h-2.5 w-2.5 inline mr-0.5" />
+              Session-only · Cleared on tab close · Never stored
+            </p>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // ── CASE 1: Still fetching — show spinner ────────────────────────────────────
+  if (isLoading) {
+    return (
+      <ChatLayout activeThreadId={null}>
+        <div className="h-full bg-background flex flex-col items-center justify-center gap-3">
+          <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Loading Attendance Engine...</p>
+        </div>
+      </ChatLayout>
+    );
+  }
+
+  // ── CASE 2: Query failed or no data — show error banner + CUE portal usable ──
+  if (isError || !dashboardData) {
+    const errMsg = (queryError as any)?.message || "Could not load attendance data from the database.";
+    return (
+      <ChatLayout activeThreadId={null}>
+        <div className="h-full bg-background text-foreground flex flex-col overflow-y-auto">
+          {/* Error banner */}
+          <div className="m-6 p-5 rounded-2xl border border-red-500/30 bg-red-500/5 flex items-start gap-4">
+            <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
+              <ShieldAlert className="h-5 w-5 text-red-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-extrabold text-foreground">Attendance Database Unavailable</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{errMsg}</p>
+              <p className="text-xs text-muted-foreground mt-1">You can still sync live data directly from the CUE/KP Portal below.</p>
+            </div>
+            <button
+              onClick={() => refetch()}
+              className="flex items-center gap-1.5 text-xs font-bold text-primary border border-primary/30 px-3 py-1.5 rounded-xl hover:bg-primary/10 transition-all shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Retry
+            </button>
+          </div>
+
+          {/* CUE portal section still fully usable */}
+          <div className="px-6 pb-6 space-y-6">
+            {cueData && cueOverall ? (
+              <>
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
+                  <Wifi className="h-4 w-4" />
+                  CUE Portal data loaded · {cueData.length} subjects · {lastSyncedLabel}
+                  <button onClick={handleCueClear} className="ml-auto text-muted-foreground hover:text-red-500"><WifiOff className="h-3.5 w-3.5" /></button>
+                </div>
+                {/* CUE overall summary */}
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card className="border-border bg-card shadow-sm">
+                    <CardHeader className="pb-2 pt-4">
+                      <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">Overall (CUE)</span>
+                      <div className="flex items-baseline justify-between mt-1">
+                        <span className={`text-3xl font-extrabold ${pctColor(cueOverall.pct)}`}>{cueOverall.pct.toFixed(2)}%</span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 text-xs text-muted-foreground">{cueOverall.attended} attended / {cueOverall.total} total hrs</CardContent>
+                  </Card>
+                  <Card className="border-border bg-card shadow-sm">
+                    <CardHeader className="pb-2 pt-4">
+                      <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">85% Target</span>
+                      <CardTitle className={`text-xl font-extrabold mt-1 ${cueOverall.margins.target85.status === "SAFE" ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                        {cueOverall.margins.target85.status === "SAFE" ? `Skip ${cueOverall.margins.target85.leavesAllowed} hrs` : `Need ${cueOverall.margins.target85.classesNeeded} hrs`}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0 text-xs text-muted-foreground">{cueOverall.margins.target85.status === "SAFE" ? "Above 85% target" : "Below 85% — attend to recover"}</CardContent>
+                  </Card>
+                  <Card className="border-border bg-card shadow-sm">
+                    <CardHeader className="pb-2 pt-4">
+                      <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">75% Mandatory</span>
+                      <CardTitle className={`text-xl font-extrabold mt-1 ${cueOverall.margins.target75.status === "SAFE" ? "text-blue-600 dark:text-blue-400" : "text-amber-500"}`}>
+                        {cueOverall.margins.target75.status === "SAFE" ? `Skip ${cueOverall.margins.target75.leavesAllowed} hrs` : `Need ${cueOverall.margins.target75.classesNeeded} hrs`}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0 text-xs text-muted-foreground">{cueOverall.margins.target75.status === "SAFE" ? "Above mandatory 75%" : "Critical — below 75% limit"}</CardContent>
+                  </Card>
+                </div>
+                {/* CUE subject cards */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {cueData.map((sub, i) => {
+                    const m = calculateAttendanceMargins(sub.attended, sub.total);
+                    const pct = sub.total > 0 ? (sub.attended / sub.total) * 100 : 100;
+                    return (
+                      <Card key={i} className="border-border bg-card shadow-xs relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 right-0 h-1.5 ${pct >= 85 ? "bg-emerald-500" : pct >= 75 ? "bg-amber-500" : "bg-red-500"}`} />
+                        <CardHeader className="pb-3 pt-5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-muted text-muted-foreground">{sub.code}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${pctBadge(pct)}`}>{pct >= 85 ? "Safe" : pct >= 75 ? "Warning" : "Critical"}</span>
+                          </div>
+                          <CardTitle className="text-sm font-extrabold mt-2">{sub.name}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 text-xs">
+                          <div>
+                            <div className="flex items-baseline justify-between mb-1.5">
+                              <span className={`text-2xl font-extrabold ${pctColor(pct)}`}>{pct.toFixed(1)}%</span>
+                              <span className="text-muted-foreground">{sub.attended} / {sub.total} hrs</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                              <div className={`h-full ${pct >= 85 ? "bg-emerald-500" : pct >= 75 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                            </div>
+                          </div>
+                          <MarginFooter attended={sub.attended} total={sub.total} />
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              /* No CUE data — prompt to sync */
+              <div
+                onClick={() => setShowCueModal(true)}
+                className="flex items-center justify-between p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 border-dashed cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/10 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                    <Globe className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-extrabold text-foreground">Sync from CUE/KP Portal</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Since the local database is unavailable, you can still load live attendance directly from your university portal.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 shrink-0">
+                  <Lock className="h-3.5 w-3.5" /> Secure Login
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CUE Modal always accessible */}
+          {showCueModal && renderCueModal()}
+        </div>
+      </ChatLayout>
+    );
+  }
+
+  const { overall, subjects, notifications, recentLogs } = dashboardData;
+  const unreadNotifications = notifications.filter((n) => !n.isRead);
+  const activeSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -985,145 +1259,8 @@ function AttendancePage() {
           </div>
         )}
 
-        {/* ════════════════════════════════════════════════════════════════════
-            CUE PORTAL LOGIN MODAL
-        ════════════════════════════════════════════════════════════════════ */}
-        {showCueModal && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCueModal(false)}>
-            <div
-              className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-              style={{ animation: "slideUpFade 0.2s ease-out" }}
-            >
-              {/* Modal Header */}
-              <div className="relative overflow-hidden p-6 border-b border-border bg-gradient-to-br from-blue-600/10 to-indigo-600/5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg">
-                      <Lock className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-extrabold text-foreground">Connect CUE/KP Portal</h2>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Christ University attendance sync</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setShowCueModal(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Security notice */}
-                <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
-                    <strong>Privacy Guarantee:</strong> Your credentials are used only for this single sync request, then immediately discarded. They are never stored in any database or file.
-                  </p>
-                </div>
-              </div>
-
-              {/* Modal Form */}
-              <form onSubmit={handleCueSync} className="p-6 space-y-4">
-                {/* Portal selector */}
-                <div>
-                  <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Portal</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["kp", "cue"] as const).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setPortalChoice(p)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          portalChoice === p
-                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                            : "bg-card border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <Globe className="h-3.5 w-3.5" />
-                        {p === "kp" ? "KP Portal (kp.christuniversity.in)" : "CUE Portal (cue.christuniversity.in)"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Username */}
-                <div>
-                  <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Registration Number / Username
-                  </label>
-                  <input
-                    type="text"
-                    value={cueUsername}
-                    onChange={(e) => setCueUsername(e.target.value)}
-                    placeholder="e.g. 2547244"
-                    autoComplete="off"
-                    className="w-full h-10 px-4 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
-                    required
-                  />
-                </div>
-
-                {/* Password */}
-                <div>
-                  <label className="block text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={cuePassword}
-                      onChange={(e) => setCuePassword(e.target.value)}
-                      placeholder="Your portal password"
-                      autoComplete="current-password"
-                      className="w-full h-10 px-4 pr-10 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/50 font-medium"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Error */}
-                {cueError && (
-                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-red-600 dark:text-red-400 font-medium">{cueError}</p>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowCueModal(false); setCueError(""); setCuePassword(""); }}
-                    className="flex-1 h-10 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={cueSyncing || !cueUsername.trim() || !cuePassword.trim()}
-                    className="flex-1 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-sm"
-                  >
-                    {cueSyncing ? (
-                      <><div className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /> Connecting...</>
-                    ) : (
-                      <><LogIn className="h-3.5 w-3.5" /> Sync Attendance</>
-                    )}
-                  </button>
-                </div>
-
-                <p className="text-[10px] text-muted-foreground text-center">
-                  <Lock className="h-2.5 w-2.5 inline mr-0.5" />
-                  Session-only · Cleared on tab close · Never stored
-                </p>
-              </form>
-            </div>
-          </div>
-        )}
+        {/* CUE Modal */}
+        {renderCueModal()}
 
         <style>{`
           @keyframes slideUpFade {
