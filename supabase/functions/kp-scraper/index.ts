@@ -3,10 +3,6 @@
  * ─────────────────────────────────
  * Exclusively authenticates and scrapes Christ University's CUE Portal (cue.christuniversity.in).
  * Credentials are held ONLY in memory for the single request duration and never logged or stored.
- *
- * Supported CUE routes:
- *   - Login: https://cue.christuniversity.in/KnowledgePro/LoginAction.do
- *   - Dashboard / Attendance: https://cue.christuniversity.in/main/attendence
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -100,59 +96,95 @@ interface CueSubject {
 }
 
 /**
- * Multi-strategy HTML parser for CUE Portal.
- * Handles:
- * 1. Modern CUE Card/Grid layout (<div class="..."> cards)
- * 2. Table layout (<tr/td>)
- * 3. Raw text regex fallback
+ * Robust Multi-Strategy HTML & Script Parser for CUE Portal.
+ * Strategies:
+ * 0. Embedded JSON / Script tag parser
+ * 1. Div / Card Grid Layout
+ * 2. HTML Table (<tr/td>) Parsing
+ * 3. Text Line Regex Matching
  */
 function parseAttendanceHtml(html: string): CueSubject[] {
   const subjects: CueSubject[] = [];
 
-  // ── Strategy 1: Div / Card Grid Layout (Modern CUE Portal) ───────────────
-  const containerMatches =
-    html.match(/<div[^>]*class=["']?[^"']*(?:card|subject|course|item|grid|box|col|row|panel|attendance)[^"']*["']?[^>]*>[\s\S]*?<\/div>/gi) || [];
+  // ── Strategy 0: Script tag / Embedded JSON Data ───────────────────────────
+  const scriptMatches = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
+  for (const script of scriptMatches) {
+    const text = script.replace(/<[^>]+>/g, "");
+    const jsonMatches = text.match(/(\[\s*\{[\s\S]*?\}\s*\]|\{[\s\S]*?"(?:subjects?|attendance|courses?)"[\s\S]*?\})/g) || [];
+    for (const jsonStr of jsonMatches) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        const list = Array.isArray(parsed) ? parsed : (parsed.subjects || parsed.attendance || parsed.courses || []);
+        if (Array.isArray(list) && list.length > 0) {
+          for (const item of list) {
+            const name = item.subjectName || item.subject_name || item.courseName || item.subject || item.name || item.course || "";
+            const code = item.subjectCode || item.subject_code || item.courseCode || item.code || "N/A";
+            const attended = Number(item.attended || item.classesAttended || item.attendedClasses || item.present || 0);
+            const total = Number(item.total || item.conducted || item.classesConducted || item.totalClasses || 0);
+            const pct = Number(item.percentage || item.pct || (total > 0 ? Math.round((attended / total) * 100) : 0));
 
-  for (const block of containerMatches) {
-    const text = stripHtml(block);
-    if (!text || text.length < 10) continue;
-
-    const ratioMatch = block.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/) || text.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/);
-    const pctMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
-
-    if (ratioMatch || pctMatch) {
-      const codeMatch = text.match(/\b([A-Z]{2,4}\d{3,4}[A-Z]?)\b/);
-      const code = codeMatch ? codeMatch[1] : "N/A";
-
-      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 3);
-      const nameLine = lines.find((l) => !l.includes("%") && !/\b\d+\/\d+\b/.test(l) && !/^\d+$/.test(l) && l !== code);
-      const name = nameLine || (code !== "N/A" ? code : "");
-
-      if (name && name.length >= 3) {
-        let attended = 0;
-        let conducted = 0;
-        let percentage = 0;
-
-        if (ratioMatch) {
-          const n1 = parseInt(ratioMatch[1], 10);
-          const n2 = parseInt(ratioMatch[2], 10);
-          attended = Math.min(n1, n2);
-          conducted = Math.max(n1, n2);
-          percentage = conducted > 0 ? Math.round((attended / conducted) * 100) : 0;
-        } else if (pctMatch) {
-          percentage = Math.round(parseFloat(pctMatch[1]));
+            if (name && (attended > 0 || total > 0 || pct > 0)) {
+              subjects.push({
+                name: String(name).trim(),
+                code: String(code).trim(),
+                type: String(name).toLowerCase().includes("lab") ? "Practical" : "Theory",
+                attended: Math.round(attended),
+                total: Math.round(total),
+                percentage: Math.round(pct),
+              });
+            }
+          }
         }
+      } catch (_) {}
+    }
+  }
 
-        const isLab = text.toLowerCase().includes("lab") || text.toLowerCase().includes("practical");
+  // ── Strategy 1: Div / Card Grid Layout (Modern CUE Portal) ───────────────
+  if (subjects.length === 0) {
+    const containerMatches =
+      html.match(/<div[^>]*class=["']?[^"']*(?:card|subject|course|item|grid|box|col|row|panel|attendance|sub)[^"']*["']?[^>]*>[\s\S]*?<\/div>/gi) || [];
 
-        subjects.push({
-          name: name.replace(/\s+/g, " "),
-          code,
-          type: isLab ? "Practical" : "Theory",
-          attended,
-          total: conducted,
-          percentage,
-        });
+    for (const block of containerMatches) {
+      const text = stripHtml(block);
+      if (!text || text.length < 10) continue;
+
+      const ratioMatch = block.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/) || text.match(/(\d{1,3})\s*[\/|\\]\s*(\d{1,3})/);
+      const pctMatch = text.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
+
+      if (ratioMatch || pctMatch) {
+        const codeMatch = text.match(/\b([A-Z]{2,4}\d{3,4}[A-Z]?)\b/);
+        const code = codeMatch ? codeMatch[1] : "N/A";
+
+        const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 3);
+        const nameLine = lines.find((l) => !l.includes("%") && !/\b\d+\/\d+\b/.test(l) && !/^\d+$/.test(l) && l !== code);
+        const name = nameLine || (code !== "N/A" ? code : "");
+
+        if (name && name.length >= 3) {
+          let attended = 0;
+          let conducted = 0;
+          let percentage = 0;
+
+          if (ratioMatch) {
+            const n1 = parseInt(ratioMatch[1], 10);
+            const n2 = parseInt(ratioMatch[2], 10);
+            attended = Math.min(n1, n2);
+            conducted = Math.max(n1, n2);
+            percentage = conducted > 0 ? Math.round((attended / conducted) * 100) : 0;
+          } else if (pctMatch) {
+            percentage = Math.round(parseFloat(pctMatch[1]));
+          }
+
+          const isLab = text.toLowerCase().includes("lab") || text.toLowerCase().includes("practical");
+
+          subjects.push({
+            name: name.replace(/\s+/g, " "),
+            code,
+            type: isLab ? "Practical" : "Theory",
+            attended,
+            total: conducted,
+            percentage,
+          });
+        }
       }
     }
   }
@@ -254,7 +286,7 @@ function parseAttendanceHtml(html: string): CueSubject[] {
     }
   }
 
-  // Deduplicate
+  // Deduplicate by name or code
   const seen = new Set<string>();
   return subjects.filter((s) => {
     const key = (s.code + "-" + s.name).toLowerCase();
@@ -317,11 +349,19 @@ serve(async (req) => {
       });
     }
 
-    // CUE Portal endpoints
+    // CUE Portal candidate endpoints
     const LOGIN_PAGE = `${CUE_BASE}/KnowledgePro/Login.jsp`;
     const LOGIN_POST = `${CUE_BASE}/KnowledgePro/LoginAction.do`;
-    const CUE_ATTENDANCE_URL = `${CUE_BASE}/main/attendence`;
-    const ALT_ATTENDANCE_URL = `${CUE_BASE}/KnowledgePro/StudentAttendanceAction.do?method=showAttendance`;
+    
+    const TARGET_URLS = [
+      `${CUE_BASE}/main/attendence`,
+      `${CUE_BASE}/KnowledgePro/StudentAttendanceAction.do?method=initAttendance`,
+      `${CUE_BASE}/KnowledgePro/StudentAttendanceAction.do?method=showAttendance`,
+      `${CUE_BASE}/KnowledgePro/StudentAttendanceAction.do?method=getAttendance`,
+      `${CUE_BASE}/KnowledgePro/viewStudentAttendance.do`,
+      `${CUE_BASE}/KnowledgePro/StudentDashboard.do`,
+      `${CUE_BASE}/main/home`,
+    ];
 
     // 3. GET CUE login page for session cookie + hidden CSRF inputs
     const loginPageRes = await fetch(LOGIN_PAGE, {
@@ -340,6 +380,7 @@ serve(async (req) => {
     formBody.set("username", username);
     formBody.set("password", password);
     formBody.set("userId", username);
+    formBody.set("method", "loginSubmit");
     for (const [k, v] of Object.entries(hiddenFields)) {
       formBody.set(k, v);
     }
@@ -369,30 +410,29 @@ serve(async (req) => {
       );
     }
 
-    // 5. Scrape CUE Attendance dashboard (/main/attendence)
-    const attendRes = await fetch(CUE_ATTENDANCE_URL, {
-      headers: {
-        ...BROWSER,
-        Cookie: cookieStr,
-        Referer: `${CUE_BASE}/main/home`,
-      },
-      redirect: "follow",
-    });
+    // Attempt 0: Check if attendance data is ALREADY in the login response HTML
+    let subjects = parseAttendanceHtml(loginHtml);
 
-    const attendCookies = buildCookieString(attendRes.headers.get("set-cookie"));
-    cookieStr = mergeCookies(cookieStr, attendCookies);
-    const attendHtml = await attendRes.text();
-
-    let subjects = parseAttendanceHtml(attendHtml);
-
-    // Try alternative CUE route if no subjects parsed
+    // Attempt 1..N: Fetch CUE dashboard & attendance endpoints
     if (subjects.length === 0) {
-      const altRes = await fetch(ALT_ATTENDANCE_URL, {
-        headers: { ...BROWSER, Cookie: cookieStr },
-        redirect: "follow",
-      });
-      const altHtml = await altRes.text();
-      subjects = parseAttendanceHtml(altHtml);
+      for (const targetUrl of TARGET_URLS) {
+        try {
+          const res = await fetch(targetUrl, {
+            headers: {
+              ...BROWSER,
+              Cookie: cookieStr,
+              Referer: `${CUE_BASE}/KnowledgePro/StudentDashboard.do`,
+            },
+            redirect: "follow",
+          });
+          const resCookies = buildCookieString(res.headers.get("set-cookie"));
+          cookieStr = mergeCookies(cookieStr, resCookies);
+          const html = await res.text();
+
+          subjects = parseAttendanceHtml(html);
+          if (subjects.length > 0) break;
+        } catch (_) {}
+      }
     }
 
     if (subjects.length === 0) {
