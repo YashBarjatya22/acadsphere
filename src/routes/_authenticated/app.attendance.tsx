@@ -207,20 +207,24 @@ function AttendancePage() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, [refetch]);
 
-  // Automatically update cueData when server DB returns synced CUE subjects
+  // Automatically update cueData when server DB returns synced attendance subjects
   useEffect(() => {
     if (dashboardData?.subjects && dashboardData.subjects.length > 0) {
-      const isCustomCue = dashboardData.subjects.some((s: any) => s.id.startsWith("cue-"));
-      if (isCustomCue) {
-        const formattedCue: CueSubject[] = dashboardData.subjects.map((s: any) => ({
-          code: s.code || "N/A",
-          name: s.name,
-          type: s.name.toLowerCase().includes("project") || s.name.toLowerCase().includes("lab") ? "Practical" : "Theory",
-          attended: s.attended,
-          total: s.conducted,
-          percentage: s.percentage,
-        }));
-        setCueData(formattedCue);
+      const formattedCue: CueSubject[] = dashboardData.subjects.map((s: any) => ({
+        code: s.code || "N/A",
+        name: s.name,
+        type:
+          s.type ||
+          (s.name.toLowerCase().includes("project") ||
+          s.name.toLowerCase().includes("lab")
+            ? "Practical"
+            : "Theory"),
+        attended: s.attended,
+        total: s.conducted,
+        percentage: s.percentage,
+      }));
+      setCueData(formattedCue);
+      if (!cueLastSynced) {
         setCueLastSynced(new Date().toISOString());
       }
     }

@@ -337,16 +337,6 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
       };
     }
 
-    // One-time cleanup: remove CUE duplicate rows written under fallback student IDs
-    // by an older version of the sync endpoint that wrote to 3 student IDs.
-    try {
-      db.prepare(`
-        DELETE FROM subject_attendance 
-        WHERE subject_id LIKE 'cue-%' 
-          AND student_id IN ('00000000-0000-0000-0000-000000000001', 'demo-student-id')
-      `).run();
-    } catch { /* ignore */ }
-
     // Query subjects for active studentId and default fallback, ordered by newest last_updated first
     const allSubjectsRaw = db.prepare(`
       SELECT * FROM subject_attendance 
