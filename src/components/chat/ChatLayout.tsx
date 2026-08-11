@@ -11,7 +11,8 @@ import {
   LineChart, CheckCircle2, Search, Bell, Sparkles,
   User, Settings, Code, Volume2, CalendarDays,
   Users, Sun, Moon, X, Activity, GraduationCap,
-  UserCog, Shield, Radio, Megaphone, TrendingUp, ScrollText, Lock, FileOutput
+  UserCog, Shield, Radio, Megaphone, TrendingUp, ScrollText, Lock, FileOutput,
+  Wand2
 } from "lucide-react";
 import logo from "@/assets/studentos-logo.png";
 import { cn } from "@/lib/utils";
@@ -145,7 +146,7 @@ export function ChatLayout({
     { label: "Classroom",          to: "/app/classroom",          icon: GraduationCap },
     { label: "Smart Notes",        to: "/app/notes",              icon: BookOpen },
     { label: "Lab Helper",         to: "/app/lab-buddy",          icon: Code },
-    { label: "Resume Builder",     to: "/app/resume-analyzer",    icon: FileText },
+    { label: "Resume Tailorer",    to: "/app/resume-builder",     icon: Wand2 },
     { label: "Attendance",         to: "/app/attendance",         icon: CheckCircle2 },
     { label: "File Converter",     to: "/app/conversions",        icon: FileOutput },
     { label: "Community",          to: "/app/community",          icon: Users },
