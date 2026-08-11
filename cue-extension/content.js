@@ -83,7 +83,9 @@ function scrapeCueAttendance() {
   const subjectsMap = new Map();
 
   function addSubject(code, name, attended, total, isLab) {
-    if (!total || total <= 0 || total > 500 || attended < 0 || attended > total) return;
+    // Individual subject total classes in a semester are between 3 and 150.
+    // Totals above 150 represent overall semester totals, not individual subjects!
+    if (!total || total < 3 || total > 150 || attended < 0 || attended > total) return;
 
     const cleanCode = (code || "N/A").toUpperCase().trim();
     let cleanName = (name || cleanCode).trim();
@@ -94,11 +96,12 @@ function scrapeCueAttendance() {
     const type =
       isLab ||
       cleanName.toLowerCase().includes("lab") ||
-      cleanName.toLowerCase().includes("practical")
+      cleanName.toLowerCase().includes("practical") ||
+      cleanName.toLowerCase().includes("project")
         ? "Practical"
         : "Theory";
 
-    if (!subjectsMap.has(key) || total >= subjectsMap.get(key).total) {
+    if (!subjectsMap.has(key)) {
       subjectsMap.set(key, {
         code: cleanCode,
         name: cleanName,
@@ -107,10 +110,22 @@ function scrapeCueAttendance() {
         total,
         percentage,
       });
+    } else {
+      const existing = subjectsMap.get(key);
+      if (existing.code === "N/A" && cleanCode !== "N/A") {
+        subjectsMap.set(key, {
+          code: cleanCode,
+          name: cleanName,
+          type,
+          attended,
+          total,
+          percentage,
+        });
+      }
     }
   }
 
-  // Strategy A: Table Rows (CUE Table Layout)
+  // --- Strategy A: Table Rows (CUE Table Layout) ---
   const rows = document.querySelectorAll("tr");
   rows.forEach((tr) => {
     const cells = Array.from(tr.querySelectorAll("td, th")).map((c) => c.innerText.trim());
@@ -132,19 +147,22 @@ function scrapeCueAttendance() {
           (c) =>
             c.length > 3 &&
             !/\d{1,3}\s*(?:of|\/)\s*\d{1,3}/.test(c) &&
-            !/^\d+$/.test(c)
+            !/^\d+$/.test(c) &&
+            !/^(?:theory|practical|lab|present|absent)$/i.test(c)
         ) || code;
 
       addSubject(code, nameCell, attended, total, rowText.toLowerCase().includes("lab"));
     }
   });
 
-  // Strategy B: Cards & Containers (CUE Card Layout)
+  // --- Strategy B: Leaf Card Containers (CUE Card Layout) ---
+  const candidates = [];
   const allElements = document.querySelectorAll("div, article, section, li");
+
   allElements.forEach((el) => {
-    if (el.children.length > 15) return;
-    const text = el.innerText || "";
-    if (!text || text.length > 600) return;
+    if (el.children.length > 12) return;
+    const text = (el.innerText || "").trim();
+    if (!text || text.length > 400) return;
 
     const ratioMatch = text.match(/(\d{1,3})\s*(?:of|\/|\\)\s*(\d{1,3})\s*(?:hours?\s*attended|hrs|classes)?/i);
     if (!ratioMatch) return;
@@ -154,6 +172,15 @@ function scrapeCueAttendance() {
     const attended = Math.min(n1, n2);
     const total = Math.max(n1, n2);
 
+    candidates.push({ el, text, attended, total });
+  });
+
+  // Filter candidates to keep only leaf/deepest card elements (eliminates parent containers)
+  const leafCandidates = candidates.filter(
+    (c) => !candidates.some((other) => other !== c && c.el.contains(other.el))
+  );
+
+  leafCandidates.forEach(({ text, attended, total }) => {
     const codeMatch = text.match(/\b([A-Z0-9]{2,6}-?\d{2,4}[A-Z0-9-]*)\b/i);
     const code = codeMatch ? codeMatch[1] : "N/A";
 
