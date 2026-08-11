@@ -20,6 +20,10 @@ import {
   AlertTriangle,
   X,
   ChevronRight,
+  FolderGit2,
+  GraduationCap,
+  Award,
+  Globe,
 } from "lucide-react";
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -28,23 +32,44 @@ export const Route = createFileRoute("/_authenticated/app/resume-builder")({
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+interface HeaderInfo {
+  fullName: string;
+  subTitle?: string;
+  contact: string;
+  links: string;
+}
+
 interface ExperienceEntry {
-  company: string;
   role: string;
-  duration: string;
+  company: string;
+  location?: string;
+  period: string;
   bullets: string[];
 }
-interface TailoredResume {
+
+interface ProjectEntry {
+  name: string;
+  tech: string;
+  period?: string;
+  bullets: string[];
+}
+
+interface EducationEntry {
+  degree: string;
+  institution: string;
+  period: string;
+  details?: string;
+}
+
+export interface TailoredResume {
   customFilename: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  linkedin: string;
+  header: HeaderInfo;
   summary: string;
-  skills: string[];
+  skills: Record<string, string>;
   experience: ExperienceEntry[];
-  education: string[];
-  certifications?: string[];
+  projects: ProjectEntry[];
+  education: EducationEntry[];
+  certifications: string[];
 }
 
 // ─── CDN script loader (idempotent) ──────────────────────────────────────────
@@ -88,7 +113,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
   return textChunks.join("\n\n").trim();
 }
 
-// ─── Gemini API call ──────────────────────────────────────────────────────────
+// ─── Gemini 3.6 Flash API Call ────────────────────────────────────────────────
 async function tailorResumeWithGemini(
   resumeText: string,
   jobDescription: string,
@@ -100,9 +125,14 @@ async function tailorResumeWithGemini(
     );
   }
 
-  const prompt = `You are an expert ATS (Applicant Tracking System) optimization specialist and professional resume writer.
+  const systemPrompt = `You are an elite Executive Resume Strategist and ATS Specialist.
+Your task is to analyze the user's ORIGINAL RESUME and target JOB DESCRIPTION, then produce an upgraded, highly tailored, ATS-optimized JSON payload.
 
-Analyze the provided resume and job description, then return a perfectly tailored, ATS-optimized resume.
+CRITICAL RULES:
+1. DO NOT STRIP CONTENT: Retain all high-impact technical details, metrics, frameworks, projects, live URLs, GitHub, personal portfolio link, and certifications from the original resume.
+2. ATS KEYWORD INTEGRATION: Seamlessly weave keywords and skills from the Job Description into the Professional Summary, Experience bullet points, and Projects without lying or degrading technical depth.
+3. CONCISE IMPACT BULLETS: Keep bullet points punchy and action-oriented using strong verbs (e.g., "Architected", "Integrated", "Optimized").
+4. FILE NAMING: Generate a custom, clean filename (e.g., "Roy_Mathew_Frontend_Developer_Resume").
 
 RESUME TEXT:
 ${resumeText}
@@ -110,28 +140,66 @@ ${resumeText}
 JOB DESCRIPTION:
 ${jobDescription}
 
-INSTRUCTIONS:
-1. Extract the candidate's full contact information (name, email, phone, LinkedIn).
-2. Rewrite the professional summary to incorporate key phrases and requirements from the JD.
-3. Rewrite ALL experience bullet points using strong action verbs, quantifiable metrics, and JD keywords.
-4. Curate a skills list mirroring exact technology and skill keywords from the JD.
-5. Keep education accurate — do NOT fabricate anything.
-6. Generate a custom filename: FirstnameLastname_JobTitle_Resume (e.g. JohnDoe_SoftwareEngineer_Resume).
-
-RESPONSE FORMAT — Return ONLY valid JSON, no markdown fences, no explanation:
+RETURN ONLY A VALID JSON OBJECT WITH THIS EXACT SCHEMA:
 {
-  "customFilename": "string",
-  "fullName": "string",
-  "email": "string",
-  "phone": "string",
-  "linkedin": "string",
-  "summary": "string",
-  "skills": ["skill1", "skill2"],
+  "customFilename": "First_Last_TargetRole_Resume",
+  "header": {
+    "fullName": "Roy Mathew",
+    "subTitle": "Master of Computer Applications (MCA) Student | Full-Stack & Frontend Developer",
+    "contact": "roy.mathew@mca.christuniversity.in | +91 75940 29419 | Bengaluru, Karnataka",
+    "links": "roymathew.site | linkedin.com/in/roymathew | github.com/roymathew"
+  },
+  "summary": "Tailored 2-3 sentence executive summary rich in ATS keywords...",
+  "skills": {
+    "Frontend": "React, HTML5, CSS3, Tailwind CSS, Next.js, TypeScript",
+    "Backend & DB": "REST APIs, Supabase, PostgreSQL, Node.js",
+    "Cloud & DevOps": "AWS (ECS, EC2, S3, CloudFront, WAF), Git, GitHub, CI/CD, Vercel",
+    "Concepts": "CRUD, OOP, System Design, Real-Time WebSockets, Agile"
+  },
   "experience": [
-    { "company": "string", "role": "string", "duration": "string", "bullets": ["bullet1"] }
+    {
+      "role": "Full Stack Developer Intern",
+      "company": "Job Jockey",
+      "location": "Remote",
+      "period": "2026",
+      "bullets": [
+        "Built a real-time voice-AI calling SaaS platform (Next.js/React, FastAPI) with sub-600ms latency using Pipecat streaming and WebSockets.",
+        "Integrated multi-provider STT/TTS fallback (Groq, Deepgram, Cartesia) and Groq Llama 3.3 LLM layer with Twilio telephony.",
+        "Designed SQLite-backed multi-tenant schema for campaign analytics and lead management."
+      ]
+    }
   ],
-  "education": ["degree at institution, year"],
-  "certifications": ["cert1"]
+  "projects": [
+    {
+      "name": "AcadSphere",
+      "tech": "TanStack Start (React 19), Supabase, PostgreSQL, TypeScript, AI SDK",
+      "period": "2026",
+      "bullets": [
+        "Full-stack academic portal for real-time attendance tracking, grade analytics, and multi-course sync via Supabase Edge Functions.",
+        "Integrated Chrome Extension sync scripts and context-aware AI tutor assistant using Vercel AI SDK."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Master of Computer Applications (MCA)",
+      "institution": "CHRIST (Deemed to be University), Bengaluru",
+      "period": "2025 - Present",
+      "details": ""
+    },
+    {
+      "degree": "Bachelor of Computer Applications (BCA)",
+      "institution": "Christ Nagar College",
+      "period": "2021 - 2024",
+      "details": "CGPA: 7.4"
+    }
+  ],
+  "certifications": [
+    "AWS Academy Graduate - Cloud Foundations Training Badge (AWS)",
+    "AI-first Software Engineering (Infosys)",
+    "Cloud Computing (Infosys Springboard)",
+    "Generative AI Essentials: Using LLMs to Work with Data (IBM)"
+  ]
 }`;
 
   const resp = await fetch(
@@ -140,7 +208,7 @@ RESPONSE FORMAT — Return ONLY valid JSON, no markdown fences, no explanation:
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts: [{ text: systemPrompt }] }],
         generationConfig: {
           temperature: 0.3,
           maxOutputTokens: 4096,
@@ -161,143 +229,189 @@ RESPONSE FORMAT — Return ONLY valid JSON, no markdown fences, no explanation:
   return JSON.parse(cleaned) as TailoredResume;
 }
 
-// ─── PDF generation via jsPDF CDN ────────────────────────────────────────────
+// ─── PDF Generation Engine (Guaranteed 1-Page ATS Layout) ────────────────────
 const JSPDF_CDN =
   "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
 
-async function generateTailoredPDF(resume: TailoredResume): Promise<void> {
+export const generateATSPage = async (data: TailoredResume): Promise<void> => {
   await loadScript(JSPDF_CDN, "jspdf");
   const { jsPDF } = (window as any).jspdf;
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 18;
-  const contentWidth = pageWidth - margin * 2;
-  let y = 20;
-  const lh = 5.5;
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
 
-  const checkPageBreak = (needed: number) => {
-    if (y + needed > 275) { doc.addPage(); y = 18; }
-  };
+  const pageWidth = 210;
+  const marginX = 10; // Tight 10mm margins
+  let y = 12;
 
-  const sectionHeader = (title: string) => {
-    checkPageBreak(12);
-    y += 4;
-    doc.setFont("helvetica", "bold");
+  // Typography Constants
+  const FONT_PRIMARY = "helvetica";
+
+  // Helper: Section Header
+  const renderSectionHeader = (title: string) => {
+    doc.setFont(FONT_PRIMARY, "bold");
     doc.setFontSize(10);
-    doc.setTextColor(30, 30, 30);
-    doc.text(title.toUpperCase(), margin, y);
+    doc.setTextColor(30, 41, 59); // Dark Slate
+    doc.text(title.toUpperCase(), marginX, y);
     y += 1.5;
-    doc.setDrawColor(80, 80, 80);
-    doc.setLineWidth(0.4);
-    doc.line(margin, y, margin + contentWidth, y);
+    doc.setDrawColor(203, 213, 225); // Light Gray Divider
+    doc.setLineWidth(0.3);
+    doc.line(marginX, y, pageWidth - marginX, y);
     y += 4;
-    doc.setTextColor(40, 40, 40);
   };
 
-  // Name
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(10, 10, 10);
-  doc.text(resume.fullName || "Candidate Name", pageWidth / 2, y, { align: "center" });
-  y += 7;
+  // --- 1. HEADER ---
+  doc.setFont(FONT_PRIMARY, "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(15, 23, 42);
+  doc.text(data.header?.fullName || "Candidate Name", marginX, y);
 
-  // Contact
-  doc.setFont("helvetica", "normal");
+  y += 5;
+  doc.setFont(FONT_PRIMARY, "normal");
   doc.setFontSize(8.5);
-  doc.setTextColor(80, 80, 80);
-  const contactParts = [resume.email, resume.phone, resume.linkedin].filter(Boolean);
-  doc.text(contactParts.join("  |  "), pageWidth / 2, y, { align: "center" });
-  y += 9;
+  doc.setTextColor(71, 85, 105);
+  const contactLine = [data.header?.contact, data.header?.links]
+    .filter(Boolean)
+    .join("  |  ");
+  doc.text(contactLine, marginX, y);
 
-  // Summary
-  if (resume.summary) {
-    sectionHeader("Professional Summary");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const lines = doc.splitTextToSize(resume.summary, contentWidth);
-    checkPageBreak(lines.length * lh);
-    doc.text(lines, margin, y);
-    y += lines.length * lh + 2;
+  y += 5;
+
+  // --- 2. SUMMARY ---
+  if (data.summary) {
+    renderSectionHeader("Professional Summary");
+    doc.setFont(FONT_PRIMARY, "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const splitSummary = doc.splitTextToSize(data.summary, pageWidth - marginX * 2);
+    doc.text(splitSummary, marginX, y);
+    y += splitSummary.length * 3.6 + 3;
   }
 
-  // Skills
-  if (resume.skills?.length) {
-    sectionHeader("Technical Skills");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(40, 40, 40);
-    for (let i = 0; i < resume.skills.length; i += 5) {
-      const row = resume.skills.slice(i, i + 5);
-      checkPageBreak(lh);
-      doc.text("• " + row.join("   •  "), margin, y);
-      y += lh;
-    }
-    y += 2;
+  // --- 3. TECHNICAL SKILLS ---
+  if (data.skills && Object.keys(data.skills).length > 0) {
+    renderSectionHeader("Technical Skills");
+    doc.setFontSize(8.5);
+    Object.entries(data.skills).forEach(([category, skillsList]) => {
+      doc.setFont(FONT_PRIMARY, "bold");
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${category}: `, marginX, y);
+      const catWidth = doc.getTextWidth(`${category}: `);
+      doc.setFont(FONT_PRIMARY, "normal");
+      doc.setTextColor(51, 65, 85);
+      const splitSkills = doc.splitTextToSize(
+        skillsList,
+        pageWidth - marginX * 2 - catWidth,
+      );
+      doc.text(splitSkills, marginX + catWidth, y);
+      y += splitSkills.length * 3.8;
+    });
+    y += 1;
   }
 
-  // Experience
-  if (resume.experience?.length) {
-    sectionHeader("Professional Experience");
-    resume.experience.forEach((exp) => {
-      checkPageBreak(20);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.setTextColor(20, 20, 20);
-      doc.text(exp.role || "Role", margin, y);
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8.5);
-      doc.setTextColor(100, 100, 100);
-      doc.text(exp.duration || "", margin + contentWidth, y, { align: "right" });
-      y += lh;
-      doc.setFont("helvetica", "normal");
+  // --- 4. WORK EXPERIENCE ---
+  if (data.experience && data.experience.length > 0) {
+    renderSectionHeader("Work Experience");
+    data.experience.forEach((exp) => {
+      doc.setFont(FONT_PRIMARY, "bold");
       doc.setFontSize(9);
-      doc.setTextColor(60, 60, 60);
-      doc.text(exp.company || "", margin, y);
-      y += lh + 1;
-      doc.setTextColor(40, 40, 40);
+      doc.setTextColor(15, 23, 42);
+      const expTitle = `${exp.company || ""}${exp.company && exp.role ? " - " : ""}${exp.role || ""}`;
+      doc.text(expTitle, marginX, y);
+      doc.setFont(FONT_PRIMARY, "normal");
+      doc.text(`${exp.period || ""}`, pageWidth - marginX, y, { align: "right" });
+      y += 3.8;
+
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
       (exp.bullets || []).forEach((bullet) => {
-        const bl = doc.splitTextToSize(`\u2022  ${bullet}`, contentWidth - 4);
-        checkPageBreak(bl.length * lh);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8.8);
-        doc.text(bl, margin + 2, y);
-        y += bl.length * lh + 0.5;
+        const splitBullet = doc.splitTextToSize(
+          `•  ${bullet}`,
+          pageWidth - marginX * 2 - 4,
+        );
+        doc.text(splitBullet, marginX + 2, y);
+        y += splitBullet.length * 3.5;
       });
-      y += 3;
+      y += 1.5;
     });
   }
 
-  // Education
-  if (resume.education?.length) {
-    sectionHeader("Education");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(40, 40, 40);
-    resume.education.forEach((edu) => {
-      checkPageBreak(lh);
-      doc.text(`\u2022  ${edu}`, margin, y);
-      y += lh;
+  // --- 5. PROJECTS ---
+  if (data.projects && data.projects.length > 0) {
+    renderSectionHeader("Key Projects");
+    data.projects.forEach((proj) => {
+      doc.setFont(FONT_PRIMARY, "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      const projTitle = `${proj.name}${proj.tech ? ` | ${proj.tech}` : ""}`;
+      doc.text(projTitle, marginX, y);
+      doc.setFont(FONT_PRIMARY, "normal");
+      doc.text(`${proj.period || ""}`, pageWidth - marginX, y, { align: "right" });
+      y += 3.8;
+
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      (proj.bullets || []).forEach((bullet) => {
+        const splitBullet = doc.splitTextToSize(
+          `•  ${bullet}`,
+          pageWidth - marginX * 2 - 4,
+        );
+        doc.text(splitBullet, marginX + 2, y);
+        y += splitBullet.length * 3.5;
+      });
+      y += 1.5;
     });
-    y += 2;
   }
 
-  // Certifications
-  if (resume.certifications?.length) {
-    sectionHeader("Certifications");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(40, 40, 40);
-    resume.certifications.forEach((cert) => {
-      checkPageBreak(lh);
-      doc.text(`\u2022  ${cert}`, margin, y);
-      y += lh;
+  // --- 6. EDUCATION & CERTIFICATIONS ---
+  if (
+    (data.education && data.education.length > 0) ||
+    (data.certifications && data.certifications.length > 0)
+  ) {
+    renderSectionHeader("Education & Certifications");
+
+    // Education
+    (data.education || []).forEach((edu) => {
+      doc.setFont(FONT_PRIMARY, "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${edu.degree} - ${edu.institution}`, marginX, y);
+      doc.setFont(FONT_PRIMARY, "normal");
+      doc.text(
+        `${edu.period || ""} ${edu.details ? `(${edu.details})` : ""}`,
+        pageWidth - marginX,
+        y,
+        { align: "right" },
+      );
+      y += 3.8;
     });
+
+    y += 1;
+    // Certifications Inline
+    if (data.certifications && data.certifications.length > 0) {
+      doc.setFont(FONT_PRIMARY, "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Certifications: ", marginX, y);
+      const certWidth = doc.getTextWidth("Certifications: ");
+      doc.setFont(FONT_PRIMARY, "normal");
+      doc.setTextColor(51, 65, 85);
+      const certString = data.certifications.slice(0, 4).join(" • ");
+      const splitCerts = doc.splitTextToSize(
+        certString,
+        pageWidth - marginX * 2 - certWidth,
+      );
+      doc.text(splitCerts, marginX + certWidth, y);
+    }
   }
 
-  const filename = (resume.customFilename || "Tailored_Resume").replace(/[^a-zA-Z0-9_\-]/g, "_");
-  doc.save(`${filename}.pdf`);
-}
+  // Save PDF
+  const filename = `${(data.customFilename || "Roy_Mathew_Resume").replace(/[^a-zA-Z0-9_\-]/g, "_")}.pdf`;
+  doc.save(filename);
+};
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 function ResumeTailorerPage() {
@@ -312,17 +426,29 @@ function ResumeTailorerPage() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const processFile = useCallback(async (file: File) => {
-    if (file.type !== "application/pdf") { toast.error("Only PDF files are supported."); return; }
-    if (file.size > 10 * 1024 * 1024) { toast.error("File too large. Max 10MB."); return; }
+    if (file.type !== "application/pdf") {
+      toast.error("Only PDF files are supported.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File too large. Max 10MB.");
+      return;
+    }
     setUploadedFile(file);
     setExtractedText("");
     setTailoredResume(null);
     setIsExtracting(true);
     try {
       const text = await extractTextFromPDF(file);
-      if (!text || text.length < 50) throw new Error("Could not extract readable text. The PDF may be image-based.");
+      if (!text || text.length < 50) {
+        throw new Error(
+          "Could not extract readable text. The PDF may be image-based.",
+        );
+      }
       setExtractedText(text);
-      toast.success(`✓ Extracted ${text.split(" ").length.toLocaleString()} words from ${file.name}`);
+      toast.success(
+        `✓ Extracted ${text.split(" ").length.toLocaleString()} words from ${file.name}`,
+      );
     } catch (err: any) {
       toast.error(err.message || "Failed to parse PDF.");
       setUploadedFile(null);
@@ -351,14 +477,20 @@ function ResumeTailorerPage() {
   };
 
   const handleTailor = async () => {
-    if (!extractedText) { toast.error("Please upload a PDF resume first."); return; }
-    if (!jobDescription.trim()) { toast.error("Please paste a job description."); return; }
+    if (!extractedText) {
+      toast.error("Please upload a PDF resume first.");
+      return;
+    }
+    if (!jobDescription.trim()) {
+      toast.error("Please paste a job description.");
+      return;
+    }
     setIsTailoring(true);
     setTailoredResume(null);
     try {
       const result = await tailorResumeWithGemini(extractedText, jobDescription);
       setTailoredResume(result);
-      toast.success("🎉 Resume tailored! Ready to download.");
+      toast.success("🎉 Resume tailored! Ready to download 1-page ATS PDF.");
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "AI tailoring failed. Please try again.");
@@ -371,8 +503,8 @@ function ResumeTailorerPage() {
     if (!tailoredResume) return;
     setIsDownloading(true);
     try {
-      await generateTailoredPDF(tailoredResume);
-      toast.success(`Downloaded: ${tailoredResume.customFilename}.pdf`);
+      await generateATSPage(tailoredResume);
+      toast.success(`Downloaded: ${tailoredResume.customFilename || "Resume"}.pdf`);
     } catch (err: any) {
       toast.error("PDF generation failed: " + err.message);
     } finally {
@@ -380,33 +512,33 @@ function ResumeTailorerPage() {
     }
   };
 
-  const canTailor = !!extractedText && !!jobDescription.trim() && !isTailoring && !isExtracting;
+  const canTailor =
+    !!extractedText && !!jobDescription.trim() && !isTailoring && !isExtracting;
 
   return (
     <ChatLayout activeThreadId={null}>
       <div className="h-full overflow-y-auto bg-background text-foreground">
-
         {/* Hero Banner */}
         <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-surface/80 via-background to-surface/40 px-6 py-10 md:px-10">
           <div className="absolute -top-32 left-1/2 -z-10 h-[400px] w-[700px] -translate-x-1/2 rounded-full bg-primary/8 blur-[80px]" />
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-semibold text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              Powered by Gemini 1.5 Flash · ATS Optimizer
+              Powered by Gemini 3.6 Flash · Executive 1-Page ATS Generator
             </div>
             <h1 className="font-display text-4xl font-extrabold tracking-tight text-gradient sm:text-5xl">
               AI Resume Tailorer
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
-              Upload your PDF resume, paste the target job description, and let Gemini AI rewrite
-              every bullet point for maximum ATS compatibility — then download a perfectly formatted PDF.
+              Upload your PDF resume, paste the target job description, and let Gemini 3.6 Flash
+              optimize your summary, skills, experience, and projects for ATS compatibility — then download a pristine, high-density 1-page PDF.
             </p>
             <div className="mt-8 flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
               {[
                 { n: 1, label: "Upload PDF" },
                 { n: 2, label: "Paste JD" },
                 { n: 3, label: "AI Tailors" },
-                { n: 4, label: "Download" },
+                { n: 4, label: "1-Page PDF" },
               ].map((step, idx, arr) => (
                 <div key={step.n} className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -415,7 +547,9 @@ function ResumeTailorerPage() {
                     </span>
                     <span>{step.label}</span>
                   </div>
-                  {idx < arr.length - 1 && <ChevronRight className="h-3 w-3 opacity-40" />}
+                  {idx < arr.length - 1 && (
+                    <ChevronRight className="h-3 w-3 opacity-40" />
+                  )}
                 </div>
               ))}
             </div>
@@ -425,10 +559,8 @@ function ResumeTailorerPage() {
         {/* Main Grid */}
         <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
           <div className="grid gap-6 lg:grid-cols-2">
-
             {/* ── LEFT: Inputs ── */}
             <div className="space-y-5">
-
               {/* PDF Upload */}
               <div className="rounded-2xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
                 <div className="flex items-center gap-3 border-b border-border/60 px-5 py-4">
@@ -436,8 +568,12 @@ function ResumeTailorerPage() {
                     <Upload className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <h2 className="font-sans text-sm font-semibold">Upload Your Resume</h2>
-                    <p className="text-xs text-muted-foreground">PDF format only · Max 10MB</p>
+                    <h2 className="font-sans text-sm font-semibold">
+                      Upload Your Resume
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      PDF format only · Max 10MB
+                    </p>
                   </div>
                 </div>
                 <div className="p-5">
@@ -445,7 +581,10 @@ function ResumeTailorerPage() {
                     <label
                       htmlFor="pdf-upload"
                       onDrop={handleDrop}
-                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(true);
+                      }}
                       onDragLeave={() => setIsDragOver(false)}
                       className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-12 text-center cursor-pointer transition-all duration-200 ${
                         isDragOver
@@ -456,9 +595,14 @@ function ResumeTailorerPage() {
                       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted/40">
                         <FileText className="h-7 w-7 text-muted-foreground/60" />
                       </div>
-                      <p className="text-sm font-semibold text-foreground">Drop your PDF here</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        Drop your PDF here
+                      </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        or <span className="text-primary underline underline-offset-2">click to browse</span>
+                        or{" "}
+                        <span className="text-primary underline underline-offset-2">
+                          click to browse
+                        </span>
                       </p>
                       <input
                         id="pdf-upload"
@@ -477,11 +621,18 @@ function ResumeTailorerPage() {
                             <FileText className="h-5 w-5 text-red-400" />
                           </div>
                           <div>
-                            <p className="text-xs font-semibold truncate max-w-[180px]">{uploadedFile.name}</p>
-                            <p className="text-[10px] text-muted-foreground">{(uploadedFile.size / 1024).toFixed(1)} KB</p>
+                            <p className="text-xs font-semibold truncate max-w-[180px]">
+                              {uploadedFile.name}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {(uploadedFile.size / 1024).toFixed(1)} KB
+                            </p>
                           </div>
                         </div>
-                        <button onClick={clearFile} className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+                        <button
+                          onClick={clearFile}
+                          className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                        >
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -496,7 +647,13 @@ function ResumeTailorerPage() {
                       {extractedText && !isExtracting && (
                         <div className="flex items-center gap-2 rounded-lg bg-green-500/5 border border-green-500/20 px-3 py-2.5 text-xs text-green-400">
                           <CheckCircle2 className="h-4 w-4 shrink-0" />
-                          <span>Extracted <strong>{extractedText.split(" ").length.toLocaleString()}</strong> words · Ready for AI tailoring</span>
+                          <span>
+                            Extracted{" "}
+                            <strong>
+                              {extractedText.split(" ").length.toLocaleString()}
+                            </strong>{" "}
+                            words · Ready for AI tailoring
+                          </span>
                         </div>
                       )}
                     </div>
@@ -511,14 +668,18 @@ function ResumeTailorerPage() {
                     <Briefcase className="h-4 w-4 text-indigo-400" />
                   </div>
                   <div>
-                    <h2 className="font-sans text-sm font-semibold">Target Job Description</h2>
-                    <p className="text-xs text-muted-foreground">Paste the full job listing · More detail = better results</p>
+                    <h2 className="font-sans text-sm font-semibold">
+                      Target Job Description
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Paste the full job listing · More detail = better results
+                    </p>
                   </div>
                 </div>
                 <div className="p-5">
                   <Textarea
                     id="job-description"
-                    placeholder="We are looking for a Software Engineer with 3+ years of experience in React, Node.js, PostgreSQL..."
+                    placeholder="We are looking for a Software Engineer with experience in React, Node.js, PostgreSQL..."
                     value={jobDescription}
                     onChange={(e) => setJobDescription(e.target.value)}
                     className="min-h-[220px] resize-none bg-surface/30 font-sans text-xs leading-relaxed"
@@ -535,8 +696,11 @@ function ResumeTailorerPage() {
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                   <p>
                     <strong>API key missing.</strong> Add{" "}
-                    <code className="font-mono bg-amber-500/10 px-1 rounded">VITE_GEMINI_API_KEY</code>{" "}
-                    to your <code className="font-mono bg-amber-500/10 px-1 rounded">.env</code> and restart the dev server.
+                    <code className="font-mono bg-amber-500/10 px-1 rounded">
+                      VITE_GEMINI_API_KEY
+                    </code>{" "}
+                    to your <code className="font-mono bg-amber-500/10 px-1 rounded">.env</code> and
+                    restart the dev server.
                   </p>
                 </div>
               )}
@@ -550,25 +714,32 @@ function ResumeTailorerPage() {
                 className="w-full glow-primary rounded-xl py-6 text-sm font-bold tracking-wide"
               >
                 {isTailoring ? (
-                  <><Spinner className="mr-2 h-4 w-4" />Tailoring Resume with Gemini AI...</>
+                  <>
+                    <Spinner className="mr-2 h-4 w-4" />
+                    Tailoring Resume with Gemini 3.6 Flash...
+                  </>
                 ) : (
-                  <><Wand2 className="mr-2 h-4 w-4" />Tailor Resume with AI</>
+                  <>
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Tailor Resume with Gemini AI
+                  </>
                 )}
               </Button>
             </div>
 
             {/* ── RIGHT: Results ── */}
             <div className="space-y-5">
-
               {/* Empty state */}
               {!tailoredResume && !isTailoring && (
                 <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/20 p-12 text-center text-muted-foreground min-h-[400px]">
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/5 border border-primary/10">
                     <Sparkles className="h-8 w-8 text-primary/40" />
                   </div>
-                  <h3 className="font-display text-base font-semibold text-foreground/60">Your Tailored Resume Appears Here</h3>
+                  <h3 className="font-display text-base font-semibold text-foreground/60">
+                    Your Executive 1-Page Resume Appears Here
+                  </h3>
                   <p className="mt-2 max-w-xs text-xs leading-relaxed">
-                    Upload your PDF, paste a job description, and click tailor to see AI-optimized results.
+                    Upload your PDF, paste a job description, and click tailor to generate an ATS-optimized, 1-page PDF.
                   </p>
                 </div>
               )}
@@ -581,12 +752,26 @@ function ResumeTailorerPage() {
                     <Sparkles className="absolute inset-0 m-auto h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <p className="font-display font-semibold text-foreground">Gemini AI is working...</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Analyzing keywords · Rewriting bullets · Optimizing for ATS</p>
+                    <p className="font-display font-semibold text-foreground">
+                      Gemini 3.6 Flash is optimizing...
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Retaining projects & links · Weaving ATS keywords · Formatting 1-page layout
+                    </p>
                   </div>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {["Parsing JD", "Mapping skills", "Rewriting bullets", "Generating PDF"].map((s, i) => (
-                      <Badge key={s} variant="outline" className="text-[10px] border-primary/20 text-primary/70 animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>
+                    {[
+                      "Preserving Projects",
+                      "Categorizing Skills",
+                      "Optimizing Bullets",
+                      "Building 1-Page PDF",
+                    ].map((s, i) => (
+                      <Badge
+                        key={s}
+                        variant="outline"
+                        className="text-[10px] border-primary/20 text-primary/70 animate-pulse"
+                        style={{ animationDelay: `${i * 0.3}s` }}
+                      >
                         {s}
                       </Badge>
                     ))}
@@ -604,31 +789,65 @@ function ResumeTailorerPage() {
                         <CheckCircle2 className="h-5 w-5 text-green-400" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-green-400">Resume Tailored Successfully!</p>
+                        <p className="text-sm font-semibold text-green-400">
+                          Resume Optimized for 1-Page ATS!
+                        </p>
                         <p className="text-[10px] text-muted-foreground">
-                          File: <span className="font-mono text-foreground/70">{tailoredResume.customFilename}.pdf</span>
+                          File:{" "}
+                          <span className="font-mono text-foreground/70">
+                            {tailoredResume.customFilename || "Roy_Mathew_Resume"}.pdf
+                          </span>
                         </p>
                       </div>
                     </div>
-                    <Button id="download-resume-btn-top" onClick={handleDownload} disabled={isDownloading} size="sm" className="shrink-0 gap-2 rounded-xl font-bold">
-                      {isDownloading ? <><Spinner className="h-3.5 w-3.5" />Generating...</> : <><FileDown className="h-3.5 w-3.5" />Download PDF</>}
+                    <Button
+                      id="download-resume-btn-top"
+                      onClick={handleDownload}
+                      disabled={isDownloading}
+                      size="sm"
+                      className="shrink-0 gap-2 rounded-xl font-bold"
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Spinner className="h-3.5 w-3.5" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileDown className="h-3.5 w-3.5" />
+                          Download 1-Page PDF
+                        </>
+                      )}
                     </Button>
                   </div>
 
                   {/* Preview card */}
                   <div className="rounded-2xl border border-border bg-card/50 backdrop-blur-sm divide-y divide-border/60 overflow-hidden">
-
-                    {/* Contact */}
+                    {/* Header / Contact */}
                     <div className="p-5">
-                      <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-2">
                         <User className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-bold uppercase tracking-wider text-primary">Contact</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                          Header & Contact
+                        </span>
                       </div>
-                      <h3 className="font-display text-xl font-bold">{tailoredResume.fullName}</h3>
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        {tailoredResume.email && <span>{tailoredResume.email}</span>}
-                        {tailoredResume.phone && <span>{tailoredResume.phone}</span>}
-                        {tailoredResume.linkedin && <span>{tailoredResume.linkedin}</span>}
+                      <h3 className="font-display text-xl font-bold">
+                        {tailoredResume.header?.fullName}
+                      </h3>
+                      {tailoredResume.header?.subTitle && (
+                        <p className="text-xs text-primary/80 font-medium mt-0.5">
+                          {tailoredResume.header.subTitle}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        {tailoredResume.header?.contact && (
+                          <span>{tailoredResume.header.contact}</span>
+                        )}
+                        {tailoredResume.header?.links && (
+                          <span className="text-indigo-400 font-mono text-[11px]">
+                            {tailoredResume.header.links}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -637,47 +856,72 @@ function ResumeTailorerPage() {
                       <div className="p-5">
                         <div className="flex items-center gap-2 mb-2">
                           <Wand2 className="h-4 w-4 text-indigo-400" />
-                          <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">AI-Rewritten Summary</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
+                            Executive Summary
+                          </span>
                         </div>
-                        <p className="text-xs leading-relaxed text-muted-foreground">{tailoredResume.summary}</p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          {tailoredResume.summary}
+                        </p>
                       </div>
                     )}
 
                     {/* Skills */}
-                    {tailoredResume.skills?.length > 0 && (
-                      <div className="p-5">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Code2 className="h-4 w-4 text-cyan-400" />
-                          <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Curated Skills</span>
-                          <Badge variant="outline" className="ml-auto text-[9px] border-cyan-500/20 text-cyan-400">{tailoredResume.skills.length} skills</Badge>
+                    {tailoredResume.skills &&
+                      Object.keys(tailoredResume.skills).length > 0 && (
+                        <div className="p-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Code2 className="h-4 w-4 text-cyan-400" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                              Technical Skills
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {Object.entries(tailoredResume.skills).map(
+                              ([category, skillsList]) => (
+                                <div key={category} className="text-xs">
+                                  <span className="font-bold text-foreground mr-1.5">
+                                    {category}:
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {skillsList}
+                                  </span>
+                                </div>
+                              ),
+                            )}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {tailoredResume.skills.map((skill) => (
-                            <Badge key={skill} variant="secondary" className="text-[10px] bg-cyan-500/8 text-cyan-300 border border-cyan-500/15">
-                              {skill}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Experience preview */}
+                    {/* Experience */}
                     {tailoredResume.experience?.length > 0 && (
                       <div className="p-5">
                         <div className="flex items-center gap-2 mb-3">
                           <Briefcase className="h-4 w-4 text-amber-400" />
-                          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Experience (ATS-Optimized)</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                            Work Experience
+                          </span>
                         </div>
-                        <div className="space-y-4">
-                          {tailoredResume.experience.slice(0, 2).map((exp, i) => (
-                            <div key={i} className="rounded-xl border border-border/50 bg-surface/20 p-3 space-y-2">
-                              <div>
-                                <p className="text-xs font-bold">{exp.role}</p>
-                                <p className="text-[10px] text-muted-foreground">{exp.company} · {exp.duration}</p>
+                        <div className="space-y-3">
+                          {tailoredResume.experience.map((exp, i) => (
+                            <div
+                              key={i}
+                              className="rounded-xl border border-border/50 bg-surface/20 p-3 space-y-2"
+                            >
+                              <div className="flex justify-between items-baseline">
+                                <p className="text-xs font-bold">
+                                  {exp.company} {exp.role ? `- ${exp.role}` : ""}
+                                </p>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {exp.period}
+                                </span>
                               </div>
                               <ul className="space-y-1">
-                                {(exp.bullets || []).slice(0, 3).map((bullet, j) => (
-                                  <li key={j} className="flex gap-1.5 text-[10px] text-muted-foreground leading-relaxed">
+                                {(exp.bullets || []).map((bullet, j) => (
+                                  <li
+                                    key={j}
+                                    className="flex gap-1.5 text-[10px] text-muted-foreground leading-relaxed"
+                                  >
                                     <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-primary/60" />
                                     {bullet}
                                   </li>
@@ -685,21 +929,120 @@ function ResumeTailorerPage() {
                               </ul>
                             </div>
                           ))}
-                          {tailoredResume.experience.length > 2 && (
-                            <p className="text-center text-[10px] text-muted-foreground">
-                              +{tailoredResume.experience.length - 2} more entries in the downloaded PDF
-                            </p>
-                          )}
                         </div>
                       </div>
                     )}
 
-                    {/* Download again */}
+                    {/* Key Projects */}
+                    {tailoredResume.projects?.length > 0 && (
+                      <div className="p-5">
+                        <div className="flex items-center gap-2 mb-3">
+                          <FolderGit2 className="h-4 w-4 text-purple-400" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-purple-400">
+                            Key Projects
+                          </span>
+                        </div>
+                        <div className="space-y-3">
+                          {tailoredResume.projects.map((proj, i) => (
+                            <div
+                              key={i}
+                              className="rounded-xl border border-border/50 bg-surface/20 p-3 space-y-2"
+                            >
+                              <div className="flex justify-between items-baseline">
+                                <p className="text-xs font-bold">
+                                  {proj.name}{" "}
+                                  {proj.tech ? (
+                                    <span className="font-normal text-muted-foreground">
+                                      | {proj.tech}
+                                    </span>
+                                  ) : (
+                                    ""
+                                  )}
+                                </p>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {proj.period}
+                                </span>
+                              </div>
+                              <ul className="space-y-1">
+                                {(proj.bullets || []).map((bullet, j) => (
+                                  <li
+                                    key={j}
+                                    className="flex gap-1.5 text-[10px] text-muted-foreground leading-relaxed"
+                                  >
+                                    <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-purple-400/60" />
+                                    {bullet}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Education & Certifications */}
+                    {((tailoredResume.education && tailoredResume.education.length > 0) ||
+                      (tailoredResume.certifications &&
+                        tailoredResume.certifications.length > 0)) && (
+                      <div className="p-5 space-y-4">
+                        {tailoredResume.education?.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <GraduationCap className="h-4 w-4 text-emerald-400" />
+                              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                                Education
+                              </span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {tailoredResume.education.map((edu, i) => (
+                                <div key={i} className="flex justify-between text-xs">
+                                  <span className="font-medium">
+                                    {edu.degree} - {edu.institution}
+                                  </span>
+                                  <span className="text-muted-foreground text-[10px]">
+                                    {edu.period} {edu.details ? `(${edu.details})` : ""}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {tailoredResume.certifications?.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Award className="h-4 w-4 text-amber-400" />
+                              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                                Certifications
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {tailoredResume.certifications.join(" • ")}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Download Button Footer */}
                     <div className="p-5">
-                      <Button onClick={handleDownload} disabled={isDownloading} className="w-full rounded-xl gap-2 font-bold" size="lg">
-                        {isDownloading
-                          ? <><Spinner className="h-4 w-4" />Generating PDF...</>
-                          : <><Download className="h-4 w-4" />Download {tailoredResume.customFilename}.pdf</>}
+                      <Button
+                        onClick={handleDownload}
+                        disabled={isDownloading}
+                        className="w-full rounded-xl gap-2 font-bold"
+                        size="lg"
+                      >
+                        {isDownloading ? (
+                          <>
+                            <Spinner className="h-4 w-4" />
+                            Generating 1-Page PDF...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4" />
+                            Download {tailoredResume.customFilename || "Resume"}.pdf
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
