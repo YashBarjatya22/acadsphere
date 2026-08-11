@@ -23,7 +23,6 @@ import {
   FolderGit2,
   GraduationCap,
   Award,
-  Globe,
 } from "lucide-react";
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -229,188 +228,212 @@ RETURN ONLY A VALID JSON OBJECT WITH THIS EXACT SCHEMA:
   return JSON.parse(cleaned) as TailoredResume;
 }
 
-// ─── PDF Generation Engine (Guaranteed 1-Page ATS Layout) ────────────────────
+// ─── Stateful PDF Layout Engine (Zero-Overlap ATS Engine) ────────────────────
 const JSPDF_CDN =
   "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
 
-export const generateATSPage = async (data: TailoredResume): Promise<void> => {
+class PDFLayoutEngine {
+  doc: any;
+  pageWidth: number;
+  pageHeight: number;
+  marginX: number;
+  contentWidth: number;
+  y: number;
+
+  constructor(jsPDF: any) {
+    this.doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+    this.pageWidth = 210;
+    this.pageHeight = 297;
+    this.marginX = 12; // 12mm standard ATS margins
+    this.contentWidth = this.pageWidth - this.marginX * 2; // 186mm
+    this.y = 12; // Current vertical position tracker
+  }
+
+  // Set Font and Styles easily
+  setFont(bold = false, italic = false, size = 9, color = [30, 41, 59]) {
+    let style = "normal";
+    if (bold && italic) style = "bolditalic";
+    else if (bold) style = "bold";
+    else if (italic) style = "italic";
+
+    this.doc.setFont("helvetica", style);
+    this.doc.setFontSize(size);
+    this.doc.setTextColor(color[0], color[1], color[2]);
+  }
+
+  // Draw Section Header with Horizontal Rule
+  addSectionHeader(title: string) {
+    this.y += 3;
+    this.setFont(true, false, 10, [15, 23, 42]);
+    this.doc.text(title.toUpperCase(), this.marginX, this.y);
+
+    this.y += 1.5;
+    this.doc.setDrawColor(203, 213, 225);
+    this.doc.setLineWidth(0.3);
+    this.doc.line(this.marginX, this.y, this.pageWidth - this.marginX, this.y);
+    this.y += 4;
+  }
+
+  // Add Two-Column Header Row (Left Title, Right Date/Location) without Collision
+  addHeaderRow(leftText: string, rightText: string = "", isBold = true) {
+    this.setFont(isBold, false, 9.5, [15, 23, 42]);
+
+    const rightWidth = rightText ? this.doc.getTextWidth(rightText) : 0;
+    const maxLeftWidth = this.contentWidth - rightWidth - (rightText ? 4 : 0); // Leave 4mm safety gap if right text exists
+
+    // Wrap left text if it's too long so it NEVER overlaps right text
+    const splitLeft = this.doc.splitTextToSize(leftText, Math.max(maxLeftWidth, 50));
+
+    // Print Left Text
+    this.doc.text(splitLeft, this.marginX, this.y);
+
+    // Print Right Text on first line
+    if (rightText) {
+      this.setFont(false, true, 9, [71, 85, 105]);
+      this.doc.text(rightText, this.pageWidth - this.marginX, this.y, {
+        align: "right",
+      });
+    }
+
+    // Safely increment Y based on wrapped lines
+    this.y += splitLeft.length * 4;
+  }
+
+  // Add Wrapped Bullet Points with Dynamic Line Height Calculation
+  addBulletPoint(text: string) {
+    this.setFont(false, false, 8.5, [51, 65, 85]);
+    const bulletPrefix = "•  ";
+    const indent = 4;
+    const availableWidth = this.contentWidth - indent;
+
+    const splitText = this.doc.splitTextToSize(text, availableWidth);
+
+    // Print bullet symbol
+    this.doc.text(bulletPrefix, this.marginX + 1, this.y);
+
+    // Print text lines
+    this.doc.text(splitText, this.marginX + indent, this.y);
+
+    // Increment Y dynamically based on exact line count (3.4mm per line)
+    this.y += splitText.length * 3.4 + 1;
+  }
+
+  // Add Inline Key-Value Pair (e.g. "Frontend: React, Tailwind")
+  addInlineCategory(category: string, items: string) {
+    this.setFont(true, false, 8.5, [15, 23, 42]);
+    const catText = `${category}: `;
+    const catWidth = this.doc.getTextWidth(catText);
+
+    this.doc.text(catText, this.marginX, this.y);
+
+    this.setFont(false, false, 8.5, [51, 65, 85]);
+    const splitItems = this.doc.splitTextToSize(
+      items,
+      this.contentWidth - catWidth,
+    );
+
+    // If items wrap to multiple lines, indent secondary lines properly
+    this.doc.text(splitItems, this.marginX + catWidth, this.y);
+    this.y += splitItems.length * 3.6 + 1;
+  }
+
+  // Save the PDF with Clean Filename
+  save(filename: string) {
+    const cleanName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+    this.doc.save(cleanName);
+  }
+}
+
+export const generateATSResume = async (data: TailoredResume): Promise<void> => {
   await loadScript(JSPDF_CDN, "jspdf");
   const { jsPDF } = (window as any).jspdf;
 
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4",
-  });
+  const engine = new PDFLayoutEngine(jsPDF);
 
-  const pageWidth = 210;
-  const marginX = 10; // Tight 10mm margins
-  let y = 12;
+  // 1. HEADER
+  engine.setFont(true, false, 18, [15, 23, 42]);
+  engine.doc.text(data.header?.fullName || "Candidate Name", engine.marginX, engine.y);
+  engine.y += 5;
 
-  // Typography Constants
-  const FONT_PRIMARY = "helvetica";
-
-  // Helper: Section Header
-  const renderSectionHeader = (title: string) => {
-    doc.setFont(FONT_PRIMARY, "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(30, 41, 59); // Dark Slate
-    doc.text(title.toUpperCase(), marginX, y);
-    y += 1.5;
-    doc.setDrawColor(203, 213, 225); // Light Gray Divider
-    doc.setLineWidth(0.3);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 4;
-  };
-
-  // --- 1. HEADER ---
-  doc.setFont(FONT_PRIMARY, "bold");
-  doc.setFontSize(18);
-  doc.setTextColor(15, 23, 42);
-  doc.text(data.header?.fullName || "Candidate Name", marginX, y);
-
-  y += 5;
-  doc.setFont(FONT_PRIMARY, "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
+  engine.setFont(false, false, 8.5, [71, 85, 105]);
   const contactLine = [data.header?.contact, data.header?.links]
     .filter(Boolean)
     .join("  |  ");
-  doc.text(contactLine, marginX, y);
+  engine.doc.text(contactLine, engine.marginX, engine.y);
+  engine.y += 6;
 
-  y += 5;
-
-  // --- 2. SUMMARY ---
+  // 2. PROFESSIONAL SUMMARY
   if (data.summary) {
-    renderSectionHeader("Professional Summary");
-    doc.setFont(FONT_PRIMARY, "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(51, 65, 85);
-    const splitSummary = doc.splitTextToSize(data.summary, pageWidth - marginX * 2);
-    doc.text(splitSummary, marginX, y);
-    y += splitSummary.length * 3.6 + 3;
+    engine.addSectionHeader("Professional Summary");
+    engine.setFont(false, false, 8.5, [51, 65, 85]);
+    const splitSummary = engine.doc.splitTextToSize(
+      data.summary,
+      engine.contentWidth,
+    );
+    engine.doc.text(splitSummary, engine.marginX, engine.y);
+    engine.y += splitSummary.length * 3.6 + 2;
   }
 
-  // --- 3. TECHNICAL SKILLS ---
+  // 3. TECHNICAL SKILLS
   if (data.skills && Object.keys(data.skills).length > 0) {
-    renderSectionHeader("Technical Skills");
-    doc.setFontSize(8.5);
+    engine.addSectionHeader("Technical Skills");
     Object.entries(data.skills).forEach(([category, skillsList]) => {
-      doc.setFont(FONT_PRIMARY, "bold");
-      doc.setTextColor(15, 23, 42);
-      doc.text(`${category}: `, marginX, y);
-      const catWidth = doc.getTextWidth(`${category}: `);
-      doc.setFont(FONT_PRIMARY, "normal");
-      doc.setTextColor(51, 65, 85);
-      const splitSkills = doc.splitTextToSize(
-        skillsList,
-        pageWidth - marginX * 2 - catWidth,
-      );
-      doc.text(splitSkills, marginX + catWidth, y);
-      y += splitSkills.length * 3.8;
+      engine.addInlineCategory(category, skillsList);
     });
-    y += 1;
+    engine.y += 1;
   }
 
-  // --- 4. WORK EXPERIENCE ---
+  // 4. WORK EXPERIENCE
   if (data.experience && data.experience.length > 0) {
-    renderSectionHeader("Work Experience");
+    engine.addSectionHeader("Work Experience");
     data.experience.forEach((exp) => {
-      doc.setFont(FONT_PRIMARY, "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      const expTitle = `${exp.company || ""}${exp.company && exp.role ? " - " : ""}${exp.role || ""}`;
-      doc.text(expTitle, marginX, y);
-      doc.setFont(FONT_PRIMARY, "normal");
-      doc.text(`${exp.period || ""}`, pageWidth - marginX, y, { align: "right" });
-      y += 3.8;
-
-      doc.setFontSize(8.5);
-      doc.setTextColor(51, 65, 85);
-      (exp.bullets || []).forEach((bullet) => {
-        const splitBullet = doc.splitTextToSize(
-          `•  ${bullet}`,
-          pageWidth - marginX * 2 - 4,
-        );
-        doc.text(splitBullet, marginX + 2, y);
-        y += splitBullet.length * 3.5;
-      });
-      y += 1.5;
+      const expTitle = `${exp.company || ""}${exp.company && exp.role ? " — " : ""}${exp.role || ""}`;
+      engine.addHeaderRow(expTitle, exp.period || "");
+      (exp.bullets || []).forEach((bullet) => engine.addBulletPoint(bullet));
+      engine.y += 1.5;
     });
   }
 
-  // --- 5. PROJECTS ---
+  // 5. KEY PROJECTS
   if (data.projects && data.projects.length > 0) {
-    renderSectionHeader("Key Projects");
+    engine.addSectionHeader("Key Projects");
     data.projects.forEach((proj) => {
-      doc.setFont(FONT_PRIMARY, "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      const projTitle = `${proj.name}${proj.tech ? ` | ${proj.tech}` : ""}`;
-      doc.text(projTitle, marginX, y);
-      doc.setFont(FONT_PRIMARY, "normal");
-      doc.text(`${proj.period || ""}`, pageWidth - marginX, y, { align: "right" });
-      y += 3.8;
-
-      doc.setFontSize(8.5);
-      doc.setTextColor(51, 65, 85);
-      (proj.bullets || []).forEach((bullet) => {
-        const splitBullet = doc.splitTextToSize(
-          `•  ${bullet}`,
-          pageWidth - marginX * 2 - 4,
-        );
-        doc.text(splitBullet, marginX + 2, y);
-        y += splitBullet.length * 3.5;
-      });
-      y += 1.5;
+      const projTitle = proj.tech ? `${proj.name} | ${proj.tech}` : proj.name;
+      engine.addHeaderRow(projTitle, proj.period || "");
+      (proj.bullets || []).forEach((bullet) => engine.addBulletPoint(bullet));
+      engine.y += 1.5;
     });
   }
 
-  // --- 6. EDUCATION & CERTIFICATIONS ---
+  // 6. EDUCATION & CERTIFICATIONS
   if (
     (data.education && data.education.length > 0) ||
     (data.certifications && data.certifications.length > 0)
   ) {
-    renderSectionHeader("Education & Certifications");
-
-    // Education
+    engine.addSectionHeader("Education & Certifications");
     (data.education || []).forEach((edu) => {
-      doc.setFont(FONT_PRIMARY, "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(`${edu.degree} - ${edu.institution}`, marginX, y);
-      doc.setFont(FONT_PRIMARY, "normal");
-      doc.text(
-        `${edu.period || ""} ${edu.details ? `(${edu.details})` : ""}`,
-        pageWidth - marginX,
-        y,
-        { align: "right" },
-      );
-      y += 3.8;
+      const eduText = `${edu.degree || ""}${edu.degree && edu.institution ? " — " : ""}${edu.institution || ""}`;
+      engine.addHeaderRow(eduText, edu.period || "");
+      if (edu.details) {
+        engine.setFont(false, true, 8, [100, 116, 139]);
+        engine.doc.text(edu.details, engine.marginX, engine.y);
+        engine.y += 3.5;
+      }
     });
 
-    y += 1;
-    // Certifications Inline
     if (data.certifications && data.certifications.length > 0) {
-      doc.setFont(FONT_PRIMARY, "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Certifications: ", marginX, y);
-      const certWidth = doc.getTextWidth("Certifications: ");
-      doc.setFont(FONT_PRIMARY, "normal");
-      doc.setTextColor(51, 65, 85);
-      const certString = data.certifications.slice(0, 4).join(" • ");
-      const splitCerts = doc.splitTextToSize(
-        certString,
-        pageWidth - marginX * 2 - certWidth,
-      );
-      doc.text(splitCerts, marginX + certWidth, y);
+      if (data.education && data.education.length > 0) engine.y += 1;
+      const certList = data.certifications.join(" • ");
+      engine.addInlineCategory("Certifications", certList);
     }
   }
 
-  // Save PDF
-  const filename = `${(data.customFilename || "Roy_Mathew_Resume").replace(/[^a-zA-Z0-9_\-]/g, "_")}.pdf`;
-  doc.save(filename);
+  // Save Document
+  engine.save(data.customFilename || "Roy_Mathew_Tailored_Resume");
 };
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -503,7 +526,7 @@ function ResumeTailorerPage() {
     if (!tailoredResume) return;
     setIsDownloading(true);
     try {
-      await generateATSPage(tailoredResume);
+      await generateATSResume(tailoredResume);
       toast.success(`Downloaded: ${tailoredResume.customFilename || "Resume"}.pdf`);
     } catch (err: any) {
       toast.error("PDF generation failed: " + err.message);
@@ -524,7 +547,7 @@ function ResumeTailorerPage() {
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-semibold text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              Powered by Gemini 3.6 Flash · Executive 1-Page ATS Generator
+              Powered by Gemini 3.6 Flash · PDFLayoutEngine (Zero Overlap ATS)
             </div>
             <h1 className="font-display text-4xl font-extrabold tracking-tight text-gradient sm:text-5xl">
               AI Resume Tailorer
@@ -739,7 +762,7 @@ function ResumeTailorerPage() {
                     Your Executive 1-Page Resume Appears Here
                   </h3>
                   <p className="mt-2 max-w-xs text-xs leading-relaxed">
-                    Upload your PDF, paste a job description, and click tailor to generate an ATS-optimized, 1-page PDF.
+                    Upload your PDF, paste a job description, and click tailor to generate an ATS-optimized, zero-overlap 1-page PDF.
                   </p>
                 </div>
               )}
@@ -756,7 +779,7 @@ function ResumeTailorerPage() {
                       Gemini 3.6 Flash is optimizing...
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Retaining projects & links · Weaving ATS keywords · Formatting 1-page layout
+                      Retaining projects & links · Weaving ATS keywords · Formatting zero-overlap 1-page layout
                     </p>
                   </div>
                   <div className="flex flex-wrap justify-center gap-2">
@@ -764,7 +787,7 @@ function ResumeTailorerPage() {
                       "Preserving Projects",
                       "Categorizing Skills",
                       "Optimizing Bullets",
-                      "Building 1-Page PDF",
+                      "Calculating Coordinates",
                     ].map((s, i) => (
                       <Badge
                         key={s}
@@ -790,7 +813,7 @@ function ResumeTailorerPage() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-green-400">
-                          Resume Optimized for 1-Page ATS!
+                          Resume Optimized for Zero-Overlap ATS!
                         </p>
                         <p className="text-[10px] text-muted-foreground">
                           File:{" "}
@@ -815,7 +838,7 @@ function ResumeTailorerPage() {
                       ) : (
                         <>
                           <FileDown className="h-3.5 w-3.5" />
-                          Download 1-Page PDF
+                          Download Zero-Overlap PDF
                         </>
                       )}
                     </Button>
@@ -910,7 +933,7 @@ function ResumeTailorerPage() {
                             >
                               <div className="flex justify-between items-baseline">
                                 <p className="text-xs font-bold">
-                                  {exp.company} {exp.role ? `- ${exp.role}` : ""}
+                                  {exp.company} {exp.role ? `— ${exp.role}` : ""}
                                 </p>
                                 <span className="text-[10px] text-muted-foreground">
                                   {exp.period}
@@ -997,7 +1020,7 @@ function ResumeTailorerPage() {
                               {tailoredResume.education.map((edu, i) => (
                                 <div key={i} className="flex justify-between text-xs">
                                   <span className="font-medium">
-                                    {edu.degree} - {edu.institution}
+                                    {edu.degree} — {edu.institution}
                                   </span>
                                   <span className="text-muted-foreground text-[10px]">
                                     {edu.period} {edu.details ? `(${edu.details})` : ""}
@@ -1035,7 +1058,7 @@ function ResumeTailorerPage() {
                         {isDownloading ? (
                           <>
                             <Spinner className="h-4 w-4" />
-                            Generating 1-Page PDF...
+                            Generating PDF...
                           </>
                         ) : (
                           <>
