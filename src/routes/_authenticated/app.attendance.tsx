@@ -168,18 +168,6 @@ function AttendancePage() {
     toast.success(`Successfully loaded ${DEMO_CUE_SUBJECTS.length} demo subjects!`);
   };
 
-  // Listen for Chrome Extension sync bridge events
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "acadsphere_cue_synced") {
-        refetch();
-        toast.success("Dashboard synced with latest database records.");
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [refetch]);
-
   // ── Purge sessionStorage when tab closes ──
   useEffect(() => {
     const purge = () => sessionStorage.removeItem(CUE_SESSION_KEY);
@@ -206,6 +194,18 @@ function AttendancePage() {
       return hasCue ? false : 10000;
     },
   });
+
+  // Listen for Chrome Extension sync bridge events
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "acadsphere_cue_synced") {
+        refetch();
+        toast.success("Dashboard synced with latest database records.");
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [refetch]);
 
   // Automatically update cueData when server DB returns synced CUE subjects
   useEffect(() => {
