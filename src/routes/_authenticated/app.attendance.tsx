@@ -65,12 +65,66 @@ interface CueSubject {
 
 const CUE_SESSION_KEY = "cue_attendance_v1";
 
+const DEMO_CUE_SUBJECTS: any[] = [
+  {
+    code: "CS301",
+    name: "Database Management Systems",
+    type: "Theory",
+    attended: 42,
+    total: 50,
+    percentage: 84.0,
+    target85: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 4 },
+    target75: { status: "SAFE", leavesAllowed: 6, classesNeeded: 0 },
+  },
+  {
+    code: "CS302",
+    name: "Operating Systems",
+    type: "Theory",
+    attended: 46,
+    total: 50,
+    percentage: 92.0,
+    target85: { status: "SAFE", leavesAllowed: 4, classesNeeded: 0 },
+    target75: { status: "SAFE", leavesAllowed: 11, classesNeeded: 0 },
+  },
+  {
+    code: "CS303",
+    name: "Computer Networks",
+    type: "Theory",
+    attended: 37,
+    total: 50,
+    percentage: 74.0,
+    target85: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 11 },
+    target75: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 2 },
+  },
+  {
+    code: "CS304",
+    name: "Artificial Intelligence Lab",
+    type: "Practical",
+    attended: 28,
+    total: 30,
+    percentage: 93.33,
+    target85: { status: "SAFE", leavesAllowed: 2, classesNeeded: 0 },
+    target75: { status: "SAFE", leavesAllowed: 7, classesNeeded: 0 },
+  },
+  {
+    code: "CS305",
+    name: "Software Engineering",
+    type: "Theory",
+    attended: 48,
+    total: 50,
+    percentage: 96.0,
+    target85: { status: "SAFE", leavesAllowed: 6, classesNeeded: 0 },
+    target75: { status: "SAFE", leavesAllowed: 14, classesNeeded: 0 },
+  },
+];
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 function AttendancePage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"dashboard" | "simulator" | "notifications" | "faculty">("dashboard");
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("sub1");
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -98,60 +152,33 @@ function AttendancePage() {
   });
 
   const [showCueModal, setShowCueModal] = useState(false);
-  const [cueUsername, setCueUsername] = useState("");
-  const [cuePassword, setCuePassword] = useState("");
-  const [isSyncingCue, setIsSyncingCue] = useState(false);
-  const [cueError, setCueError] = useState<string | null>(null);
 
-  const handleCueSync = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cueUsername || !cuePassword) {
-      toast.error("Please enter both CUE username and password.");
-      return;
+  const handleDemoSync = () => {
+    const syncedAt = new Date().toISOString();
+    const sessionPayload = {
+      subjects: DEMO_CUE_SUBJECTS,
+      lastSynced: syncedAt,
+    };
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(sessionPayload));
     }
-
-    setIsSyncingCue(true);
-    setCueError(null);
-
-    try {
-      const { data, error } = await supabase.functions.invoke("kp-scraper", {
-        body: { username: cueUsername.trim(), password: cuePassword },
-      });
-
-      if (error || !data || data.error) {
-        const errMsg = data?.error || error?.message || "Authentication failed. Please verify credentials.";
-        setCueError(errMsg);
-        toast.error(errMsg);
-        setIsSyncingCue(false);
-        return;
-      }
-
-      if (data.subjects && Array.isArray(data.subjects)) {
-        const syncedAt = new Date().toISOString();
-        const sessionPayload = {
-          subjects: data.subjects,
-          lastSynced: syncedAt,
-        };
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(sessionPayload));
-        }
-        setCueData(data.subjects);
-        setCueLastSynced(syncedAt);
-        setShowCueModal(false);
-        setCuePassword("");
-        toast.success(`Successfully synced ${data.subjects.length} subjects from CUE Portal!`);
-      } else {
-        setCueError("No attendance subjects returned from CUE Portal.");
-        toast.error("No attendance subjects returned from CUE Portal.");
-      }
-    } catch (err: any) {
-      const errMsg = err?.message || "Could not connect to CUE sync service.";
-      setCueError(errMsg);
-      toast.error(errMsg);
-    } finally {
-      setIsSyncingCue(false);
-    }
+    setCueData(DEMO_CUE_SUBJECTS);
+    setCueLastSynced(syncedAt);
+    setShowCueModal(false);
+    toast.success(`Successfully loaded ${DEMO_CUE_SUBJECTS.length} demo subjects!`);
   };
+
+  // Listen for Chrome Extension sync bridge events
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "acadsphere_cue_synced") {
+        refetch();
+        toast.success("Dashboard synced with latest database records.");
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [refetch]);
 
   // ── Purge sessionStorage when tab closes ──
   useEffect(() => {
@@ -159,6 +186,7 @@ function AttendancePage() {
     window.addEventListener("beforeunload", purge);
     return () => window.removeEventListener("beforeunload", purge);
   }, []);
+
 
   // ── Server functions ──────────────────────────────────────────────────────────
   const getDashboardFn = useServerFn(getAttendanceDashboardData);
@@ -171,7 +199,34 @@ function AttendancePage() {
     queryFn: () => getDashboardFn(),
     retry: 2,
     retryDelay: 1000,
+    // Auto-poll every 10s when no CUE data yet — detects Chrome Extension sync automatically.
+    // Once CUE subjects appear in DB, polling stops (refetchInterval returns false).
+    refetchInterval: (query) => {
+      const hasCue = query.state.data?.subjects?.some((s: any) => s.id?.startsWith("cue-"));
+      return hasCue ? false : 10000;
+    },
   });
+
+  // Automatically update cueData when server DB returns synced CUE subjects
+  useEffect(() => {
+    if (dashboardData?.subjects && dashboardData.subjects.length > 0) {
+      const isCustomCue = dashboardData.subjects.some((s: any) => s.id.startsWith("cue-"));
+      if (isCustomCue) {
+        const formattedCue: CueSubject[] = dashboardData.subjects.map((s: any) => ({
+          code: s.code || "N/A",
+          name: s.name,
+          type: s.name.toLowerCase().includes("project") || s.name.toLowerCase().includes("lab") ? "Practical" : "Theory",
+          attended: s.attended,
+          total: s.conducted,
+          percentage: s.percentage,
+        }));
+        setCueData(formattedCue);
+        if (!cueLastSynced) {
+          setCueLastSynced(new Date().toISOString());
+        }
+      }
+    }
+  }, [dashboardData, cueLastSynced]);
 
   const updateMutation = useMutation({
     mutationFn: ({ subjectId, action }: { subjectId: string; action: "present" | "absent" | "reset" }) =>
@@ -427,7 +482,7 @@ function AttendancePage() {
                         <CardContent className="space-y-3 text-xs">
                           <div>
                             <div className="flex items-baseline justify-between mb-1.5">
-                              <span className={`text-2xl font-extrabold ${pctColor(pct)}`}>{pct.toFixed(1)}%</span>
+                              <span className={`text-2xl font-extrabold ${pctColor(pct)}`}>{pct.toFixed(2)}%</span>
                               <span className="text-muted-foreground">{sub.attended} / {sub.total} hrs</span>
                             </div>
                             <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
@@ -470,7 +525,7 @@ function AttendancePage() {
                 <p className="text-xs font-extrabold uppercase tracking-wider">Mandatory Attendance Warning</p>
                 <p className="text-[11px] opacity-90">
                   {overall.percentage <= 75
-                    ? `Overall attendance has fallen to ${overall.percentage}%, below the mandatory 75% university limit.`
+                    ? `Overall attendance has fallen to ${Number(overall.percentage).toFixed(2)}%, below the mandatory 75% university limit.`
                     : `${overall.criticalSubjectsCount} subject(s) are critically below 75%. Immediate recovery required!`}
                 </p>
               </div>
@@ -557,10 +612,24 @@ function AttendancePage() {
 
               <button
                 type="button"
-                onClick={() => refetch()}
-                className="flex items-center gap-1.5 bg-card border border-border hover:border-primary px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                onClick={async () => {
+                  setIsSyncing(true);
+                  try {
+                    // Re-fetch dashboard data from the server DB
+                    await refetch();
+                    toast.success("Dashboard synced with latest database records.");
+                  } catch {
+                    toast.error("Failed to refresh data.");
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }}
+                disabled={isSyncing}
+                className="flex items-center gap-1.5 bg-card border border-border hover:border-primary disabled:opacity-60 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Refresh attendance data from database"
               >
-                <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" /> Sync
+                <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing..." : "Sync"}
               </button>
             </div>
           </div>
@@ -724,7 +793,7 @@ function AttendancePage() {
                   <CardHeader className="pb-2 pt-4">
                     <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">Overall Attendance</span>
                     <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-3xl font-extrabold tracking-tight text-foreground">{overall.percentage}%</span>
+                      <span className="text-3xl font-extrabold tracking-tight text-foreground">{Number(overall.percentage).toFixed(2)}%</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${getBadgeStyle(overall.statusColor)}`}>{overall.status}</span>
                     </div>
                   </CardHeader>
@@ -850,7 +919,7 @@ function AttendancePage() {
                           <div>
                             <div className="flex items-baseline justify-between mb-1.5">
                               <span className={`text-2xl font-extrabold ${pctColor(pct)}`}>
-                                {displayPct.toFixed(1)}%
+                                {displayPct.toFixed(2)}%
                               </span>
                               <span className="text-muted-foreground font-medium">
                                 {sub.attended} / {sub.total} hrs
@@ -893,7 +962,7 @@ function AttendancePage() {
                       <CardContent className="space-y-4 text-xs">
                         <div>
                           <div className="flex items-baseline justify-between mb-1.5">
-                            <span className="text-2xl font-extrabold text-foreground">{sub.percentage}%</span>
+                            <span className="text-2xl font-extrabold text-foreground">{Number(sub.percentage).toFixed(2)}%</span>
                             <span className="text-muted-foreground font-medium">{sub.attended} / {sub.conducted} Classes</span>
                           </div>
                           <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
@@ -1142,94 +1211,98 @@ function AttendancePage() {
 
 
 
-        {/* ── CUE Login Modal ── */}
+        {/* ── CUE Sync Modal ── */}
+        {/* ── CUE Chrome Extension Sync Modal ── */}
         {showCueModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl relative space-y-5 animate-in fade-in zoom-in-95 duration-200">
               <button
                 type="button"
                 onClick={() => setShowCueModal(false)}
-                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted/50"
               >
                 <X className="h-5 w-5" />
               </button>
 
               <div className="flex items-center gap-3 border-b border-border/60 pb-3">
                 <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <Lock className="h-5 w-5 text-blue-500" />
+                  <Globe className="h-5 w-5 text-blue-500" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-foreground">Sync from CUE Portal</h3>
-                  <p className="text-xs text-muted-foreground">Authenticates directly with cue.christuniversity.in internal API</p>
+                  <h3 className="text-base font-extrabold text-foreground">Sync Live CUE Attendance</h3>
+                  <p className="text-xs text-muted-foreground">Using the official AcadSphere Chrome Extension</p>
                 </div>
               </div>
 
-              <form onSubmit={handleCueSync} className="space-y-4">
-                {cueError && (
-                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
-                    <span>{cueError}</span>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">CUE Register / Roll Number</label>
-                  <input
-                    type="text"
-                    required
-                    value={cueUsername}
-                    onChange={(e) => setCueUsername(e.target.value)}
-                    placeholder="e.g. 2340123"
-                    className="w-full bg-background border border-border rounded-xl px-3.5 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">CUE Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={cuePassword}
-                    onChange={(e) => setCuePassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-background border border-border rounded-xl px-3.5 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-
-                <div className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-1.5 bg-muted/40 p-2.5 rounded-xl border border-border/40">
-                  <Lock className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                  <span>Credentials are held strictly in memory for token extraction and never saved or logged.</span>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button
+              {/* User ID Box with Copy */}
+              <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Your AcadSphere User ID</span>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCueModal(false)}
-                    disabled={isSyncingCue}
-                    className="text-xs font-bold"
+                    onClick={() => {
+                      const idToCopy = userId || "00000000-0000-0000-0000-000000000001";
+                      navigator.clipboard.writeText(idToCopy);
+                      toast.success("User ID copied to clipboard!");
+                    }}
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                   >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={isSyncingCue}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2"
-                  >
-                    {isSyncingCue ? (
-                      <>
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Authenticating...
-                      </>
-                    ) : (
-                      <>
-                        <LogIn className="h-3.5 w-3.5" /> Sync Live Attendance
-                      </>
-                    )}
-                  </Button>
+                    <Copy className="h-3 w-3" /> Copy User ID
+                  </button>
                 </div>
-              </form>
+                <div className="font-mono text-xs font-bold text-foreground bg-background px-3 py-1.5 rounded-lg border border-border/50 truncate">
+                  {userId || "00000000-0000-0000-0000-000000000001"}
+                </div>
+              </div>
+
+              {/* Step by Step Guide */}
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">How to Sync Live Attendance:</h4>
+                <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                    <span>Open <strong>chrome://extensions</strong> in Google Chrome and turn on <strong>Developer Mode</strong> (top right).</span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                    <div>
+                      <span>Click <strong>Load Unpacked</strong> and select the extension folder:</span>
+                      <code className="block mt-1 p-1.5 bg-muted rounded font-mono text-[10px] text-foreground select-all">
+                        acadsphere\cue-extension
+                      </code>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                    <span>Open <strong>cue.christuniversity.in</strong> in Chrome, click the extension icon, paste your User ID, and press <strong>Sync to AcadSphere</strong>.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-3 border-t border-border/40">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleDemoSync}
+                  className="text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 flex items-center gap-1.5 px-3"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Load Demo Data
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCueModal(false)}
+                  className="text-xs font-bold"
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -61,17 +61,26 @@ serve(async (req) => {
       subject_type: sub.type || "Theory",
       attended_classes: sub.attended,
       total_classes: sub.total,
-      percentage: sub.total > 0 ? Math.round((sub.attended / sub.total) * 100) : sub.percentage || 0,
+      percentage:
+        sub.total > 0
+          ? Number(((sub.attended / sub.total) * 100).toFixed(2))
+          : sub.percentage
+          ? Number(Number(sub.percentage).toFixed(2))
+          : 0,
       last_synced_at: new Date().toISOString(),
     }));
 
-    // Try upserting to student_attendance table if exists
+    // Upsert to student_attendance table using unique constraint on (user_id, subject_code)
     const { error: dbErr } = await supabaseAdmin
       .from("student_attendance")
       .upsert(recordsToInsert, { onConflict: "user_id,subject_code" });
 
     if (dbErr) {
-      console.warn("[sync-attendance] DB Upsert Warning (falling back to success response):", dbErr.message);
+      console.error("[sync-attendance] DB Upsert Error:", dbErr.message);
+      return new Response(
+        JSON.stringify({ error: `Database upsert failed: ${dbErr.message}` }),
+        { status: 400, headers: JSON_HEADERS }
+      );
     }
 
     return new Response(

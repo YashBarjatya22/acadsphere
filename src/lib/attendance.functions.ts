@@ -3,8 +3,13 @@ import { z } from "zod";
 
 // Dynamic server-side DB accessor to prevent node:sqlite leakage into browser bundle
 async function getServerDb() {
-  const { getDb } = await import("./db.server");
-  return getDb();
+  try {
+    const { getDb } = await import("./db.server");
+    return getDb();
+  } catch (err) {
+    console.error("[attendance.functions] Failed to load server db:", err);
+    return null;
+  }
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -310,14 +315,73 @@ function evaluateReminderRulesInternal(
 // ─── Server Function: Get Full Attendance Dashboard ───────────────────────
 export const getAttendanceDashboardData = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<AttendanceDashboardData> => {
-    const getDb = await getServerDb();
     const studentId = (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
-    const db = getDb();
-    await seedDefaultStudentAttendanceInternal(studentId, db);
+    const db = await getServerDb();
 
-    const subjectsRaw = db.prepare(`
-      SELECT * FROM subject_attendance WHERE student_id = ? ORDER BY subject_name ASC
+    if (!db) {
+      return {
+        overall: {
+          percentage: 0,
+          totalAttended: 0,
+          totalConducted: 0,
+          requiredFor75: 0,
+          safeMissesCount: 0,
+          status: "Safe",
+          statusColor: "blue",
+          subjectsAtRiskCount: 0,
+          criticalSubjectsCount: 0,
+        },
+        subjects: [],
+        notifications: [],
+        recentLogs: [],
+      };
+    }
+
+    // One-time cleanup: remove CUE duplicate rows written under fallback student IDs
+    // by an older version of the sync endpoint that wrote to 3 student IDs.
+    try {
+      db.prepare(`
+        DELETE FROM subject_attendance 
+        WHERE subject_id LIKE 'cue-%' 
+          AND student_id IN ('00000000-0000-0000-0000-000000000001', 'demo-student-id')
+      `).run();
+    } catch { /* ignore */ }
+
+    // Query subjects for active studentId only (avoid IN with multiple IDs causing duplicate rows)
+    let subjectsRaw = db.prepare(`
+      SELECT * FROM subject_attendance 
+      WHERE student_id = ?
+      ORDER BY subject_name ASC
     `).all(studentId) as any[];
+
+    // Fallback to demo student if nothing found for the real user
+    if (subjectsRaw.length === 0) {
+      subjectsRaw = db.prepare(`
+        SELECT * FROM subject_attendance 
+        WHERE student_id = '00000000-0000-0000-0000-000000000001'
+        ORDER BY subject_name ASC
+      `).all() as any[];
+    }
+
+    // If any custom CUE subjects exist in DB, prioritize them over default seed data.
+    // GROUP BY subject_id to deduplicate rows written for multiple student IDs by the extension.
+    const cueSubjects = db.prepare(`
+      SELECT subject_id, subject_name, subject_code, classes_attended, classes_conducted,
+             attendance_percentage, student_id, MAX(last_updated) as last_updated
+      FROM subject_attendance 
+      WHERE subject_id LIKE 'cue-%'
+      GROUP BY subject_id
+      ORDER BY subject_name ASC
+    `).all() as any[];
+
+    if (cueSubjects.length > 0) {
+      subjectsRaw = cueSubjects;
+    } else if (subjectsRaw.length === 0) {
+      await seedDefaultStudentAttendanceInternal(studentId, db);
+      subjectsRaw = db.prepare(`
+        SELECT * FROM subject_attendance WHERE student_id = ? ORDER BY subject_name ASC
+      `).all(studentId) as any[];
+    }
 
     let totalAttended = 0;
     let totalConducted = 0;
@@ -325,7 +389,12 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
     const subjects: SubjectAttendance[] = subjectsRaw.map((s) => {
       const attended = Number(s.classes_attended) || 0;
       const conducted = Number(s.classes_conducted) || 0;
-      const pct = conducted > 0 ? Math.round((attended / conducted) * 100) : 100;
+      const pct =
+        conducted > 0
+          ? Number(((attended / conducted) * 100).toFixed(2))
+          : Number(s.attendance_percentage)
+          ? Number(Number(s.attendance_percentage).toFixed(2))
+          : 100;
       totalAttended += attended;
       totalConducted += conducted;
 
@@ -335,12 +404,12 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
       const aiSuggestion = generateAiSuggestion(s.subject_name, attended, conducted);
       const trend = generateTrendData(attended, conducted);
 
-      const miss1 = Math.round((attended / (conducted + 1)) * 100);
-      const miss2 = Math.round((attended / (conducted + 2)) * 100);
-      const miss3 = Math.round((attended / (conducted + 3)) * 100);
-      const attend1 = Math.round(((attended + 1) / (conducted + 1)) * 100);
-      const attend3 = Math.round(((attended + 3) / (conducted + 3)) * 100);
-      const attend5 = Math.round(((attended + 5) / (conducted + 5)) * 100);
+      const miss1 = Number(((attended / (conducted + 1)) * 100).toFixed(2));
+      const miss2 = Number(((attended / (conducted + 2)) * 100).toFixed(2));
+      const miss3 = Number(((attended / (conducted + 3)) * 100).toFixed(2));
+      const attend1 = Number((((attended + 1) / (conducted + 1)) * 100).toFixed(2));
+      const attend3 = Number((((attended + 3) / (conducted + 3)) * 100).toFixed(2));
+      const attend5 = Number((((attended + 5) / (conducted + 5)) * 100).toFixed(2));
 
       return {
         id: s.subject_id,
@@ -359,7 +428,10 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
       };
     });
 
-    const overallPct = totalConducted > 0 ? Math.round((totalAttended / totalConducted) * 100) : 100;
+    const overallPct =
+      totalConducted > 0
+        ? Number(((totalAttended / totalConducted) * 100).toFixed(2))
+        : 100;
     const overallStatus = calculateStatus(overallPct);
     const requiredFor75 = calculateRecoveryNeeded(totalAttended, totalConducted);
     const safeMissesCount = calculateSafeBunks(totalAttended, totalConducted);
@@ -428,9 +500,9 @@ export const updateSubjectAttendance = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data, context }) => {
-    const getDb = await getServerDb();
     const studentId = (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
-    const db = getDb();
+    const db = await getServerDb();
+    if (!db) throw new Error("Database unavailable");
 
     const current = db.prepare(`
       SELECT * FROM subject_attendance WHERE student_id = ? AND subject_id = ?
@@ -506,23 +578,25 @@ export const updateSubjectAttendance = createServerFn({ method: "POST" })
 export const markNotificationRead = createServerFn({ method: "POST" })
   .inputValidator(z.object({ notificationId: z.string() }))
   .handler(async ({ data, context }) => {
-    const getDb = await getServerDb();
     const studentId = (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
-    const db = getDb();
-    db.prepare(`
-      UPDATE attendance_reminders SET is_read = 1 WHERE id = ? AND student_id = ?
-    `).run(data.notificationId, studentId);
+    const db = await getServerDb();
+    if (db) {
+      db.prepare(`
+        UPDATE attendance_reminders SET is_read = 1 WHERE id = ? AND student_id = ?
+      `).run(data.notificationId, studentId);
+    }
     return { success: true };
   });
 
 export const deleteNotification = createServerFn({ method: "POST" })
   .inputValidator(z.object({ notificationId: z.string() }))
   .handler(async ({ data, context }) => {
-    const getDb = await getServerDb();
     const studentId = (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
-    const db = getDb();
-    db.prepare(`
-      DELETE FROM attendance_reminders WHERE id = ? AND student_id = ?
-    `).run(data.notificationId, studentId);
+    const db = await getServerDb();
+    if (db) {
+      db.prepare(`
+        DELETE FROM attendance_reminders WHERE id = ? AND student_id = ?
+      `).run(data.notificationId, studentId);
+    }
     return { success: true };
   });

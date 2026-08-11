@@ -5,9 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load saved userId from chrome.storage.local
   chrome.storage.local.get(["userId"], (result) => {
-    if (result.userId) {
-      userIdInput.value = result.userId;
-    }
+    userIdInput.value = result.userId || "00000000-0000-0000-0000-000000000001";
   });
 
   // Save userId automatically on change
@@ -26,35 +24,31 @@ document.addEventListener("DOMContentLoaded", () => {
     syncBtn.textContent = "Syncing...";
     showStatus("Connecting to active CUE tab...", "info");
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!tab || !tab.url || !tab.url.includes("cue.christuniversity.in")) {
-      showStatus("Please navigate to cue.christuniversity.in in your browser first.", "error");
-      syncBtn.disabled = false;
-      syncBtn.textContent = "Sync to AcadSphere";
-      return;
-    }
+      if (!tab || !tab.url || !tab.url.includes("cue.christuniversity.in")) {
+        showStatus("Please navigate to cue.christuniversity.in in your browser first.", "error");
+        return;
+      }
 
-    chrome.scripting.executeScript(
-      {
-        target: { tabId: tab.id },
-        files: ["content.js"],
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          showStatus("Error executing script: " + chrome.runtime.lastError.message, "error");
-          syncBtn.disabled = false;
-          syncBtn.textContent = "Sync to AcadSphere";
-          return;
-        }
-
-        // Send message to content script with userId
+      await new Promise((resolve) => {
         chrome.tabs.sendMessage(tab.id, { action: "sync_attendance", userId: userId }, (response) => {
-          syncBtn.disabled = false;
-          syncBtn.textContent = "Sync to AcadSphere";
-
           if (chrome.runtime.lastError) {
-            showStatus("Content script error: " + chrome.runtime.lastError.message, "error");
+            // Inject content script if missing and retry
+            chrome.scripting.executeScript(
+              { target: { tabId: tab.id }, files: ["content.js"] },
+              () => {
+                chrome.tabs.sendMessage(tab.id, { action: "sync_attendance", userId: userId }, (res2) => {
+                  if (res2 && res2.success) {
+                    showStatus(`Successfully synced ${res2.count} subject(s) to AcadSphere!`, "success");
+                  } else {
+                    showStatus(res2?.error || "Failed to extract attendance data.", "error");
+                  }
+                  resolve(null);
+                });
+              }
+            );
             return;
           }
 
@@ -63,9 +57,15 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             showStatus(response?.error || "Failed to extract attendance data from current tab.", "error");
           }
+          resolve(null);
         });
-      }
-    );
+      });
+    } catch (err) {
+      showStatus(err?.message || "An error occurred during sync.", "error");
+    } finally {
+      syncBtn.disabled = false;
+      syncBtn.textContent = "Sync to AcadSphere";
+    }
   });
 
   function showStatus(msg, type) {
