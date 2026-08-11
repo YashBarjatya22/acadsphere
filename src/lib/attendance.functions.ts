@@ -347,36 +347,25 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
       `).run();
     } catch { /* ignore */ }
 
-    // Query subjects for active studentId only (avoid IN with multiple IDs causing duplicate rows)
-    let subjectsRaw = db.prepare(`
+    // Query subjects for active studentId and default fallback, ordered by newest last_updated first
+    const allSubjectsRaw = db.prepare(`
       SELECT * FROM subject_attendance 
-      WHERE student_id = ?
-      ORDER BY subject_name ASC
+      WHERE student_id = ? OR student_id = '00000000-0000-0000-0000-000000000001'
+      ORDER BY last_updated DESC
     `).all(studentId) as any[];
 
-    // Fallback to demo student if nothing found for the real user
-    if (subjectsRaw.length === 0) {
-      subjectsRaw = db.prepare(`
-        SELECT * FROM subject_attendance 
-        WHERE student_id = '00000000-0000-0000-0000-000000000001'
-        ORDER BY subject_name ASC
-      `).all() as any[];
+    // Deduplicate by subject_id keeping the most recently updated row
+    const seenIds = new Set<string>();
+    let subjectsRaw: any[] = [];
+    for (const s of allSubjectsRaw) {
+      if (!seenIds.has(s.subject_id)) {
+        seenIds.add(s.subject_id);
+        subjectsRaw.push(s);
+      }
     }
+    subjectsRaw.sort((a, b) => a.subject_name.localeCompare(b.subject_name));
 
-    // If any custom CUE subjects exist in DB, prioritize them over default seed data.
-    // GROUP BY subject_id to deduplicate rows written for multiple student IDs by the extension.
-    const cueSubjects = db.prepare(`
-      SELECT subject_id, subject_name, subject_code, classes_attended, classes_conducted,
-             attendance_percentage, student_id, MAX(last_updated) as last_updated
-      FROM subject_attendance 
-      WHERE subject_id LIKE 'cue-%'
-      GROUP BY subject_id
-      ORDER BY subject_name ASC
-    `).all() as any[];
-
-    if (cueSubjects.length > 0) {
-      subjectsRaw = cueSubjects;
-    } else if (subjectsRaw.length === 0) {
+    if (subjectsRaw.length === 0) {
       await seedDefaultStudentAttendanceInternal(studentId, db);
       subjectsRaw = db.prepare(`
         SELECT * FROM subject_attendance WHERE student_id = ? ORDER BY subject_name ASC

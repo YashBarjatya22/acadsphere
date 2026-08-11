@@ -221,12 +221,10 @@ function AttendancePage() {
           percentage: s.percentage,
         }));
         setCueData(formattedCue);
-        if (!cueLastSynced) {
-          setCueLastSynced(new Date().toISOString());
-        }
+        setCueLastSynced(new Date().toISOString());
       }
     }
-  }, [dashboardData, cueLastSynced]);
+  }, [dashboardData]);
 
   const updateMutation = useMutation({
     mutationFn: ({ subjectId, action }: { subjectId: string; action: "present" | "absent" | "reset" }) =>

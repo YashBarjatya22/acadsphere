@@ -80,18 +80,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 /** Scrape CUE Portal attendance elements */
 function scrapeCueAttendance() {
-  // Collect all raw candidate matches (element + parsed data)
-  const rawMatches = [];
+  const subjectsMap = new Map();
 
-  const allElements = document.querySelectorAll("div, article, section, li, tr");
+  function addSubject(code, name, attended, total, isLab) {
+    if (!total || total <= 0 || total > 500 || attended < 0 || attended > total) return;
 
+    const cleanCode = (code || "N/A").toUpperCase().trim();
+    let cleanName = (name || cleanCode).trim();
+    cleanName = cleanName.replace(/^[A-Z0-9-]{3,12}\s*/i, "").trim() || cleanName;
+
+    const key = cleanCode !== "N/A" ? cleanCode : cleanName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const percentage = Number(((attended / total) * 100).toFixed(2));
+    const type =
+      isLab ||
+      cleanName.toLowerCase().includes("lab") ||
+      cleanName.toLowerCase().includes("practical")
+        ? "Practical"
+        : "Theory";
+
+    if (!subjectsMap.has(key) || total >= subjectsMap.get(key).total) {
+      subjectsMap.set(key, {
+        code: cleanCode,
+        name: cleanName,
+        type,
+        attended,
+        total,
+        percentage,
+      });
+    }
+  }
+
+  // Strategy A: Table Rows (CUE Table Layout)
+  const rows = document.querySelectorAll("tr");
+  rows.forEach((tr) => {
+    const cells = Array.from(tr.querySelectorAll("td, th")).map((c) => c.innerText.trim());
+    if (cells.length < 3) return;
+
+    const rowText = cells.join(" ");
+    const ratioMatch = rowText.match(/(\d{1,3})\s*(?:of|\/|\\)\s*(\d{1,3})/i);
+
+    if (ratioMatch) {
+      const n1 = parseInt(ratioMatch[1], 10);
+      const n2 = parseInt(ratioMatch[2], 10);
+      const attended = Math.min(n1, n2);
+      const total = Math.max(n1, n2);
+
+      const codeMatch = rowText.match(/\b([A-Z0-9]{2,6}-?\d{2,4}[A-Z0-9-]*)\b/i);
+      const code = codeMatch ? codeMatch[1] : "N/A";
+      const nameCell =
+        cells.find(
+          (c) =>
+            c.length > 3 &&
+            !/\d{1,3}\s*(?:of|\/)\s*\d{1,3}/.test(c) &&
+            !/^\d+$/.test(c)
+        ) || code;
+
+      addSubject(code, nameCell, attended, total, rowText.toLowerCase().includes("lab"));
+    }
+  });
+
+  // Strategy B: Cards & Containers (CUE Card Layout)
+  const allElements = document.querySelectorAll("div, article, section, li");
   allElements.forEach((el) => {
-    // Skip containers that are too large (layout wrappers)
     if (el.children.length > 15) return;
     const text = el.innerText || "";
     if (!text || text.length > 600) return;
 
-    // Matches "55 of 61 hours attended", "55 / 61", "55 of 61"
     const ratioMatch = text.match(/(\d{1,3})\s*(?:of|\/|\\)\s*(\d{1,3})\s*(?:hours?\s*attended|hrs|classes)?/i);
     if (!ratioMatch) return;
 
@@ -100,13 +154,9 @@ function scrapeCueAttendance() {
     const attended = Math.min(n1, n2);
     const total = Math.max(n1, n2);
 
-    if (total <= 0 || total > 500 || attended > total) return;
+    const codeMatch = text.match(/\b([A-Z0-9]{2,6}-?\d{2,4}[A-Z0-9-]*)\b/i);
+    const code = codeMatch ? codeMatch[1] : "N/A";
 
-    // Extract subject code (e.g., MCA520-4, MCA503A-4, CS301)
-    const codeMatch = text.match(/\b([A-Z]{2,6}\d{2,4}[A-Z0-9-]*)\b/i);
-    const code = codeMatch ? codeMatch[1].toUpperCase() : "N/A";
-
-    // Extract subject name — filter out noise lines
     const lines = text
       .split("\n")
       .map((l) => l.trim())
@@ -120,45 +170,12 @@ function scrapeCueAttendance() {
       );
 
     let name = lines[0] || code;
-    if (name.toUpperCase() === code && lines.length > 1) {
+    if (name.toUpperCase() === code.toUpperCase() && lines.length > 1) {
       name = lines[1];
     }
-    // Strip leading code prefix from name if present (e.g. "MCA520-4 Cloud Computing" -> "Cloud Computing")
-    name = name.replace(/^[A-Z]{2,6}\d{2,4}[A-Z0-9-]*\s*/i, "").trim() || name;
 
-    const isLab =
-      text.toLowerCase().includes("lab") ||
-      text.toLowerCase().includes("practical") ||
-      name.toLowerCase().includes("lab") ||
-      name.toLowerCase().includes("project");
-
-    rawMatches.push({ el, code, name, attended, total, isLab });
+    addSubject(code, name, attended, total, text.toLowerCase().includes("lab"));
   });
 
-  // Remove any match whose element is an ANCESTOR of another match.
-  // This prevents parent-div duplicates when a child element already matched.
-  const dedupedMatches = rawMatches.filter((m) =>
-    !rawMatches.some((other) => other !== m && m.el.contains(other.el))
-  );
-
-  // Final dedup by code+attended+total (ignore minor name-parsing differences)
-  const seen = new Set();
-  const subjects = [];
-
-  for (const { code, name, attended, total, isLab } of dedupedMatches) {
-    const key = `${code}-${attended}-${total}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      subjects.push({
-        code,
-        name,
-        type: isLab ? "Practical" : "Theory",
-        attended,
-        total,
-        percentage: Number(((attended / total) * 100).toFixed(2)),
-      });
-    }
-  }
-
-  return subjects;
+  return Array.from(subjectsMap.values());
 }
