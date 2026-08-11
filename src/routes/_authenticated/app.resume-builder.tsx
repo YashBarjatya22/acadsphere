@@ -112,6 +112,32 @@ async function extractTextFromPDF(file: File): Promise<string> {
   return textChunks.join("\n\n").trim();
 }
 
+// ─── DOCX / DOC Text extraction via Mammoth CDN ─────────────────────────────
+const MAMMOTH_CDN =
+  "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
+
+async function extractTextFromDocx(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer();
+  try {
+    await loadScript(MAMMOTH_CDN, "mammoth");
+    const mammoth = (window as any).mammoth;
+    if (mammoth) {
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (result?.value && result.value.trim().length > 20) {
+        return result.value.trim();
+      }
+    }
+  } catch (e) {
+    console.warn("Mammoth extraction warning, using binary text fallback", e);
+  }
+
+  // Fallback for DOC / raw text files
+  const decoder = new TextDecoder("utf-8");
+  const raw = decoder.decode(arrayBuffer);
+  const clean = raw.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s+/g, " ");
+  return clean.trim();
+}
+
 // ─── Gemini 3.6 Flash API Call ────────────────────────────────────────────────
 async function tailorResumeWithGemini(
   resumeText: string,
@@ -449,8 +475,16 @@ function ResumeTailorerPage() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const processFile = useCallback(async (file: File) => {
-    if (file.type !== "application/pdf") {
-      toast.error("Only PDF files are supported.");
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    const isPdf = ext === "pdf" || file.type === "application/pdf";
+    const isDoc =
+      ext === "docx" ||
+      ext === "doc" ||
+      file.type.includes("word") ||
+      file.type.includes("document");
+
+    if (!isPdf && !isDoc) {
+      toast.error("Only PDF, DOCX, and DOC files are supported.");
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -462,10 +496,16 @@ function ResumeTailorerPage() {
     setTailoredResume(null);
     setIsExtracting(true);
     try {
-      const text = await extractTextFromPDF(file);
-      if (!text || text.length < 50) {
+      let text = "";
+      if (isPdf) {
+        text = await extractTextFromPDF(file);
+      } else {
+        text = await extractTextFromDocx(file);
+      }
+
+      if (!text || text.length < 30) {
         throw new Error(
-          "Could not extract readable text. The PDF may be image-based.",
+          "Could not extract readable text. The document may be image-based or empty.",
         );
       }
       setExtractedText(text);
@@ -473,7 +513,7 @@ function ResumeTailorerPage() {
         `✓ Extracted ${text.split(" ").length.toLocaleString()} words from ${file.name}`,
       );
     } catch (err: any) {
-      toast.error(err.message || "Failed to parse PDF.");
+      toast.error(err.message || "Failed to parse document.");
       setUploadedFile(null);
     } finally {
       setIsExtracting(false);
@@ -501,7 +541,7 @@ function ResumeTailorerPage() {
 
   const handleTailor = async () => {
     if (!extractedText) {
-      toast.error("Please upload a PDF resume first.");
+      toast.error("Please upload a PDF or Word resume first.");
       return;
     }
     if (!jobDescription.trim()) {
@@ -538,6 +578,9 @@ function ResumeTailorerPage() {
   const canTailor =
     !!extractedText && !!jobDescription.trim() && !isTailoring && !isExtracting;
 
+  const getFileExt = (filename: string) =>
+    filename.split(".").pop()?.toLowerCase() || "";
+
   return (
     <ChatLayout activeThreadId={null}>
       <div className="h-full overflow-y-auto bg-background text-foreground">
@@ -553,12 +596,12 @@ function ResumeTailorerPage() {
               AI Resume Tailorer
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
-              Upload your PDF resume, paste the target job description, and let Gemini 3.6 Flash
+              Upload your PDF, DOCX, or DOC resume, paste the target job description, and let Gemini 3.6 Flash
               optimize your summary, skills, experience, and projects for ATS compatibility — then download a pristine, high-density 1-page PDF.
             </p>
             <div className="mt-8 flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
               {[
-                { n: 1, label: "Upload PDF" },
+                { n: 1, label: "Upload PDF / Word" },
                 { n: 2, label: "Paste JD" },
                 { n: 3, label: "AI Tailors" },
                 { n: 4, label: "1-Page PDF" },
@@ -584,7 +627,7 @@ function ResumeTailorerPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             {/* ── LEFT: Inputs ── */}
             <div className="space-y-5">
-              {/* PDF Upload */}
+              {/* File Upload */}
               <div className="rounded-2xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
                 <div className="flex items-center gap-3 border-b border-border/60 px-5 py-4">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
@@ -595,7 +638,7 @@ function ResumeTailorerPage() {
                       Upload Your Resume
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      PDF format only · Max 10MB
+                      PDF, DOCX, or DOC format · Max 10MB
                     </p>
                   </div>
                 </div>
@@ -619,10 +662,10 @@ function ResumeTailorerPage() {
                         <FileText className="h-7 w-7 text-muted-foreground/60" />
                       </div>
                       <p className="text-sm font-semibold text-foreground">
-                        Drop your PDF here
+                        Drop your PDF or Word document here
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        or{" "}
+                        Supports <span className="text-foreground font-medium">.pdf, .docx, .doc</span> ·{" "}
                         <span className="text-primary underline underline-offset-2">
                           click to browse
                         </span>
@@ -631,7 +674,7 @@ function ResumeTailorerPage() {
                         id="pdf-upload"
                         ref={fileInputRef}
                         type="file"
-                        accept="application/pdf,.pdf"
+                        accept="application/pdf,.pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
                         onChange={handleFileInput}
                         className="hidden"
                       />
@@ -640,15 +683,21 @@ function ResumeTailorerPage() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between rounded-xl border border-border bg-surface/30 p-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10">
-                            <FileText className="h-5 w-5 text-red-400" />
+                          <div
+                            className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                              getFileExt(uploadedFile.name) === "pdf"
+                                ? "bg-red-500/10 text-red-400"
+                                : "bg-blue-500/10 text-blue-400"
+                            }`}
+                          >
+                            <FileText className="h-5 w-5" />
                           </div>
                           <div>
                             <p className="text-xs font-semibold truncate max-w-[180px]">
                               {uploadedFile.name}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {(uploadedFile.size / 1024).toFixed(1)} KB
+                            <p className="text-[10px] text-muted-foreground uppercase font-mono">
+                              {getFileExt(uploadedFile.name)} · {(uploadedFile.size / 1024).toFixed(1)} KB
                             </p>
                           </div>
                         </div>
@@ -663,7 +712,7 @@ function ResumeTailorerPage() {
                       {isExtracting && (
                         <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2.5 text-xs text-primary">
                           <Spinner className="h-3.5 w-3.5" />
-                          Parsing PDF text content...
+                          Parsing document text content...
                         </div>
                       )}
 
