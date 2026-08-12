@@ -38,6 +38,9 @@ DROP POLICY IF EXISTS "Service role policy direct messages" ON public.direct_mes
 CREATE POLICY "Service role policy direct messages"
   ON public.direct_messages FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 
+-- Set Replica Identity Full for complete real-time payload delivery
+ALTER TABLE public.direct_messages REPLICA IDENTITY FULL;
+
 -- Enable Realtime Publication
 DO $$
 BEGIN

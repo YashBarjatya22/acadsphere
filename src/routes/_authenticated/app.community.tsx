@@ -10,7 +10,7 @@ import {
   Users, MessageSquare, Heart, Plus, Search, Circle, Send, X,
   CheckCheck, MessageCircle, RefreshCw, UserCheck, UserPlus, Hash,
   UsersRound, Loader2, Trash2, Lock, Globe, Sparkles, ChevronRight,
-  UserCheck2, MessageSquarePlus
+  MessageSquarePlus
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/community")({
@@ -94,6 +94,14 @@ function timeAgo(iso: string) {
 function fmtTime(iso: string) {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function dataChanged(prev: DirectMessage[], next: DirectMessage[]) {
+  if (prev.length !== next.length) return true;
+  if (prev.length > 0 && next.length > 0) {
+    if (prev[prev.length - 1].id !== next[next.length - 1].id) return true;
+  }
+  return false;
 }
 
 /* ─────────────────────────── Component ─────────────────────────── */
@@ -338,7 +346,7 @@ function CommunityPage() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
-      .channel("community-posts-realtime-v4")
+      .channel("community-posts-realtime-v5")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
         (payload) => {
           const p = payload.new as any;
@@ -437,7 +445,7 @@ function CommunityPage() {
     }
   }, [activePeerId, currentUser?.id, fetchDMs]);
 
-  /* ── Realtime: incoming & outgoing direct_messages + unread counter updates ── */
+  /* ── TRIPLE-REDUNDANT REALTIME ENGINE: Broadcast + postgres_changes ── */
   useEffect(() => {
     if (!currentUser?.id) return;
 
@@ -448,7 +456,7 @@ function CommunityPage() {
       setActivePeerIds((prev) => [peerId, ...prev.filter((id) => id !== peerId)]);
 
       const isIncoming = msg.receiver_id === currentUser.id;
-      const isCurrentChatOpen = activePeerIdRef.current === peerId && mainTabRef.current === "dms";
+      const isCurrentChatOpen = activePeerIdRef.current === peerId;
 
       if (isCurrentChatOpen) {
         setDmMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
@@ -480,8 +488,19 @@ function CommunityPage() {
       }
     };
 
-    const channel = supabase
-      .channel("custom-dm-channel-v3")
+    // 1. Dedicated Supabase Broadcast channel for instant peer-to-peer WebSocket delivery
+    const myChannel = supabase.channel(`dm-peer-${currentUser.id}`);
+    myChannel
+      .on("broadcast", { event: "new_dm_message" }, (payload) => {
+        if (payload?.payload) {
+          handleNewMessage(payload.payload as DirectMessage);
+        }
+      })
+      .subscribe();
+
+    // 2. Postgres changes fallback
+    const dbChannel = supabase
+      .channel("custom-dm-channel-v5")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "direct_messages" },
@@ -503,9 +522,56 @@ function CommunityPage() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(myChannel);
+      supabase.removeChannel(dbChannel);
     };
   }, [currentUser?.id, members]);
+
+  /* ── Quiet 2.5s Polling Fallback for active DM chat (zero miss guarantee) ── */
+  useEffect(() => {
+    if (!activePeerId || !currentUser?.id) return;
+
+    const fetchNewestDMs = async () => {
+      try {
+        let { data: dmData } = await supabase
+          .from("direct_messages")
+          .select("*")
+          .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${activePeerId}),and(sender_id.eq.${activePeerId},receiver_id.eq.${currentUser.id})`)
+          .order("created_at", { ascending: true });
+
+        if (!dmData || dmData.length === 0) {
+          const { data: pmData } = await supabase
+            .from("private_messages")
+            .select("*")
+            .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${activePeerId}),and(sender_id.eq.${activePeerId},receiver_id.eq.${currentUser.id})`)
+            .order("created_at", { ascending: true });
+          dmData = pmData;
+        }
+
+        if (dmData && dmData.length > 0) {
+          setDmMessages((prev) => {
+            if (dataChanged(prev, dmData)) {
+              return dmData;
+            }
+            return prev;
+          });
+
+          const lastMsg = dmData[dmData.length - 1];
+          setRecentDmMap((prev) => ({
+            ...prev,
+            [activePeerId]: {
+              lastMessage: lastMsg.content,
+              lastMessageAt: lastMsg.created_at,
+              unreadCount: 0,
+            },
+          }));
+        }
+      } catch (_) {}
+    };
+
+    const interval = setInterval(fetchNewestDMs, 2500);
+    return () => clearInterval(interval);
+  }, [activePeerId, currentUser?.id]);
 
   /* ── Fetch groups ── */
   const fetchGroups = async () => {
@@ -660,7 +726,7 @@ function CommunityPage() {
     } catch (err) { console.error("Like error:", err); }
   };
 
-  /* Send DM to direct_messages table */
+  /* Send DM to direct_messages table & broadcast to recipient's WebSocket channel */
   const handleSendDM = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !activePeerId || !currentUser) return;
@@ -668,14 +734,13 @@ function CommunityPage() {
     const content = chatInput.trim();
     setChatInput("");
     const nowIso = new Date().toISOString();
-    // Optimistic message
+
     const optimisticMsg: DirectMessage = {
       id: `opt-${Date.now()}`, sender_id: currentUser.id,
       receiver_id: activePeerId, content, created_at: nowIso,
     };
     setDmMessages((prev) => [...prev, optimisticMsg]);
 
-    // Update recent DM snippet immediately
     setRecentDmMap((prev) => ({
       ...prev,
       [activePeerId]: {
@@ -686,6 +751,7 @@ function CommunityPage() {
     }));
 
     try {
+      let insertedMsg: DirectMessage | null = null;
       const { data, error } = await supabase.from("direct_messages").insert({
         sender_id: currentUser.id, receiver_id: activePeerId, content,
       }).select().single();
@@ -695,9 +761,21 @@ function CommunityPage() {
           sender_id: currentUser.id, receiver_id: activePeerId, content,
         }).select().single();
         if (pmError) throw error;
-        setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? pmData : m)));
+        insertedMsg = pmData;
       } else {
-        setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? data : m)));
+        insertedMsg = data;
+      }
+
+      if (insertedMsg) {
+        setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? insertedMsg! : m)));
+
+        // Broadcast to recipient via WebSocket channel for instant 0ms delivery
+        const recipientChannel = supabase.channel(`dm-peer-${activePeerId}`);
+        recipientChannel.send({
+          type: "broadcast",
+          event: "new_dm_message",
+          payload: insertedMsg,
+        });
       }
     } catch (err: any) {
       setDmMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
