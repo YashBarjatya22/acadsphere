@@ -18,6 +18,7 @@ export interface SubmissionItem {
   description?: string;
   reviewed?: boolean;
   isCurrentSemester?: boolean;
+  fromCache?: boolean; // true when loaded from Supabase cache (not live GCR)
 }
 
 export interface CourseItem {
@@ -35,91 +36,8 @@ export interface ClassroomResponse {
   courses?: CourseItem[];
   userEmail?: string;
   error?: string;
+  fromCache?: boolean; // true when data came from Supabase, not GCR
 }
-
-// Curated MCA University Sample Submissions for fallback / demo mode
-const DEMO_ASSIGNMENTS: SubmissionItem[] = [
-  {
-    id: "demo-cw-1",
-    title: "Lab Assignment 4: BCNF Normalization & PL/SQL Triggers",
-    courseName: "MCA301 - Database Management Systems",
-    courseId: "c-dbms-101",
-    dueDate: new Date(Date.now() - 2 * 86400000).toISOString(), // 2 days ago (OVERDUE)
-    dueTime: "23:59",
-    maxPoints: 20,
-    state: "OVERDUE",
-    alternateLink: "https://classroom.google.com/c/demo-dbms/a/cw-1",
-    description: "Decompose relation R(A,B,C,D) into BCNF. Write PL/SQL row-level triggers for audit logs in table student_enrollment.",
-    isCurrentSemester: true,
-  },
-  {
-    id: "demo-cw-2",
-    title: "Subnetting & TCP 3-Way Handshake Wireshark Analysis",
-    courseName: "MCA303 - Computer Networks & Protocols",
-    courseId: "c-cn-103",
-    dueDate: new Date(Date.now() + 1 * 86400000).toISOString(), // Tomorrow
-    dueTime: "23:59",
-    maxPoints: 10,
-    state: "PENDING",
-    alternateLink: "https://classroom.google.com/c/demo-cn/a/cw-2",
-    description: "Capture TCP packets using Wireshark during HTTP request. Highlight SYN, SYN-ACK, and ACK sequence numbers with subnet mask calculations.",
-    isCurrentSemester: true,
-  },
-  {
-    id: "demo-cw-3",
-    title: "Banker's Algorithm & Semaphore Deadlock Avoidance Code",
-    courseName: "MCA302 - Operating Systems & Kernel Architecture",
-    courseId: "c-os-102",
-    dueDate: new Date(Date.now() + 4 * 86400000).toISOString(), // In 4 days
-    dueTime: "17:00",
-    maxPoints: 15,
-    state: "PENDING",
-    alternateLink: "https://classroom.google.com/c/demo-os/a/cw-3",
-    description: "Implement Banker's Safety Algorithm in C/C++ for 5 processes and 3 resource types. Submit clean code with sample test matrices.",
-    isCurrentSemester: true,
-  },
-  {
-    id: "demo-cw-4",
-    title: "Software Requirement Specification (SRS) & UML Class Diagram",
-    courseName: "MCA305 - Software Engineering & Agile Practices",
-    courseId: "c-se-105",
-    dueDate: new Date(Date.now() - 5 * 86400000).toISOString(),
-    dueTime: "23:59",
-    maxPoints: 25,
-    state: "GRADED",
-    grade: 24,
-    alternateLink: "https://classroom.google.com/c/demo-se/a/cw-4",
-    description: "Prepare IEEE 830 compliant SRS document for AcadSphere SIS portal. Include Use Case diagrams, Sequence diagrams, and ER schemas.",
-    isCurrentSemester: true,
-  },
-  {
-    id: "demo-cw-5",
-    title: "A* Search & MiniMax Algorithm Implementation in Python",
-    courseName: "MCA204 - Artificial Intelligence (Past Term)",
-    courseId: "c-ai-104",
-    dueDate: new Date(Date.now() - 200 * 86400000).toISOString(),
-    dueTime: "23:59",
-    maxPoints: 10,
-    state: "GRADED",
-    grade: 10,
-    alternateLink: "https://classroom.google.com/c/demo-ai/a/cw-5",
-    description: "Implement 8-Puzzle solver using A* heuristic evaluation. Compare Manhattan distance vs Misplaced tiles heuristic efficiency.",
-    isCurrentSemester: false,
-  },
-  {
-    id: "demo-cw-6",
-    title: "Docker Containerization & Kubernetes Cluster Manifests",
-    courseName: "MCA106 - Cloud Computing (Past Term)",
-    courseId: "c-cloud-106",
-    dueDate: new Date(Date.now() - 250 * 86400000).toISOString(),
-    dueTime: "23:59",
-    maxPoints: 15,
-    state: "SUBMITTED",
-    alternateLink: "https://classroom.google.com/c/demo-cloud/a/cw-6",
-    description: "Create Dockerfile for React/Node microservice. Deploy to local Minikube cluster using deployment.yaml and service.yaml configs.",
-    isCurrentSemester: false,
-  },
-];
 
 // Helper: Format Google Classroom API Date & Time
 function formatGoogleDateTime(dueDateObj?: any, dueTimeObj?: any): { dueDate: string | null; dueTime: string | null } {
@@ -159,12 +77,168 @@ function sortSubmissions(items: SubmissionItem[]): SubmissionItem[] {
   });
 }
 
+// ─── Fetch all pages for a given Google Classroom paginated endpoint ──────────
+async function fetchAllPages<T>(
+  buildUrl: (pageToken?: string) => string,
+  extractItems: (data: any) => T[],
+  getNextToken: (data: any) => string | undefined,
+  token: string
+): Promise<T[]> {
+  const results: T[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const url = buildUrl(pageToken);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) break;
+    const data = await res.json();
+    const items = extractItems(data);
+    if (items?.length) results.push(...items);
+    pageToken = getNextToken(data);
+  } while (pageToken);
+
+  return results;
+}
+
+// ─── Fetch student submission state for a single coursework item ──────────────
+async function fetchSubmissionState(
+  courseId: string,
+  cwId: string,
+  dueDate: string | null,
+  token: string
+): Promise<{ state: SubmissionItem["state"]; grade: number | null }> {
+  try {
+    const subRes = await fetch(
+      `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions?userId=me`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!subRes.ok) {
+      // Default to PENDING/OVERDUE based on due date
+      const isOverdue = dueDate ? new Date(dueDate).getTime() < Date.now() : false;
+      return { state: isOverdue ? "OVERDUE" : "PENDING", grade: null };
+    }
+
+    const subData = await subRes.json();
+    const studentSub = subData.studentSubmissions?.[0];
+
+    if (!studentSub) {
+      const isOverdue = dueDate ? new Date(dueDate).getTime() < Date.now() : false;
+      return { state: isOverdue ? "OVERDUE" : "PENDING", grade: null };
+    }
+
+    const stateRaw = studentSub.state;
+    let state: SubmissionItem["state"] = "PENDING";
+    let grade: number | null = null;
+
+    if (stateRaw === "TURNED_IN") {
+      state = studentSub.assignedGrade != null ? "GRADED" : "SUBMITTED";
+      grade = studentSub.assignedGrade ?? studentSub.draftGrade ?? null;
+    } else if (stateRaw === "RETURNED") {
+      state = "GRADED";
+      grade = studentSub.assignedGrade ?? studentSub.draftGrade ?? null;
+    } else {
+      // NEW / CREATED — check if overdue
+      if (dueDate && new Date(dueDate).getTime() < Date.now()) {
+        state = "OVERDUE";
+      }
+    }
+
+    return { state, grade };
+  } catch {
+    const isOverdue = dueDate ? new Date(dueDate).getTime() < Date.now() : false;
+    return { state: isOverdue ? "OVERDUE" : "PENDING", grade: null };
+  }
+}
+
+// ─── Process a single course: fetch all coursework + submissions in parallel ──
+async function processCourse(
+  course: any,
+  providerToken: string,
+  cutoff90Days: number
+): Promise<{
+  submissions: SubmissionItem[];
+  latestActivityMs: number;
+  hasRecentPendingOrOverdue: boolean;
+}> {
+  let latestActivityMs = 0;
+  if (course.creationTime) latestActivityMs = new Date(course.creationTime).getTime();
+  else if (course.updateTime) latestActivityMs = new Date(course.updateTime).getTime();
+
+  let hasRecentPendingOrOverdue = false;
+
+  // 1. Fetch all courseWork for this course
+  let courseWorks: any[] = [];
+  try {
+    courseWorks = await fetchAllPages(
+      (pageToken) =>
+        `https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=50${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
+      (data) => data.courseWork ?? [],
+      (data) => data.nextPageToken,
+      providerToken
+    );
+  } catch {
+    return { submissions: [], latestActivityMs, hasRecentPendingOrOverdue };
+  }
+
+  // 2. Fetch all student submissions in parallel
+  const submissionResults = await Promise.all(
+    courseWorks.map(async (cw): Promise<SubmissionItem | null> => {
+      try {
+        // Compute activity timestamp
+        let cwTime = 0;
+        if (cw.creationTime) cwTime = new Date(cw.creationTime).getTime();
+        else if (cw.updateTime) cwTime = new Date(cw.updateTime).getTime();
+
+        const { dueDate, dueTime } = formatGoogleDateTime(cw.dueDate, cw.dueTime);
+        if (dueDate) {
+          const dueMs = new Date(dueDate).getTime();
+          if (dueMs > cwTime) cwTime = dueMs;
+        }
+
+        if (cwTime > latestActivityMs) latestActivityMs = cwTime;
+
+        // Fetch submission state in parallel (handled inside fetchSubmissionState)
+        const { state, grade } = await fetchSubmissionState(course.id, cw.id, dueDate, providerToken);
+
+        // Flag course as active-semester if there's recent pending/overdue work
+        if ((state === "PENDING" || state === "OVERDUE") && dueDate) {
+          const dueDateMs = new Date(dueDate).getTime();
+          if (dueDateMs > cutoff90Days) hasRecentPendingOrOverdue = true;
+        } else if (state === "PENDING" && !dueDate) {
+          if (cwTime > cutoff90Days) hasRecentPendingOrOverdue = true;
+        }
+
+        return {
+          id: cw.id,
+          title: cw.title || "Untitled Assignment",
+          courseName: course.name || "General Subject",
+          courseId: course.id,
+          dueDate,
+          dueTime,
+          maxPoints: cw.maxPoints ?? null,
+          state,
+          alternateLink: cw.alternateLink || `https://classroom.google.com/c/${course.id}/a/${cw.id}`,
+          grade,
+          description: cw.description || "",
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const submissions = submissionResults.filter((s): s is SubmissionItem => s !== null);
+  return { submissions, latestActivityMs, hasRecentPendingOrOverdue };
+}
+
 const GetSubmissionsInputSchema = z
   .object({
     providerToken: z.string().optional(),
   })
   .optional();
 
+// ─── Main GCR server function (fully parallelized) ───────────────────────────
 export const getClassroomSubmissions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => GetSubmissionsInputSchema.parse(input))
@@ -179,218 +253,79 @@ export const getClassroomSubmissions = createServerFn({ method: "POST" })
       null;
 
     if (!providerToken) {
-      // Return sample demonstration coursework data along with connected = false banner trigger
+      // Return empty — frontend will show cached data from Supabase
       return {
         connected: false,
-        coursesCount: 4,
-        totalCoursesCount: 6,
-        assignments: sortSubmissions(DEMO_ASSIGNMENTS),
-        userEmail: user?.email ?? "student@acadsphere.edu",
+        coursesCount: 0,
+        totalCoursesCount: 0,
+        assignments: [],
+        userEmail: user?.email ?? undefined,
         error: "MISSING_SCOPES",
       } as ClassroomResponse;
     }
 
     try {
-      // 1. Fetch ALL enrolled Google Classroom courses with pagination support
-      const courses: any[] = [];
-      let pageToken: string | undefined = undefined;
+      // 1. Fetch ALL enrolled courses (first try with studentId=me, fallback to all)
+      let courses: any[] = [];
 
-      do {
-        const url: string = `https://classroom.googleapis.com/v1/courses?studentId=me&pageSize=50${
-          pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""
-        }`;
-        const coursesRes = await fetch(url, {
-          headers: { Authorization: `Bearer ${providerToken}` },
-        });
+      try {
+        courses = await fetchAllPages(
+          (pageToken) =>
+            `https://classroom.googleapis.com/v1/courses?studentId=me&pageSize=50${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
+          (data) => data.courses ?? [],
+          (data) => data.nextPageToken,
+          providerToken
+        );
+      } catch {}
 
-        if (!coursesRes.ok) {
-          if (courses.length === 0) {
-            const fallbackUrl: string = `https://classroom.googleapis.com/v1/courses?pageSize=50${
-              pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""
-            }`;
-            const fallbackRes = await fetch(fallbackUrl, {
-              headers: { Authorization: `Bearer ${providerToken}` },
-            });
-            if (!fallbackRes.ok) {
-              if (fallbackRes.status === 401) {
-                return {
-                  connected: false,
-                  coursesCount: 0,
-                  totalCoursesCount: 0,
-                  assignments: sortSubmissions(DEMO_ASSIGNMENTS),
-                  error: "Google authorization token expired. Please reconnect.",
-                } as ClassroomResponse;
-              }
-              throw new Error(`Google API error ${fallbackRes.status}`);
-            }
-            const fallbackData = await fallbackRes.json();
-            if (fallbackData.courses) courses.push(...fallbackData.courses);
-            pageToken = fallbackData.nextPageToken;
-            continue;
+      // Fallback: fetch without studentId filter if first call returned nothing
+      if (courses.length === 0) {
+        try {
+          const fallbackRes = await fetch(
+            "https://classroom.googleapis.com/v1/courses?pageSize=50",
+            { headers: { Authorization: `Bearer ${providerToken}` } }
+          );
+          if (fallbackRes.status === 401) {
+            return {
+              connected: false,
+              coursesCount: 0,
+              totalCoursesCount: 0,
+              assignments: [],
+              error: "Google authorization token expired. Please reconnect.",
+            } as ClassroomResponse;
           }
-          break;
-        }
-
-        const coursesData = await coursesRes.json();
-        if (coursesData.courses) {
-          courses.push(...coursesData.courses);
-        }
-        pageToken = coursesData.nextPageToken;
-      } while (pageToken);
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            courses = fallbackData.courses ?? [];
+          }
+        } catch {}
+      }
 
       // Filter active (non-archived) courses
-      const targetCourses = courses.filter((c) => !c.courseState || c.courseState === "ACTIVE");
-      const finalCourses = targetCourses.length > 0 ? targetCourses : courses;
+      const activeCourses = courses.filter((c) => !c.courseState || c.courseState === "ACTIVE");
+      const finalCourses = activeCourses.length > 0 ? activeCourses : courses;
 
       const now = Date.now();
-      const cutoff90Days = now - 90 * 86400 * 1000; // 90 days (3-month trimester activity window)
+      const cutoff90Days = now - 90 * 86400 * 1000;
 
-      // Structure data per course to calculate current trimester status dynamically
-      const courseStore = new Map<string, {
-        course: any;
-        submissions: SubmissionItem[];
-        latestActivityMs: number;
-        // Only true if there's a pending/overdue assignment whose due date is
-        // within the 90-day trimester window or in the future.
-        // Old year-stale unsubmitted work does NOT count.
-        hasRecentPendingOrOverdue: boolean;
-      }>();
+      // 2. Process ALL courses in parallel (coursework + submissions fetched concurrently)
+      const courseResults = await Promise.all(
+        finalCourses.map((course) => processCourse(course, providerToken, cutoff90Days))
+      );
 
-      for (const course of finalCourses) {
-        let creationMs = 0;
-        if (course.creationTime) creationMs = new Date(course.creationTime).getTime();
-        else if (course.updateTime) creationMs = new Date(course.updateTime).getTime();
-
-        courseStore.set(course.id, {
-          course,
-          submissions: [],
-          latestActivityMs: creationMs,
-          hasRecentPendingOrOverdue: false,
-        });
-      }
-
-      // 2. Fetch courseWork and studentSubmissions per course
-      for (const course of finalCourses) {
-        const store = courseStore.get(course.id)!;
-        try {
-          let cwPageToken: string | undefined = undefined;
-          const courseWorks: any[] = [];
-
-          do {
-            const cwUrl: string = `https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=50${
-              cwPageToken ? `&pageToken=${encodeURIComponent(cwPageToken)}` : ""
-            }`;
-            const cwRes = await fetch(cwUrl, {
-              headers: { Authorization: `Bearer ${providerToken}` },
-            });
-
-            if (!cwRes.ok) break;
-            const cwData = await cwRes.json();
-            if (cwData.courseWork) courseWorks.push(...cwData.courseWork);
-            cwPageToken = cwData.nextPageToken;
-          } while (cwPageToken);
-
-          for (const cw of courseWorks) {
-            try {
-              // Update latest activity timestamp for semester categorization
-              let cwTime = 0;
-              if (cw.creationTime) cwTime = new Date(cw.creationTime).getTime();
-              else if (cw.updateTime) cwTime = new Date(cw.updateTime).getTime();
-
-              const { dueDate, dueTime } = formatGoogleDateTime(cw.dueDate, cw.dueTime);
-              if (dueDate) {
-                const dueMs = new Date(dueDate).getTime();
-                if (dueMs > cwTime) cwTime = dueMs;
-              }
-
-              if (cwTime > store.latestActivityMs) {
-                store.latestActivityMs = cwTime;
-              }
-
-              const subRes = await fetch(
-                `https://classroom.googleapis.com/v1/courses/${course.id}/courseWork/${cw.id}/studentSubmissions?userId=me`,
-                { headers: { Authorization: `Bearer ${providerToken}` } }
-              );
-
-              let subState: SubmissionItem["state"] = "PENDING";
-              let grade: number | null = null;
-
-              if (subRes.ok) {
-                const subData = await subRes.json();
-                const studentSub = subData.studentSubmissions?.[0];
-
-                if (studentSub) {
-                  const stateRaw = studentSub.state;
-                  if (stateRaw === "TURNED_IN") {
-                    subState = studentSub.assignedGrade != null ? "GRADED" : "SUBMITTED";
-                    grade = studentSub.assignedGrade ?? studentSub.draftGrade ?? null;
-                  } else if (stateRaw === "RETURNED") {
-                    subState = "GRADED";
-                    grade = studentSub.assignedGrade ?? studentSub.draftGrade ?? null;
-                  }
-                }
-              }
-
-              // Check for Overdue status
-              if (subState === "PENDING" && dueDate) {
-                if (new Date(dueDate).getTime() < Date.now()) {
-                  subState = "OVERDUE";
-                }
-              }
-
-              // Only flag as "active trimester" work if the due date itself is
-              // recent (within 90-day trimester window) or in the future.
-              // This prevents stale year-old unsubmitted assignments from
-              // pulling past-semester courses into the active view.
-              if ((subState === "PENDING" || subState === "OVERDUE") && dueDate) {
-                const dueDateMs = new Date(dueDate).getTime();
-                if (dueDateMs > cutoff90Days) {
-                  store.hasRecentPendingOrOverdue = true;
-                }
-              } else if (subState === "PENDING" && !dueDate) {
-                // No due date at all — use the coursework creation time as proxy
-                if (cwTime > cutoff90Days) {
-                  store.hasRecentPendingOrOverdue = true;
-                }
-              }
-
-              store.submissions.push({
-                id: cw.id,
-                title: cw.title || "Untitled Assignment",
-                courseName: course.name || "General Subject",
-                courseId: course.id,
-                dueDate,
-                dueTime,
-                maxPoints: cw.maxPoints ?? null,
-                state: subState,
-                alternateLink: cw.alternateLink || `https://classroom.google.com/c/${course.id}/a/${cw.id}`,
-                grade,
-                description: cw.description || "",
-              });
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-
-      // 3. Classify courses into Current Semester (Active) vs Inactive (Past Semesters)
+      // 3. Classify courses and assemble final submission list
       const allSubmissions: SubmissionItem[] = [];
       const formattedCoursesList: CourseItem[] = [];
       let activeCoursesCount = 0;
 
-      for (const [_, entry] of courseStore.entries()) {
-        const { course, submissions, latestActivityMs, hasRecentPendingOrOverdue } = entry;
+      for (let i = 0; i < finalCourses.length; i++) {
+        const course = finalCourses[i];
+        const { submissions, latestActivityMs, hasRecentPendingOrOverdue } = courseResults[i];
 
-        // Current trimester classification criteria (universal for all students):
-        // 1. Has pending/overdue assignments with due dates within the 90-day trimester, OR
-        // 2. Has courseWork created/updated within the last 90 days
-        // NOTE: Stale year-old "OVERDUE" work from past semesters does NOT make
-        //       a course active — only recent due dates qualify.
         const isRecent = latestActivityMs > cutoff90Days;
         const isCurrentSemester = hasRecentPendingOrOverdue || isRecent;
 
-        if (isCurrentSemester) {
-          activeCoursesCount++;
-        }
+        if (isCurrentSemester) activeCoursesCount++;
 
         formattedCoursesList.push({
           id: course.id,
@@ -400,10 +335,7 @@ export const getClassroomSubmissions = createServerFn({ method: "POST" })
         });
 
         for (const sub of submissions) {
-          allSubmissions.push({
-            ...sub,
-            isCurrentSemester,
-          });
+          allSubmissions.push({ ...sub, isCurrentSemester });
         }
       }
 
@@ -420,10 +352,93 @@ export const getClassroomSubmissions = createServerFn({ method: "POST" })
       console.warn("Classroom API sync error:", err);
       return {
         connected: false,
-        coursesCount: 4,
-        totalCoursesCount: 6,
-        assignments: sortSubmissions(DEMO_ASSIGNMENTS),
+        coursesCount: 0,
+        totalCoursesCount: 0,
+        assignments: [],
         error: err.message || "Failed to reach Google Classroom API",
+      } as ClassroomResponse;
+    }
+  });
+
+// ─── Optimistic Cache: read classroom_tasks from Supabase ────────────────────
+export const getCachedClassroomTasks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { user } = context;
+    const sb = supabaseServer();
+
+    try {
+      const { data: rows, error } = await sb
+        .from("classroom_tasks")
+        .select("coursework_id, title, course_name, due_date, status")
+        .eq("user_id", user.id)
+        .order("due_date", { ascending: true, nullsFirst: false });
+
+      if (error || !rows || rows.length === 0) {
+        return {
+          connected: false,
+          coursesCount: 0,
+          totalCoursesCount: 0,
+          assignments: [],
+          fromCache: true,
+        } as ClassroomResponse;
+      }
+
+      const now = Date.now();
+
+      const assignments: SubmissionItem[] = rows.map((row: {
+        coursework_id: string;
+        title: string;
+        course_name: string;
+        due_date: string | null;
+        status: string;
+      }) => {
+        const dueDate = row.due_date ?? null;
+        const isOverdue =
+          row.status === "PENDING" && dueDate
+            ? new Date(dueDate).getTime() < now
+            : false;
+
+        const state: SubmissionItem["state"] =
+          row.status === "COMPLETED"
+            ? "SUBMITTED"
+            : isOverdue
+            ? "OVERDUE"
+            : "PENDING";
+
+        return {
+          id: row.coursework_id,
+          title: row.title,
+          courseName: row.course_name,
+          courseId: "",
+          dueDate,
+          dueTime: null,
+          maxPoints: null,
+          state,
+          alternateLink: `https://classroom.google.com`,
+          isCurrentSemester: true,
+          fromCache: true,
+        };
+      });
+
+      // Derive unique course names for count
+      const courseNames = new Set(assignments.map((a) => a.courseName).filter(Boolean));
+
+      return {
+        connected: false, // still not live-connected; GCR query will replace this
+        coursesCount: courseNames.size,
+        totalCoursesCount: courseNames.size,
+        assignments: sortSubmissions(assignments),
+        fromCache: true,
+      } as ClassroomResponse;
+
+    } catch {
+      return {
+        connected: false,
+        coursesCount: 0,
+        totalCoursesCount: 0,
+        assignments: [],
+        fromCache: true,
       } as ClassroomResponse;
     }
   });

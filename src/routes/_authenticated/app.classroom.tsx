@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import {
   getClassroomSubmissions,
+  getCachedClassroomTasks,
   type SubmissionItem,
   type ClassroomResponse,
 } from "@/lib/classroom.functions";
@@ -27,6 +28,7 @@ import {
   X,
   MessageSquare,
   Send,
+  Wifi,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/classroom")({
@@ -41,6 +43,8 @@ export const Route = createFileRoute("/_authenticated/app/classroom")({
 
 function ClassroomPage() {
   const fetchSubmissionsFn = useServerFn(getClassroomSubmissions);
+  const fetchCachedTasksFn = useServerFn(getCachedClassroomTasks);
+  const queryClient = useQueryClient();
 
   /* — UI State — */
   const [activeTab, setActiveTab] = useState<"ALL" | "PENDING" | "OVERDUE" | "COMPLETED" | "INACTIVE">("ALL");
@@ -75,8 +79,16 @@ function ClassroomPage() {
     };
   }, [hasToken]);
 
-  /* — Fetch Submissions via Server Function — */
-  const { data, isLoading, refetch } = useQuery<ClassroomResponse>({
+  /* — PHASE 1: Optimistic Cache — read from Supabase classroom_tasks instantly — */
+  const { data: cachedData } = useQuery<ClassroomResponse>({
+    queryKey: ["classroomCache"],
+    queryFn: () => fetchCachedTasksFn() as Promise<ClassroomResponse>,
+    staleTime: 30 * 1000, // Cache valid for 30 seconds
+    gcTime: 5 * 60 * 1000,
+  });
+
+  /* — PHASE 2: Live GCR Fetch — parallelized, uses cache as placeholder — */
+  const { data: liveData, isLoading: isLiveLoading, refetch } = useQuery<ClassroomResponse>({
     queryKey: ["classroomSubmissions", hasToken],
     queryFn: async () => {
       let googleToken =
@@ -99,10 +111,20 @@ function ClassroomPage() {
 
       return fetchSubmissionsFn({ data: { providerToken: googleToken } }) as Promise<ClassroomResponse>;
     },
-    refetchInterval: 60000,
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes in background
+    placeholderData: cachedData,  // Show cache immediately while GCR loads
   });
 
-  const isConnected = data?.connected ?? false;
+  // Determine what data to show: prefer live GCR, fall back to cache
+  const data = liveData ?? cachedData;
+  const isShowingCache = !liveData && !!cachedData?.assignments?.length;
+  // Truly loading = no data at all (not even cache)
+  const isLoading = isLiveLoading && !cachedData?.assignments?.length;
+  // Background refreshing = live is loading but we have cached/placeholder data
+  const isBackgroundRefreshing = isLiveLoading && !!cachedData?.assignments?.length;
+
+  const isConnected = liveData?.connected ?? false;
   const assignments = data?.assignments ?? [];
 
   /* — Manual Sync Handler — */
@@ -140,15 +162,25 @@ function ClassroomPage() {
 
   const handleSync = async () => {
     setIsRefreshing(true);
-    const result = await refetch();
-    // Quietly cache to DB for offline cron processing
-    if (result.data?.assignments) {
-      await syncTasksToDb(result.data.assignments);
-    }
-    setTimeout(() => {
+    try {
+      // Invalidate both queries to force fresh fetches
+      await queryClient.invalidateQueries({ queryKey: ["classroomSubmissions"] });
+      const result = await refetch();
+
+      // Quietly cache to DB and refresh the cache query
+      if (result.data?.assignments) {
+        await syncTasksToDb(result.data.assignments);
+        await queryClient.invalidateQueries({ queryKey: ["classroomCache"] });
+      }
+
+      toast.success("Classroom assignments synchronized!", {
+        description: "Live data refreshed from Google Classroom.",
+      });
+    } catch (err: any) {
+      toast.error("Sync failed", { description: err?.message || "Could not reach Google Classroom." });
+    } finally {
       setIsRefreshing(false);
-      toast.success("Classroom assignments synchronized!");
-    }, 600);
+    }
   };
 
   /* — Demo SMS Handler (for live presentations) — */
@@ -221,6 +253,7 @@ function ClassroomPage() {
           redirectTo: `${window.location.origin}/auth/callback`,
           queryParams: {
             prompt: "consent",
+            access_type: "offline",
           },
         },
       });
@@ -283,9 +316,12 @@ function ClassroomPage() {
 
     inactive = inactiveAssignments.length;
 
-    let activeSubjectsCount = data?.coursesCount ?? 4;
+    let activeSubjectsCount = data?.coursesCount ?? 0;
     if (data?.courses && data.courses.length > 0) {
       activeSubjectsCount = data.courses.filter((c) => c.isCurrentSemester !== false).length;
+    } else if (isShowingCache) {
+      // Derive from unique course names in cached assignments
+      activeSubjectsCount = new Set(activeAssignments.map((a) => a.courseName).filter(Boolean)).size;
     }
 
     return {
@@ -296,7 +332,7 @@ function ClassroomPage() {
       inactive,
       courses: activeSubjectsCount,
     };
-  }, [assignments, data]);
+  }, [assignments, data, isShowingCache]);
 
   /* — Filtered Assignments — */
   const filteredAssignments = useMemo(() => {
@@ -344,9 +380,27 @@ function ClassroomPage() {
                 Classroom Submissions
               </h1>
             </div>
-            <p className="text-xs text-muted-foreground font-sans max-w-xl leading-relaxed">
-              Track pending coursework, upcoming deadlines, and submission history across all your subjects.
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-muted-foreground font-sans max-w-xl leading-relaxed">
+                Track pending coursework, upcoming deadlines, and submission history across all your subjects.
+              </p>
+              {/* Live / Cache badge */}
+              {isBackgroundRefreshing ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-700 border border-amber-300/40 whitespace-nowrap shrink-0 animate-pulse">
+                  <Wifi className="h-2.5 w-2.5" />
+                  Syncing live…
+                </span>
+              ) : isConnected ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-300/40 whitespace-nowrap shrink-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+                  Live
+                </span>
+              ) : isShowingCache ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-700 border border-blue-300/40 whitespace-nowrap shrink-0">
+                  Cached
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -412,7 +466,9 @@ function ClassroomPage() {
                     Connect Google Classroom Account
                   </h3>
                   <p className="text-xs text-amber-800/80 dark:text-amber-300/80 leading-relaxed mt-0.5 max-w-2xl">
-                    Sync your live university assignments, deadlines, and grades. Demonstration MCA coursework is currently active below for reference.
+                    {isShowingCache
+                      ? "Showing your last synced assignments. Connect to load live deadlines and grades."
+                      : "Sync your live university assignments, deadlines, and grades from Google Classroom."}
                   </p>
                   <div className="flex items-center gap-3 mt-3">
                     <button
@@ -571,7 +627,7 @@ function ClassroomPage() {
 
         {/* ─── Submissions List / Grid ────────────────────────────────────── */}
         {isLoading ? (
-          /* Loading Skeleton State */
+          /* Full Loading Skeleton State (no cache available yet) */
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-32 rounded-2xl bg-[#F4F2EC] border border-[#E0DDD4] animate-pulse" />
@@ -583,9 +639,13 @@ function ClassroomPage() {
             <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
               <CheckCircle2 className="h-8 w-8" />
             </div>
-            <h3 className="text-base font-bold text-[#0A0A0A]">You're all caught up!</h3>
+            <h3 className="text-base font-bold text-[#0A0A0A]">
+              {!isConnected && !isShowingCache ? "Connect Google Classroom" : "You're all caught up!"}
+            </h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              {searchQuery || selectedCourse !== "ALL" || activeTab !== "ALL"
+              {!isConnected && !isShowingCache
+                ? "Authorize your Google account above to load your live coursework and deadlines."
+                : searchQuery || selectedCourse !== "ALL" || activeTab !== "ALL"
                 ? "No submissions match your selected filter criteria."
                 : "No pending or overdue assignments found across your Classroom subjects."}
             </p>
@@ -598,6 +658,7 @@ function ClassroomPage() {
               const isSubmitted = item.state === "SUBMITTED";
               const isGraded = item.state === "GRADED";
               const isReviewed = reviewedMap[item.id] ?? false;
+              const isCacheItem = item.fromCache === true;
 
               // Format Due Date Display
               let dueDisplay = "No Due Date";
@@ -655,6 +716,12 @@ function ClassroomPage() {
                           <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-700 dark:text-blue-400">
                             <Sparkles className="h-3 w-3" />
                             Graded
+                          </span>
+                        )}
+                        {/* Cache indicator — subtle pill shown only until live data loads */}
+                        {isCacheItem && isBackgroundRefreshing && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-[#0A0A0A]/5 text-muted-foreground border border-[#E0DDD4]">
+                            cached
                           </span>
                         )}
                       </div>
