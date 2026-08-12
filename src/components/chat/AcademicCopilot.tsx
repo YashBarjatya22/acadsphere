@@ -25,7 +25,8 @@ import {
   FileCheck2,
   AlertTriangle,
   RotateCcw,
-  BookOpen
+  BookOpen,
+  GraduationCap
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -1063,11 +1064,11 @@ Let's begin the exam practice. I will ask questions and evaluate your response:
         </button>
 
         <button
-          onClick={() => navigate({ to: "/app/notes" })}
+          onClick={() => navigate({ to: "/app/classroom" })}
           className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground"
         >
-          <BookOpen className="h-5 w-5" />
-          <span className="text-[10px]">Notes</span>
+          <GraduationCap className="h-5 w-5" />
+          <span className="text-[10px]">Classroom</span>
         </button>
       </div>
     </>

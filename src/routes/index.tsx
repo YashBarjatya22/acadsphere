@@ -11,7 +11,7 @@ import {
   Brain, Compass, Calendar, FileCheck2, LineChart, ArrowRight,
   Code, Volume2, Users, Sparkles, Award, Globe, Lock, Sun, Moon,
   BookOpen, CalendarDays, CheckCircle2, LayoutDashboard, User, Settings,
-  Loader2, LogIn, Zap
+  Loader2, LogIn, Zap, GraduationCap, Wand2, FileOutput
 } from "lucide-react";
 
 export const Route = createFileRoute("/")(({
