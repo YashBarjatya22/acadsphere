@@ -126,7 +126,7 @@ function ProfilePage() {
     : (sessionUser?.name || storedName || profile?.fullName || storedEmail?.split("@")[0] || "Christ Student");
   const displayEmail = sessionUser?.email || storedEmail || "student@christuniversity.in";
   const displayAvatar = sessionUser?.avatar || storedAvatar || "";
-  const displayDegree = profile?.degree || "MSc Big Data Analytics / MCA";
+  const displayDegree = profile?.degree || "MSc Big Data Analytics";
   const displayRole = isAdmin ? "Institutional Oversight Officer" : (profile?.targetRole || "Software Engineer / Data Scientist");
 
   const initials = displayName

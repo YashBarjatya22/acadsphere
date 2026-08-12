@@ -180,7 +180,7 @@ function CommunityPage() {
           id: p.id,
           name: p.full_name || p.email?.split("@")[0] || "Student",
           initials: getInitials(p.full_name || p.email?.split("@")[0] || "ST"),
-          department: p.degree || "Computer Science",
+          department: p.degree || "MSc Big Data Analytics",
           activity: p.target_role ? `Goal: ${p.target_role}` : "Active Student",
           status: "offline" as const,
         }));
@@ -601,7 +601,7 @@ function CommunityPage() {
 
   const onlineMembersCount = useMemo(() => {
     const classOnline = membersWithPresence.filter((m) => m.status === "online").length;
-    return Math.max(onlineUserIds.size, classOnline + (currentUser ? 1 : 0));
+    return Math.max(onlineUserIds.size, classOnline);
   }, [membersWithPresence, onlineUserIds, currentUser]);
 
   /* FILTER 1: Members for Direct Messages sidebar — ONLY show active conversation peers! */
@@ -1420,17 +1420,17 @@ function CommunityPage() {
                         const isMe = msg.sender_id === currentUser?.id;
                         return (
                           <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
-                            <div className={`flex items-end gap-1.5 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
-                              <div className={`max-w-[75%] md:max-w-[65%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-xs
+                            <div className={`flex items-end gap-1.5 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[80%] md:max-w-[70%]`}>
+                              <div className={`w-full px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-xs break-words whitespace-pre-wrap overflow-hidden
                                 ${isMe
-                                  ? "bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-br-xs font-medium"
-                                  : "bg-card border border-border text-foreground rounded-bl-xs"}`}>
+                                  ? "bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-br-sm font-medium"
+                                  : "bg-card border border-border text-foreground rounded-bl-sm"}`}>
                                 {msg.content}
                               </div>
                               {isMe && (
                                 <button
                                   onClick={() => handleDeleteDM(msg.id)}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1 shrink-0"
                                   title="Delete message"
                                 >
                                   <Trash2 className="h-3 w-3" />
