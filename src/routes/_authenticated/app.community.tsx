@@ -276,11 +276,6 @@ function CommunityPage() {
 
       setRecentDmMap(convMap);
       setActivePeerIds(peerOrder);
-
-      // Auto-select first conversation if in DM mode and no active peer selected
-      if (peerOrder.length > 0 && !activePeerIdRef.current) {
-        setActivePeerId(peerOrder[0]);
-      }
     } catch (err) {
       console.error("Failed to load recent DM conversations:", err);
     }
@@ -346,7 +341,7 @@ function CommunityPage() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
-      .channel("community-posts-realtime-v5")
+      .channel("community-posts-realtime-v6")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
         (payload) => {
           const p = payload.new as any;
@@ -500,7 +495,7 @@ function CommunityPage() {
 
     // 2. Postgres changes fallback
     const dbChannel = supabase
-      .channel("custom-dm-channel-v5")
+      .channel("custom-dm-channel-v6")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "direct_messages" },
@@ -863,12 +858,7 @@ function CommunityPage() {
               </button>
 
               <button
-                onClick={() => {
-                  setMainTab("dms");
-                  if (!activePeerId && conversationMembers.length > 0) {
-                    openChatWithPeer(conversationMembers[0].id);
-                  }
-                }}
+                onClick={() => setMainTab("dms")}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 relative ${
                   mainTab === "dms"
                     ? "bg-card text-foreground shadow-sm border border-border"
@@ -1107,53 +1097,63 @@ function CommunityPage() {
                       </div>
                     ) : (
                       <div className="space-y-1">
-                        {filteredMembers.map((member) => (
-                          <div
-                            key={member.id}
-                            onClick={() => {
-                              if (member.id !== currentUser?.id) {
-                                openChatWithPeer(member.id);
-                              }
-                            }}
-                            className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
-                              ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
-                                activePeerId === member.id ? "border-primary bg-primary/5" :
-                                "border-transparent hover:border-border hover:bg-accent/50"}`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="relative shrink-0">
-                                <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
-                                  {member.initials}
-                                </div>
-                                <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                                  {member.name}
-                                  {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
-                                </p>
-                                <p className="text-[9px] text-muted-foreground truncate">
-                                  <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                                    {member.status === "online" ? "● Online" : "○ Offline"}
-                                  </span>
-                                  {" · "}{member.department}
-                                </p>
-                              </div>
-                            </div>
-                            {member.id !== currentUser?.id && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                        {filteredMembers.map((member) => {
+                          const unread = recentDmMap[member.id]?.unreadCount || 0;
+                          return (
+                            <div
+                              key={member.id}
+                              onClick={() => {
+                                if (member.id !== currentUser?.id) {
                                   openChatWithPeer(member.id);
-                                }}
-                                className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
-                                title={`Message ${member.name}`}
-                              >
-                                <MessageCircle className="h-3.5 w-3.5 text-primary" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                                }
+                              }}
+                              className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
+                                ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
+                                  activePeerId === member.id ? "border-primary bg-primary/5" :
+                                  "border-transparent hover:border-border hover:bg-accent/50"}`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="relative shrink-0">
+                                  <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
+                                    {member.initials}
+                                  </div>
+                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                                      {member.name}
+                                      {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
+                                    </p>
+                                    {unread > 0 && (
+                                      <span className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
+                                        {unread}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-muted-foreground truncate">
+                                    <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                                      {member.status === "online" ? "● Online" : "○ Offline"}
+                                    </span>
+                                    {" · "}{member.department}
+                                  </p>
+                                </div>
+                              </div>
+                              {member.id !== currentUser?.id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openChatWithPeer(member.id);
+                                  }}
+                                  className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
+                                  title={`Message ${member.name}`}
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1331,9 +1331,17 @@ function CommunityPage() {
 
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
-                              <p className={`text-xs font-bold truncate transition-colors ${isActive ? "text-primary" : "text-foreground group-hover:text-primary"}`}>
-                                {member.name}
-                              </p>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className={`text-xs font-bold truncate transition-colors ${isActive ? "text-primary" : "text-foreground group-hover:text-primary"}`}>
+                                  {member.name}
+                                </p>
+                                {/* Prominent Green Unread Counter Badge Next To Classmate's Name */}
+                                {unread > 0 && (
+                                  <span className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
+                                    {unread}
+                                  </span>
+                                )}
+                              </div>
                               {timeStr && (
                                 <span className={`text-[8.5px] shrink-0 font-mono ${unread > 0 ? "text-emerald-600 font-bold" : "text-muted-foreground"}`}>
                                   {timeStr}
@@ -1346,9 +1354,9 @@ function CommunityPage() {
                                 {lastMsg || `${member.department}`}
                               </p>
 
-                              {/* WhatsApp-Style Green Unread Counter Badge */}
+                              {/* Additional Pill Badge if Unread */}
                               {unread > 0 && (
-                                <span className="shrink-0 min-w-[18px] h-4 px-1 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white flex items-center justify-center shadow-xs animate-pulse">
+                                <span className="shrink-0 min-w-[20px] h-4 px-1 rounded-full text-[9.5px] font-extrabold bg-emerald-500 text-white flex items-center justify-center shadow-xs animate-pulse">
                                   {unread}
                                 </span>
                               )}
