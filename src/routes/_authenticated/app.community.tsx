@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Users, MessageSquare, Heart, Plus, Search, Circle, Send, X,
   CheckCheck, MessageCircle, RefreshCw, UserCheck, UserPlus, Hash,
-  UsersRound, Loader2, Trash2, Lock
+  UsersRound, Loader2, Trash2, Lock, Globe, Sparkles, ChevronRight
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/community")({
@@ -38,7 +38,7 @@ interface ClassmateMember {
   status: "online" | "offline";
 }
 
-interface PrivateMessage {
+interface DirectMessage {
   id: string;
   sender_id: string;
   receiver_id: string;
@@ -95,10 +95,14 @@ function fmtTime(iso: string) {
 
 /* ─────────────────────────── Component ─────────────────────────── */
 
+type MainTab = "global" | "dms";
 type RightPanel = "members" | "groups";
 
 function CommunityPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  /* Main Navigation Mode: Global Community vs Direct Messages */
+  const [mainTab, setMainTab] = useState<MainTab>("global");
 
   /* Posts */
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -125,9 +129,9 @@ function CommunityPage() {
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [groupSubmitting, setGroupSubmitting] = useState(false);
 
-  /* Private DMs — Supabase-backed */
+  /* Direct Messages — Supabase direct_messages table */
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
-  const [dmMessages, setDmMessages] = useState<PrivateMessage[]>([]);
+  const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
   const [dmLoading, setDmLoading] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [dmSending, setDmSending] = useState(false);
@@ -236,7 +240,7 @@ function CommunityPage() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
-      .channel("community-posts-realtime-v2")
+      .channel("community-posts-realtime-v3")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
         (payload) => {
           const p = payload.new as any;
@@ -276,68 +280,110 @@ function CommunityPage() {
             post.id === p.post_id ? { ...post, likes: Math.max(0, post.likes - 1), likedByMe: p.user_id === currentUser.id ? false : post.likedByMe } : post
           ));
         })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") console.log("[Community] Posts channel subscribed ✓");
-      });
+      .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUser?.id]);
 
-  /* ── Fetch DM conversation ── */
+  /* ── Fetch DM conversation (direct_messages table with private_messages fallback) ── */
   const fetchDMs = useCallback(async (peerId: string) => {
     if (!currentUser?.id) return;
     setDmLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Direct Messages table lookup
+      const { data: dmData, error: dmError } = await supabase
+        .from("direct_messages")
+        .select("*")
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${currentUser.id})`)
+        .order("created_at", { ascending: true });
+
+      if (!dmError && dmData && dmData.length > 0) {
+        setDmMessages(dmData);
+        return;
+      }
+
+      // 2. Private Messages fallback lookup
+      const { data: pmData, error: pmError } = await supabase
         .from("private_messages")
         .select("*")
         .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${currentUser.id})`)
         .order("created_at", { ascending: true });
-      if (error) throw error;
-      setDmMessages(data || []);
+
+      if (!pmError && pmData) {
+        setDmMessages(pmData);
+        return;
+      }
+
+      setDmMessages(dmData || []);
     } catch (err) {
       console.error("Failed to load DMs:", err);
-      toast.error("Could not load messages");
+      toast.error("Could not load direct messages");
     } finally {
       setDmLoading(false);
     }
   }, [currentUser?.id]);
 
-  /* ── Load DMs when peer changes ── */
+  /* ── Load DMs when active peer changes ── */
   useEffect(() => {
     if (activePeerId && currentUser?.id) {
       fetchDMs(activePeerId);
     } else {
       setDmMessages([]);
     }
-  }, [activePeerId, currentUser?.id]);
+  }, [activePeerId, currentUser?.id, fetchDMs]);
 
-  /* ── Realtime: incoming private messages ── */
+  /* ── Realtime: incoming & outgoing direct_messages ── */
   useEffect(() => {
     if (!currentUser?.id) return;
+
     const channel = supabase
-      .channel(`private-messages-${currentUser.id}`)
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "private_messages", filter: `receiver_id=eq.${currentUser.id}` },
+      .channel("custom-all-channel")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "direct_messages" },
         (payload) => {
-          const msg = payload.new as PrivateMessage;
-          // Only append if the chat with this sender is currently open
-          if (msg.sender_id === activePeerIdRef.current) {
+          const msg = payload.new as DirectMessage;
+          const currentPeer = activePeerIdRef.current;
+          if (
+            (msg.sender_id === currentPeer && msg.receiver_id === currentUser.id) ||
+            (msg.sender_id === currentUser.id && msg.receiver_id === currentPeer)
+          ) {
             setDmMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev;
               return [...prev, msg];
             });
           }
-        })
-      .on("postgres_changes",
-        { event: "DELETE", schema: "public", table: "private_messages" },
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "direct_messages" },
         (payload) => {
           const p = payload.old as any;
           setDmMessages((prev) => prev.filter((m) => m.id !== p.id));
-        })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") console.log("[Community] DM channel subscribed ✓");
-      });
-    return () => { supabase.removeChannel(channel); };
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "private_messages" },
+        (payload) => {
+          const msg = payload.new as DirectMessage;
+          const currentPeer = activePeerIdRef.current;
+          if (
+            (msg.sender_id === currentPeer && msg.receiver_id === currentUser.id) ||
+            (msg.sender_id === currentUser.id && msg.receiver_id === currentPeer)
+          ) {
+            setDmMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev;
+              return [...prev, msg];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUser?.id]);
 
   /* ── Fetch groups ── */
@@ -456,6 +502,7 @@ function CommunityPage() {
     } catch (err) { console.error("Like error:", err); }
   };
 
+  /* Send DM to direct_messages table */
   const handleSendDM = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !activePeerId || !currentUser) return;
@@ -463,30 +510,41 @@ function CommunityPage() {
     const content = chatInput.trim();
     setChatInput("");
     // Optimistic message
-    const optimisticMsg: PrivateMessage = {
+    const optimisticMsg: DirectMessage = {
       id: `opt-${Date.now()}`, sender_id: currentUser.id,
       receiver_id: activePeerId, content, created_at: new Date().toISOString(),
     };
     setDmMessages((prev) => [...prev, optimisticMsg]);
     try {
-      const { data, error } = await supabase.from("private_messages").insert({
+      // Primary insert to direct_messages table
+      const { data, error } = await supabase.from("direct_messages").insert({
         sender_id: currentUser.id, receiver_id: activePeerId, content,
       }).select().single();
-      if (error) throw error;
-      setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? data : m));
+
+      if (error) {
+        // Fallback insert to private_messages table
+        const { data: pmData, error: pmError } = await supabase.from("private_messages").insert({
+          sender_id: currentUser.id, receiver_id: activePeerId, content,
+        }).select().single();
+        if (pmError) throw error;
+        setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? pmData : m));
+      } else {
+        setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? data : m));
+      }
     } catch (err: any) {
       setDmMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
       setChatInput(content);
-      toast.error("Failed to send: " + (err.message || ""));
+      toast.error("Failed to send message: " + (err.message || ""));
     } finally { setDmSending(false); }
   };
 
   const handleDeleteDM = async (msgId: string) => {
     try {
-      const { error } = await supabase.from("private_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
-      if (error) throw error;
+      await supabase.from("direct_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
+      await supabase.from("private_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
       setDmMessages((prev) => prev.filter((m) => m.id !== msgId));
-    } catch (err: any) {
+      toast.success("Message deleted");
+    } catch {
       toast.error("Could not delete message");
     }
   };
@@ -528,21 +586,60 @@ function CommunityPage() {
     <ChatLayout activeThreadId={null}>
       <div className="h-full bg-background text-foreground flex flex-col transition-colors duration-200 relative">
 
-        {/* Header */}
-        <div className="relative overflow-hidden px-6 py-4 border-b border-border shrink-0">
+        {/* Header with Mode Toggle: Global Community vs Direct Messages */}
+        <div className="relative overflow-hidden px-6 py-3.5 border-b border-border shrink-0 bg-card">
           <div className="absolute inset-0 bg-gradient-to-r from-pink-500/10 via-background to-rose-500/5 pointer-events-none" />
-          <div className="relative flex items-center justify-between">
+          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-md">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-md shrink-0">
                 <Users className="h-5 w-5 text-white" />
               </div>
               <div>
                 <h1 className="text-sm font-extrabold tracking-tight">Community Forum</h1>
                 <p className="text-[10px] text-muted-foreground">
-                  Shared class feed · Real-time presence · Private messaging
+                  Shared class feed · Real-time 1-on-1 Direct Messaging
                 </p>
               </div>
             </div>
+
+            {/* Central Navigation Pills: Global vs Direct Messages */}
+            <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-2xl border border-border">
+              <button
+                onClick={() => setMainTab("global")}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 ${
+                  mainTab === "global"
+                    ? "bg-card text-foreground shadow-sm border border-border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-card/50"
+                }`}
+              >
+                <Globe className="h-3.5 w-3.5 text-pink-500" />
+                <span>Global Community</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setMainTab("dms");
+                  if (!activePeerId && membersWithPresence.length > 0) {
+                    const firstPeer = membersWithPresence.find((m) => m.id !== currentUser?.id);
+                    if (firstPeer) setActivePeerId(firstPeer.id);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 ${
+                  mainTab === "dms"
+                    ? "bg-card text-foreground shadow-sm border border-border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-card/50"
+                }`}
+              >
+                <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
+                <span>Direct Messages</span>
+                {membersWithPresence.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-primary/10 text-primary">
+                    {membersWithPresence.filter((m) => m.id !== currentUser?.id).length}
+                  </span>
+                )}
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
               <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
                 <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500 animate-pulse" />
@@ -550,7 +647,7 @@ function CommunityPage() {
               </span>
               <Button
                 variant="outline" size="sm"
-                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); }}
+                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); if (activePeerId) fetchDMs(activePeerId); }}
                 className="h-7 text-[10px] gap-1 px-2.5" title="Refresh"
               >
                 <RefreshCw className={`h-3 w-3 ${membersLoading ? "animate-spin" : ""}`} />
@@ -560,447 +657,556 @@ function CommunityPage() {
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
+        {/* ── MODE 1: GLOBAL COMMUNITY VIEW ── */}
+        {mainTab === "global" && (
+          <div className="flex-1 flex overflow-hidden">
+            {/* Center: Community Feed */}
+            <main className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto scrollbar-thin bg-muted/10">
 
-          {/* Center: Community Feed */}
-          <main className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto scrollbar-thin bg-muted/10">
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text" placeholder="Search posts or authors..."
+                  value={search} onChange={(e) => setSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 text-xs bg-card border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
+                />
+              </div>
 
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                type="text" placeholder="Search posts or authors..."
-                value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full h-9 pl-9 pr-4 text-xs bg-card border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
-              />
-            </div>
-
-            {/* Post Composer */}
-            <Card className="border-border bg-card shadow-sm">
-              <CardContent className="p-4">
-                <form onSubmit={handlePost} className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(getInitials(currentUser?.user_metadata?.full_name || "You"))} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-1`}>
-                      {getInitials(currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "You")}
+              {/* Post Composer */}
+              <Card className="border-border bg-card shadow-sm">
+                <CardContent className="p-4">
+                  <form onSubmit={handlePost} className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(getInitials(currentUser?.user_metadata?.full_name || "You"))} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-1`}>
+                        {getInitials(currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "You")}
+                      </div>
+                      <Textarea
+                        placeholder="Share notes, ask a question, or post a tip to your class..."
+                        value={newPostText} onChange={(e) => setNewPostText(e.target.value)}
+                        className="flex-1 h-20 text-xs bg-muted/40 border-border resize-none focus:ring-1 focus:ring-primary"
+                        required
+                      />
                     </div>
-                    <Textarea
-                      placeholder="Share notes, ask a question, or post a tip to your class..."
-                      value={newPostText} onChange={(e) => setNewPostText(e.target.value)}
-                      className="flex-1 h-20 text-xs bg-muted/40 border-border resize-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
+                    <div className="flex justify-end">
+                      <Button type="submit" size="sm" disabled={postSubmitting || !newPostText.trim()}
+                        className="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs h-8 px-5 shadow-sm"
+                      >
+                        {postSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3.5 w-3.5 mr-1" />Post</>}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* Posts List */}
+              {postsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              ) : filteredPosts.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center space-y-2 p-8 rounded-2xl border border-dashed border-border">
+                    <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      {search ? "No posts match your search" : "No posts yet"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/70">Be the first to start a discussion!</p>
                   </div>
-                  <div className="flex justify-end">
-                    <Button type="submit" size="sm" disabled={postSubmitting || !newPostText.trim()}
-                      className="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs h-8 px-5 shadow-sm"
-                    >
-                      {postSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3.5 w-3.5 mr-1" />Post</>}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredPosts.map((post) => (
+                    <Card key={post.id} className="border-border bg-card shadow-sm hover:shadow-md transition-shadow group">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(post.author_initials)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                              {post.author_initials}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs font-bold text-foreground">{post.author_name}</p>
+                                {post.user_id !== currentUser?.id && (
+                                  <button
+                                    onClick={() => {
+                                      setActivePeerId(post.user_id);
+                                      setMainTab("dms");
+                                    }}
+                                    className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 transition-colors"
+                                  >
+                                    <MessageCircle className="h-3 w-3" /> DM
+                                  </button>
+                                )}
+                                {post.user_id === currentUser?.id && (
+                                  <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>
+                                )}
+                              </div>
+                              <p className="text-[9px] text-muted-foreground">{timeAgo(post.created_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Hash className="h-2.5 w-2.5" />general
+                            </span>
+                            {post.user_id === currentUser?.id && (
+                              <button
+                                onClick={() => handleDeletePost(post.id)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                                title="Delete post"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-foreground/90 leading-relaxed">{post.content}</p>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                          <button
+                            onClick={() => handleLike(post)}
+                            className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
+                          >
+                            <Heart className={`h-3.5 w-3.5 transition-all ${post.likedByMe ? "fill-red-500" : ""}`} />
+                            {post.likes} {post.likes === 1 ? "Like" : "Likes"}
+                          </button>
+
+                          {post.user_id !== currentUser?.id && (
+                            <button
+                              onClick={() => {
+                                setActivePeerId(post.user_id);
+                                setMainTab("dms");
+                              }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" /> Direct Message
+                            </button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+              <div ref={feedEndRef} />
+            </main>
+
+            {/* Right Panel: Members / Groups toggle */}
+            <aside className="w-64 border-l border-border bg-card flex flex-col gap-0 overflow-hidden shrink-0">
+              <div className="grid grid-cols-2 border-b border-border">
+                <button
+                  onClick={() => setRightPanel("members")}
+                  className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "members" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Users className="h-3 w-3" /> Classmates
+                </button>
+                <button
+                  onClick={() => { setRightPanel("groups"); fetchGroups(); }}
+                  className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "groups" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                >
+                  <UsersRound className="h-3 w-3" /> Groups
+                </button>
+              </div>
+
+              {/* Members panel */}
+              {rightPanel === "members" && (
+                <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                        Classmates Presence
+                      </p>
+                      <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
+                        <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1 mb-3 bg-muted/40 p-1 rounded-xl">
+                      <button onClick={() => setMemberFilter("all")}
+                        className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                        All ({membersWithPresence.length})
+                      </button>
+                      <button onClick={() => setMemberFilter("online")}
+                        className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
+                        <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
+                        ({membersWithPresence.filter((m) => m.status === "online").length})
+                      </button>
+                      <button onClick={() => setMemberFilter("offline")}
+                        className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                        <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
+                        ({membersWithPresence.filter((m) => m.status === "offline").length})
+                      </button>
+                    </div>
+
+                    <div className="relative mb-3">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                      <input type="text" placeholder="Filter classmate..."
+                        value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+                        className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
+                    {membersLoading ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div key={i} className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                        ))}
+                      </div>
+                    ) : filteredMembers.length === 0 ? (
+                      <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
+                        <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
+                        <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredMembers.map((member) => (
+                          <div
+                            key={member.id}
+                            onClick={() => {
+                              if (member.id !== currentUser?.id) {
+                                setActivePeerId(member.id);
+                                setMainTab("dms");
+                              }
+                            }}
+                            className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
+                              ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
+                                activePeerId === member.id ? "border-primary bg-primary/5" :
+                                "border-transparent hover:border-border hover:bg-accent/50"}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="relative shrink-0">
+                                <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
+                                  {member.initials}
+                                </div>
+                                <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                                  {member.name}
+                                  {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
+                                </p>
+                                <p className="text-[9px] text-muted-foreground truncate">
+                                  <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                                    {member.status === "online" ? "● Online" : "○ Offline"}
+                                  </span>
+                                  {" · "}{member.department}
+                                </p>
+                              </div>
+                            </div>
+                            {member.id !== currentUser?.id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePeerId(member.id);
+                                  setMainTab("dms");
+                                }}
+                                className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
+                                title={`Message ${member.name}`}
+                              >
+                                <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Groups panel */}
+              {rightPanel === "groups" && (
+                <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Class Groups</p>
+                    <Button size="sm" variant="outline" onClick={() => setShowCreateGroup(!showCreateGroup)} className="h-6 text-[10px] px-2 gap-1">
+                      <Plus className="h-2.5 w-2.5" /> New Group
                     </Button>
                   </div>
-                </form>
-              </CardContent>
-            </Card>
 
-            {/* Posts List */}
-            {postsLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />
-                ))}
-              </div>
-            ) : filteredPosts.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center space-y-2 p-8 rounded-2xl border border-dashed border-border">
-                  <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                  <p className="text-xs font-semibold text-muted-foreground">
-                    {search ? "No posts match your search" : "No posts yet"}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground/70">Be the first to start a discussion!</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredPosts.map((post) => (
-                  <Card key={post.id} className="border-border bg-card shadow-sm hover:shadow-md transition-shadow group">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(post.author_initials)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                            {post.author_initials}
+                  {showCreateGroup && (
+                    <Card className="border-primary/30 bg-primary/5">
+                      <CardContent className="p-3">
+                        <form onSubmit={handleCreateGroup} className="space-y-2">
+                          <input type="text" placeholder="Group name (e.g. DBMS Study)" value={newGroupName}
+                            onChange={(e) => setNewGroupName(e.target.value)}
+                            className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" required />
+                          <input type="text" placeholder="Description (optional)" value={newGroupDesc}
+                            onChange={(e) => setNewGroupDesc(e.target.value)}
+                            className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" />
+                          <div className="flex gap-1">
+                            <Button type="submit" size="sm" disabled={groupSubmitting || !newGroupName.trim()} className="flex-1 h-7 text-[10px] bg-primary text-white">
+                              {groupSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" onClick={() => setShowCreateGroup(false)} className="h-7 w-7 p-0">
+                              <X className="h-3 w-3" />
+                            </Button>
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs font-bold text-foreground">{post.author_name}</p>
-                              {post.user_id !== currentUser?.id && (
-                                <button
-                                  onClick={() => {
-                                    const found = membersWithPresence.find((m) => m.id === post.user_id);
-                                    if (found) setActivePeerId(found.id);
-                                    else {
-                                      // Open DM even if not found in members list yet
-                                      setActivePeerId(post.user_id);
-                                    }
-                                  }}
-                                  className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 transition-colors"
-                                >
-                                  <MessageCircle className="h-3 w-3" /> DM
-                                </button>
-                              )}
-                              {post.user_id === currentUser?.id && (
-                                <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>
-                              )}
-                            </div>
-                            <p className="text-[9px] text-muted-foreground">{timeAgo(post.created_at)}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Hash className="h-2.5 w-2.5" />general
-                          </span>
-                          {/* Delete button — only for own posts */}
-                          {post.user_id === currentUser?.id && (
-                            <button
-                              onClick={() => handleDeletePost(post.id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
-                              title="Delete post"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  )}
 
-                      <p className="text-xs text-foreground/90 leading-relaxed">{post.content}</p>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-border/40">
-                        <button
-                          onClick={() => handleLike(post)}
-                          className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
-                        >
-                          <Heart className={`h-3.5 w-3.5 transition-all ${post.likedByMe ? "fill-red-500" : ""}`} />
-                          {post.likes} {post.likes === 1 ? "Like" : "Likes"}
-                        </button>
-
-                        {post.user_id !== currentUser?.id && (
-                          <button
-                            onClick={() => {
-                              const found = membersWithPresence.find((m) => m.id === post.user_id);
-                              if (found) setActivePeerId(found.id);
-                              else setActivePeerId(post.user_id);
-                            }}
-                            className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" /> Direct Message
-                          </button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-            {/* Sentinel: auto-scroll target for newest post */}
-            <div ref={feedEndRef} />
-          </main>
-
-          {/* Right Panel: Members / Groups toggle */}
-          <aside className="w-64 border-l border-border bg-card flex flex-col gap-0 overflow-hidden shrink-0">
-
-            {/* Tab switcher */}
-            <div className="grid grid-cols-2 border-b border-border">
-              <button
-                onClick={() => setRightPanel("members")}
-                className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "members" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-              >
-                <Users className="h-3 w-3" /> Classmates
-              </button>
-              <button
-                onClick={() => { setRightPanel("groups"); fetchGroups(); }}
-                className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "groups" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-              >
-                <UsersRound className="h-3 w-3" /> Groups
-              </button>
-            </div>
-
-            {/* ── Members panel ── */}
-            {rightPanel === "members" && (
-              <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
-                      Classmates Presence
-                    </p>
-                    <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
-                      <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
-                    </span>
-                  </div>
-
-                  {/* Filter Pills */}
-                  <div className="grid grid-cols-3 gap-1 mb-3 bg-muted/40 p-1 rounded-xl">
-                    <button onClick={() => setMemberFilter("all")}
-                      className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
-                      All ({membersWithPresence.length})
-                    </button>
-                    <button onClick={() => setMemberFilter("online")}
-                      className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
-                      <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
-                      ({membersWithPresence.filter((m) => m.status === "online").length})
-                    </button>
-                    <button onClick={() => setMemberFilter("offline")}
-                      className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
-                      <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
-                      ({membersWithPresence.filter((m) => m.status === "offline").length})
-                    </button>
-                  </div>
-
-                  {/* Member Search */}
-                  <div className="relative mb-3">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                    <input type="text" placeholder="Filter classmate..."
-                      value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
-                      className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  {/* Member List */}
-                  {membersLoading ? (
-                    <div className="space-y-2">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <div key={i} className="h-10 bg-muted/40 animate-pulse rounded-xl" />
-                      ))}
-                    </div>
-                  ) : filteredMembers.length === 0 ? (
-                    <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
-                      <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
-                      <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
+                  {groupsLoading ? (
+                    <div className="space-y-2">{[1, 2].map((i) => <div key={i} className="h-16 bg-muted/40 animate-pulse rounded-xl" />)}</div>
+                  ) : groups.length === 0 ? (
+                    <div className="text-center p-6 rounded-xl border border-dashed border-border">
+                      <UsersRound className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
+                      <p className="text-[10px] font-semibold text-muted-foreground">No groups yet</p>
+                      <p className="text-[9px] text-muted-foreground/60">Create the first study group!</p>
                     </div>
                   ) : (
-                    <div className="space-y-1">
-                      {filteredMembers.map((member) => (
-                        <div
-                          key={member.id}
-                          onClick={() => setActivePeerId(member.id === currentUser?.id ? null : member.id)}
-                          className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
-                            ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
-                              activePeerId === member.id ? "border-primary bg-primary/5" :
-                              "border-transparent hover:border-border hover:bg-accent/50"}`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="relative shrink-0">
-                              <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
-                                {member.initials}
-                              </div>
-                              <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                            </div>
+                    <div className="space-y-2">
+                      {groups.map((group) => (
+                        <div key={group.id} className="p-2.5 rounded-xl border border-border bg-card hover:border-primary/30 transition-all">
+                          <div className="flex items-start justify-between gap-1">
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                                {member.name}
-                                {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
-                              </p>
-                              <p className="text-[9px] text-muted-foreground truncate">
-                                <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                                  {member.status === "online" ? "● Online" : "○ Offline"}
-                                </span>
-                                {" · "}{member.department}
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
+                                  <UsersRound className="h-3 w-3 text-white" />
+                                </div>
+                                <p className="text-xs font-bold text-foreground truncate">{group.name}</p>
+                              </div>
+                              {group.description && (
+                                <p className="text-[9px] text-muted-foreground mt-1 truncate">{group.description}</p>
+                              )}
+                              <p className="text-[9px] text-muted-foreground mt-0.5">
+                                {group.memberCount} member{group.memberCount !== 1 ? "s" : ""}
                               </p>
                             </div>
-                          </div>
-                          {member.id !== currentUser?.id && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); setActivePeerId(member.id); }}
-                              className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
-                              title={`Message ${member.name}`}
+                              onClick={() => handleJoinGroup(group.id, group.isMember || false)}
+                              className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg transition-all ${group.isMember ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
                             >
-                              <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                              {group.isMember ? "Leave" : <><UserPlus className="h-2.5 w-2.5 inline mr-0.5" />Join</>}
                             </button>
-                          )}
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* ── Groups panel ── */}
-            {rightPanel === "groups" && (
-              <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Class Groups</p>
-                  <Button size="sm" variant="outline" onClick={() => setShowCreateGroup(!showCreateGroup)} className="h-6 text-[10px] px-2 gap-1">
-                    <Plus className="h-2.5 w-2.5" /> New Group
-                  </Button>
-                </div>
-
-                {showCreateGroup && (
-                  <Card className="border-primary/30 bg-primary/5">
-                    <CardContent className="p-3">
-                      <form onSubmit={handleCreateGroup} className="space-y-2">
-                        <input type="text" placeholder="Group name (e.g. DBMS Study)" value={newGroupName}
-                          onChange={(e) => setNewGroupName(e.target.value)}
-                          className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" required />
-                        <input type="text" placeholder="Description (optional)" value={newGroupDesc}
-                          onChange={(e) => setNewGroupDesc(e.target.value)}
-                          className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" />
-                        <div className="flex gap-1">
-                          <Button type="submit" size="sm" disabled={groupSubmitting || !newGroupName.trim()} className="flex-1 h-7 text-[10px] bg-primary text-white">
-                            {groupSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => setShowCreateGroup(false)} className="h-7 w-7 p-0">
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </form>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {groupsLoading ? (
-                  <div className="space-y-2">{[1, 2].map((i) => <div key={i} className="h-16 bg-muted/40 animate-pulse rounded-xl" />)}</div>
-                ) : groups.length === 0 ? (
-                  <div className="text-center p-6 rounded-xl border border-dashed border-border">
-                    <UsersRound className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
-                    <p className="text-[10px] font-semibold text-muted-foreground">No groups yet</p>
-                    <p className="text-[9px] text-muted-foreground/60">Create the first study group!</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {groups.map((group) => (
-                      <div key={group.id} className="p-2.5 rounded-xl border border-border bg-card hover:border-primary/30 transition-all">
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
-                                <UsersRound className="h-3 w-3 text-white" />
-                              </div>
-                              <p className="text-xs font-bold text-foreground truncate">{group.name}</p>
-                            </div>
-                            {group.description && (
-                              <p className="text-[9px] text-muted-foreground mt-1 truncate">{group.description}</p>
-                            )}
-                            <p className="text-[9px] text-muted-foreground mt-0.5">
-                              {group.memberCount} member{group.memberCount !== 1 ? "s" : ""}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleJoinGroup(group.id, group.isMember || false)}
-                            className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg transition-all ${group.isMember ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
-                          >
-                            {group.isMember ? "Leave" : <><UserPlus className="h-2.5 w-2.5 inline mr-0.5" />Join</>}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </aside>
-        </div>
-
-        {/* ── Private Chat Drawer ── */}
-        {activePeer && (
-          <div className="fixed bottom-4 right-6 w-80 md:w-96 bg-card border border-border rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
-            style={{ animation: "slideUpFade 0.2s ease-out" }}>
-            {/* Header */}
-            <div className="p-3 bg-gradient-to-r from-primary/10 via-card to-card border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="relative">
-                  <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(activePeer.initials)} flex items-center justify-center text-white text-[10px] font-bold`}>
-                    {activePeer.initials}
-                  </div>
-                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${activePeer.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-foreground">{activePeer.name}</p>
-                  <p className="text-[9px] text-muted-foreground flex items-center gap-1">
-                    <Lock className="h-2.5 w-2.5" />
-                    <span className="text-[8px]">Private · End-to-end</span>
-                    <span className={`font-bold ${activePeer.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                      · {activePeer.status === "online" ? "🟢 Online" : "⚪ Offline"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActivePeerId(null)}
-                className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-center transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Chat Body */}
-            <div className="p-3 h-72 overflow-y-auto scrollbar-thin space-y-2.5 bg-muted/20">
-              {dmLoading ? (
-                <div className="h-full flex items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : dmMessages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-1">
-                  <MessageSquare className="h-6 w-6 text-muted-foreground/40" />
-                  <p className="text-xs font-bold text-foreground">Start a private conversation</p>
-                  <p className="text-[10px] text-muted-foreground">Your messages with {activePeer.name} are private</p>
-                </div>
-              ) : (
-                dmMessages.map((msg) => {
-                  const isMe = msg.sender_id === currentUser?.id;
-                  return (
-                    <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
-                      <div className={`flex items-end gap-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
-                        <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs leading-relaxed
-                          ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-card border border-border text-foreground rounded-bl-sm shadow-xs"}`}>
-                          {msg.content}
-                        </div>
-                        {/* Delete button for own messages */}
-                        {isMe && (
-                          <button
-                            onClick={() => handleDeleteDM(msg.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1"
-                            title="Delete message"
-                          >
-                            <Trash2 className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </div>
-                      <span className="text-[8px] text-muted-foreground mt-0.5 px-1 flex items-center gap-0.5">
-                        {fmtTime(msg.created_at)}
-                        {isMe && <CheckCheck className="h-2.5 w-2.5 text-blue-500 inline" />}
-                      </span>
-                    </div>
-                  );
-                })
               )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input Footer */}
-            <form onSubmit={handleSendDM} className="p-2 bg-card border-t border-border flex items-center gap-2">
-              <input
-                type="text"
-                placeholder={`Message ${activePeer.name.split(" ")[0]}...`}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 h-8 px-3 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
-                autoFocus
-              />
-              <Button
-                type="submit" size="sm"
-                className="h-8 w-8 p-0 bg-primary text-primary-foreground rounded-xl shrink-0"
-                disabled={!chatInput.trim() || dmSending}
-              >
-                {dmSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              </Button>
-            </form>
+            </aside>
           </div>
         )}
 
-        <style>{`
-          @keyframes slideUpFade {
-            from { opacity: 0; transform: translateY(16px); }
-            to   { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
+        {/* ── MODE 2: DIRECT MESSAGES DUAL-PANE VIEW ── */}
+        {mainTab === "dms" && (
+          <div className="flex-1 flex overflow-hidden">
+
+            {/* Left DM Sidebar: Classmates List */}
+            <aside className="w-72 md:w-80 border-r border-border bg-card flex flex-col shrink-0 overflow-hidden">
+              <div className="p-3 border-b border-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-extrabold tracking-tight flex items-center gap-1.5">
+                    <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
+                    Direct Messages
+                  </h2>
+                  <span className="text-[9px] text-muted-foreground font-semibold">
+                    {filteredMembers.filter((m) => m.id !== currentUser?.id).length} Classmates
+                  </span>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="grid grid-cols-3 gap-1 bg-muted/40 p-1 rounded-xl">
+                  <button onClick={() => setMemberFilter("all")}
+                    className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                    All
+                  </button>
+                  <button onClick={() => setMemberFilter("online")}
+                    className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
+                    <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
+                    Online
+                  </button>
+                  <button onClick={() => setMemberFilter("offline")}
+                    className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                    <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
+                    Offline
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <input type="text" placeholder="Search classmate..."
+                    value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+                    className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Classmates DM List */}
+              <div className="flex-1 overflow-y-auto p-2 scrollbar-thin space-y-1">
+                {membersLoading ? (
+                  <div className="space-y-2 p-2">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className="h-12 bg-muted/40 animate-pulse rounded-xl" />
+                    ))}
+                  </div>
+                ) : filteredMembers.filter((m) => m.id !== currentUser?.id).length === 0 ? (
+                  <div className="text-center p-6 rounded-xl border border-dashed border-border my-4">
+                    <UserCheck className="h-8 w-8 mx-auto text-muted-foreground/40 mb-1" />
+                    <p className="text-xs font-semibold text-muted-foreground">No classmates found</p>
+                  </div>
+                ) : (
+                  filteredMembers
+                    .filter((m) => m.id !== currentUser?.id)
+                    .map((member) => {
+                      const isActive = activePeerId === member.id;
+                      return (
+                        <div
+                          key={member.id}
+                          onClick={() => setActivePeerId(member.id)}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer group
+                            ${isActive
+                              ? "border-primary bg-primary/10 shadow-xs"
+                              : "border-transparent hover:border-border hover:bg-accent/40"}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative shrink-0">
+                              <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
+                                {member.initials}
+                              </div>
+                              <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className={`text-xs font-bold truncate transition-colors ${isActive ? "text-primary" : "text-foreground group-hover:text-primary"}`}>
+                                {member.name}
+                              </p>
+                              <p className="text-[9.5px] text-muted-foreground truncate">
+                                <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                                  {member.status === "online" ? "Online" : "Offline"}
+                                </span>
+                                {" · "}{member.department}
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isActive ? "text-primary translate-x-0.5" : "text-muted-foreground/40 group-hover:text-muted-foreground"}`} />
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </aside>
+
+            {/* Right DM Chat Area */}
+            <main className="flex-1 flex flex-col bg-muted/10 overflow-hidden">
+              {activePeer ? (
+                <>
+                  {/* Chat Window Header */}
+                  <div className="px-5 py-3.5 bg-card border-b border-border flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className={`h-10 w-10 rounded-full bg-gradient-to-br ${avatarColor(activePeer.initials)} flex items-center justify-center text-white text-xs font-bold shadow-sm`}>
+                          {activePeer.initials}
+                        </div>
+                        <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${activePeer.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-foreground">{activePeer.name}</h3>
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                          <span>{activePeer.department}</span>
+                          <span>·</span>
+                          <Lock className="h-2.5 w-2.5 text-emerald-500" />
+                          <span className="text-emerald-600 font-semibold">Real-time Direct Message</span>
+                          <span>·</span>
+                          <span className={`font-bold ${activePeer.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                            {activePeer.status === "online" ? "🟢 Active Now" : "⚪ Offline"}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Message History Body */}
+                  <div className="flex-1 p-4 overflow-y-auto scrollbar-thin space-y-3 bg-muted/20">
+                    {dmLoading ? (
+                      <div className="h-full flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                    ) : dmMessages.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2">
+                        <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-1">
+                          <MessageCircle className="h-7 w-7" />
+                        </div>
+                        <h4 className="text-sm font-bold text-foreground">Start a conversation with {activePeer.name}</h4>
+                        <p className="text-xs text-muted-foreground max-w-sm">
+                          Send a message to collaborate on coursework, discuss lab projects, or share study notes.
+                        </p>
+                      </div>
+                    ) : (
+                      dmMessages.map((msg) => {
+                        const isMe = msg.sender_id === currentUser?.id;
+                        return (
+                          <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
+                            <div className={`flex items-end gap-1.5 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                              <div className={`max-w-[75%] md:max-w-[65%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-xs
+                                ${isMe
+                                  ? "bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-br-xs font-medium"
+                                  : "bg-card border border-border text-foreground rounded-bl-xs"}`}>
+                                {msg.content}
+                              </div>
+                              {isMe && (
+                                <button
+                                  onClick={() => handleDeleteDM(msg.id)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-[8.5px] text-muted-foreground mt-1 px-1 flex items-center gap-1 font-mono">
+                              {fmtTime(msg.created_at)}
+                              {isMe && <CheckCheck className="h-3 w-3 text-blue-500 inline" />}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Input Footer */}
+                  <form onSubmit={handleSendDM} className="p-3 bg-card border-t border-border flex items-center gap-2 shadow-md">
+                    <input
+                      type="text"
+                      placeholder={`Message ${activePeer.name}...`}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      className="flex-1 h-10 px-4 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
+                      autoFocus
+                    />
+                    <Button
+                      type="submit"
+                      disabled={!chatInput.trim() || dmSending}
+                      className="h-10 px-5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs rounded-xl shadow-sm gap-1.5"
+                    >
+                      {dmSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-3.5 w-3.5" />Send</>}
+                    </Button>
+                  </form>
+                </>
+              ) : (
+                /* No Classmate Selected State */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3">
+                  <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/20 to-rose-600/20 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+                    <MessageCircle className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-base font-bold text-foreground">Your Direct Messages</h3>
+                  <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                    Select a classmate from the list on the left to start a persistent, real-time 1-on-1 direct message chat.
+                  </p>
+                </div>
+              )}
+            </main>
+
+          </div>
+        )}
+
       </div>
     </ChatLayout>
   );
