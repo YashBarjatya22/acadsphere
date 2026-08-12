@@ -14,14 +14,14 @@ export const Route = createFileRoute("/admin/live-activity")({
 });
 
 const DEMO_LIVE_STUDENTS = [
-  { id: "live-1", studentId: "1CR22CS045", name: "John Doe", department: "CSE", sem: "6", status: "Active", page: "Smart Notes", topic: "DBMS Normalization BCNF", duration: "42 mins", ip: "192.168.1.45" },
+  { id: "live-1", studentId: "1CR22CS045", name: "John Doe", department: "CSE", sem: "6", status: "Active", page: "Classroom", topic: "DBMS Normalization BCNF", duration: "42 mins", ip: "192.168.1.45" },
   { id: "live-2", studentId: "1CR22CS088", name: "Evana Joseph", department: "CSE", sem: "6", status: "Active", page: "AI Assistant", topic: "OS Banker's Algorithm", duration: "24 mins", ip: "192.168.1.88" },
-  { id: "live-3", studentId: "1CR22EC012", name: "Rahul Kumar", department: "ECE", sem: "4", status: "Active", page: "Lab Helper", topic: "Web Tech React Hooks", duration: "49 mins", ip: "192.168.1.12" },
+  { id: "live-3", studentId: "1CR22EC012", name: "Rahul Kumar", department: "ECE", sem: "4", status: "Active", page: "Classroom", topic: "Web Tech React Hooks", duration: "49 mins", ip: "192.168.1.12" },
   { id: "live-4", studentId: "1CR22IS034", name: "Ananya Sharma", department: "ISE", sem: "6", status: "Active", page: "AI Assistant", topic: "Network TCP Handshake", duration: "18 mins", ip: "192.168.1.34" },
-  { id: "live-5", studentId: "1CR22ME019", name: "Karthik Raja", department: "MECH", sem: "4", status: "Idle", page: "Smart Notes", topic: "Thermodynamics Revision", duration: "1 hr 12 mins", ip: "192.168.1.19" },
-  { id: "live-6", studentId: "1CR22CV008", name: "Priya Nair", department: "CIVIL", sem: "2", status: "Active", page: "Smart Notes", topic: "Structural Analysis", duration: "35 mins", ip: "192.168.1.08" },
-  { id: "live-7", studentId: "1CR22MC052", name: "Vikramaditya Singh", department: "MCA", sem: "4", status: "Active", page: "Resume Builder", topic: "Mock Interview Prep", duration: "55 mins", ip: "192.168.1.52" },
-  { id: "live-8", studentId: "1CR22CS142", name: "Sneha Hegde", department: "CSE", sem: "6", status: "Active", page: "Resume Builder", topic: "ATS Keyword Check", duration: "15 mins", ip: "192.168.1.142" },
+  { id: "live-5", studentId: "1CR22ME019", name: "Karthik Raja", department: "MECH", sem: "4", status: "Idle", page: "Attendance", topic: "Thermodynamics Revision", duration: "1 hr 12 mins", ip: "192.168.1.19" },
+  { id: "live-6", studentId: "1CR22CV008", name: "Priya Nair", department: "CIVIL", sem: "2", status: "Active", page: "Classroom", topic: "Structural Analysis", duration: "35 mins", ip: "192.168.1.08" },
+  { id: "live-7", studentId: "1CR22MC052", name: "Vikramaditya Singh", department: "MCA", sem: "4", status: "Active", page: "Resume Tailorer", topic: "Mock Interview Prep", duration: "55 mins", ip: "192.168.1.52" },
+  { id: "live-8", studentId: "1CR22CS142", name: "Sneha Hegde", department: "CSE", sem: "6", status: "Active", page: "Resume Tailorer", topic: "ATS Keyword Check", duration: "15 mins", ip: "192.168.1.142" },
 ];
 
 function LiveActivityPage() {

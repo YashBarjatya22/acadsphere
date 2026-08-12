@@ -16,6 +16,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as ApiSyncAttendanceRouteImport } from './routes/api/sync-attendance'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminStudentsRouteImport } from './routes/admin/students'
@@ -23,21 +24,18 @@ import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminSecurityRouteImport } from './routes/admin/security'
 import { Route as AdminRolesRouteImport } from './routes/admin/roles'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
-import { Route as AdminNotesMonitoringRouteImport } from './routes/admin/notes-monitoring'
 import { Route as AdminLiveActivityRouteImport } from './routes/admin/live-activity'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin/audit-logs'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
 import { Route as AdminAcademicMonitoringRouteImport } from './routes/admin/academic-monitoring'
 import { Route as AuthenticatedPaperSimplifierRouteImport } from './routes/_authenticated/paper-simplifier'
-import { Route as AuthenticatedNotesGapAnalyzerRouteImport } from './routes/_authenticated/notes-gap-analyzer'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as AuthenticatedAppStudentsRouteImport } from './routes/_authenticated/app.students'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
+import { Route as AuthenticatedAppResumeBuilderRouteImport } from './routes/_authenticated/app.resume-builder'
 import { Route as AuthenticatedAppResumeAnalyzerRouteImport } from './routes/_authenticated/app.resume-analyzer'
 import { Route as AuthenticatedAppProfileRouteImport } from './routes/_authenticated/app.profile'
-import { Route as AuthenticatedAppNotesRouteImport } from './routes/_authenticated/app.notes'
-import { Route as AuthenticatedAppLabBuddyRouteImport } from './routes/_authenticated/app.lab-buddy'
 import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticated/app.extra'
 import { Route as AuthenticatedAppConversionsRouteImport } from './routes/_authenticated/app.conversions'
 import { Route as AuthenticatedAppCommunityRouteImport } from './routes/_authenticated/app.community'
@@ -83,6 +81,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => AuthRoute,
 } as any)
+const ApiSyncAttendanceRoute = ApiSyncAttendanceRouteImport.update({
+  id: '/api/sync-attendance',
+  path: '/api/sync-attendance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -118,11 +121,6 @@ const AdminReportsRoute = AdminReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AdminRouteRoute,
 } as any)
-const AdminNotesMonitoringRoute = AdminNotesMonitoringRouteImport.update({
-  id: '/notes-monitoring',
-  path: '/notes-monitoring',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
 const AdminLiveActivityRoute = AdminLiveActivityRouteImport.update({
   id: '/live-activity',
   path: '/live-activity',
@@ -154,12 +152,6 @@ const AuthenticatedPaperSimplifierRoute =
     path: '/paper-simplifier',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedNotesGapAnalyzerRoute =
-  AuthenticatedNotesGapAnalyzerRouteImport.update({
-    id: '/notes-gap-analyzer',
-    path: '/notes-gap-analyzer',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/app/',
   path: '/app/',
@@ -177,6 +169,12 @@ const AuthenticatedAppSettingsRoute =
     path: '/app/settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAppResumeBuilderRoute =
+  AuthenticatedAppResumeBuilderRouteImport.update({
+    id: '/app/resume-builder',
+    path: '/app/resume-builder',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppResumeAnalyzerRoute =
   AuthenticatedAppResumeAnalyzerRouteImport.update({
     id: '/app/resume-analyzer',
@@ -188,17 +186,6 @@ const AuthenticatedAppProfileRoute = AuthenticatedAppProfileRouteImport.update({
   path: '/app/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedAppNotesRoute = AuthenticatedAppNotesRouteImport.update({
-  id: '/app/notes',
-  path: '/app/notes',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAppLabBuddyRoute =
-  AuthenticatedAppLabBuddyRouteImport.update({
-    id: '/app/lab-buddy',
-    path: '/app/lab-buddy',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAppExtraRoute = AuthenticatedAppExtraRouteImport.update({
   id: '/app/extra',
   path: '/app/extra',
@@ -264,14 +251,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
   '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/live-activity': typeof AdminLiveActivityRoute
-  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/security': typeof AdminSecurityRoute
@@ -279,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/sync-attendance': typeof ApiSyncAttendanceRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
@@ -291,10 +277,9 @@ export interface FileRoutesByFullPath {
   '/app/community': typeof AuthenticatedAppCommunityRoute
   '/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
-  '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
-  '/app/notes': typeof AuthenticatedAppNotesRoute
   '/app/profile': typeof AuthenticatedAppProfileRoute
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/app/resume-builder': typeof AuthenticatedAppResumeBuilderRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/students': typeof AuthenticatedAppStudentsRoute
   '/app/': typeof AuthenticatedAppIndexRoute
@@ -303,14 +288,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
   '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/live-activity': typeof AdminLiveActivityRoute
-  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/security': typeof AdminSecurityRoute
@@ -318,6 +301,7 @@ export interface FileRoutesByTo {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/sync-attendance': typeof ApiSyncAttendanceRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin': typeof AdminIndexRoute
   '/app/$threadId': typeof AuthenticatedAppThreadIdRoute
@@ -330,10 +314,9 @@ export interface FileRoutesByTo {
   '/app/community': typeof AuthenticatedAppCommunityRoute
   '/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
-  '/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
-  '/app/notes': typeof AuthenticatedAppNotesRoute
   '/app/profile': typeof AuthenticatedAppProfileRoute
   '/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/app/resume-builder': typeof AuthenticatedAppResumeBuilderRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
   '/app/students': typeof AuthenticatedAppStudentsRoute
   '/app': typeof AuthenticatedAppIndexRoute
@@ -345,14 +328,12 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/_authenticated/notes-gap-analyzer': typeof AuthenticatedNotesGapAnalyzerRoute
   '/_authenticated/paper-simplifier': typeof AuthenticatedPaperSimplifierRoute
   '/admin/academic-monitoring': typeof AdminAcademicMonitoringRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/live-activity': typeof AdminLiveActivityRoute
-  '/admin/notes-monitoring': typeof AdminNotesMonitoringRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/security': typeof AdminSecurityRoute
@@ -360,6 +341,7 @@ export interface FileRoutesById {
   '/admin/students': typeof AdminStudentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/sync-attendance': typeof ApiSyncAttendanceRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
   '/_authenticated/app/$threadId': typeof AuthenticatedAppThreadIdRoute
@@ -372,10 +354,9 @@ export interface FileRoutesById {
   '/_authenticated/app/community': typeof AuthenticatedAppCommunityRoute
   '/_authenticated/app/conversions': typeof AuthenticatedAppConversionsRoute
   '/_authenticated/app/extra': typeof AuthenticatedAppExtraRoute
-  '/_authenticated/app/lab-buddy': typeof AuthenticatedAppLabBuddyRoute
-  '/_authenticated/app/notes': typeof AuthenticatedAppNotesRoute
   '/_authenticated/app/profile': typeof AuthenticatedAppProfileRoute
   '/_authenticated/app/resume-analyzer': typeof AuthenticatedAppResumeAnalyzerRoute
+  '/_authenticated/app/resume-builder': typeof AuthenticatedAppResumeBuilderRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
   '/_authenticated/app/students': typeof AuthenticatedAppStudentsRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
@@ -387,14 +368,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/sitemap.xml'
-    | '/notes-gap-analyzer'
     | '/paper-simplifier'
     | '/admin/academic-monitoring'
     | '/admin/analytics'
     | '/admin/announcements'
     | '/admin/audit-logs'
     | '/admin/live-activity'
-    | '/admin/notes-monitoring'
     | '/admin/reports'
     | '/admin/roles'
     | '/admin/security'
@@ -402,6 +381,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/api/sync-attendance'
     | '/auth/callback'
     | '/admin/'
     | '/app/$threadId'
@@ -414,10 +394,9 @@ export interface FileRouteTypes {
     | '/app/community'
     | '/app/conversions'
     | '/app/extra'
-    | '/app/lab-buddy'
-    | '/app/notes'
     | '/app/profile'
     | '/app/resume-analyzer'
+    | '/app/resume-builder'
     | '/app/settings'
     | '/app/students'
     | '/app/'
@@ -426,14 +405,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/sitemap.xml'
-    | '/notes-gap-analyzer'
     | '/paper-simplifier'
     | '/admin/academic-monitoring'
     | '/admin/analytics'
     | '/admin/announcements'
     | '/admin/audit-logs'
     | '/admin/live-activity'
-    | '/admin/notes-monitoring'
     | '/admin/reports'
     | '/admin/roles'
     | '/admin/security'
@@ -441,6 +418,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/api/sync-attendance'
     | '/auth/callback'
     | '/admin'
     | '/app/$threadId'
@@ -453,10 +431,9 @@ export interface FileRouteTypes {
     | '/app/community'
     | '/app/conversions'
     | '/app/extra'
-    | '/app/lab-buddy'
-    | '/app/notes'
     | '/app/profile'
     | '/app/resume-analyzer'
+    | '/app/resume-builder'
     | '/app/settings'
     | '/app/students'
     | '/app'
@@ -467,14 +444,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/sitemap.xml'
-    | '/_authenticated/notes-gap-analyzer'
     | '/_authenticated/paper-simplifier'
     | '/admin/academic-monitoring'
     | '/admin/analytics'
     | '/admin/announcements'
     | '/admin/audit-logs'
     | '/admin/live-activity'
-    | '/admin/notes-monitoring'
     | '/admin/reports'
     | '/admin/roles'
     | '/admin/security'
@@ -482,6 +457,7 @@ export interface FileRouteTypes {
     | '/admin/students'
     | '/admin/users'
     | '/api/chat'
+    | '/api/sync-attendance'
     | '/auth/callback'
     | '/admin/'
     | '/_authenticated/app/$threadId'
@@ -494,10 +470,9 @@ export interface FileRouteTypes {
     | '/_authenticated/app/community'
     | '/_authenticated/app/conversions'
     | '/_authenticated/app/extra'
-    | '/_authenticated/app/lab-buddy'
-    | '/_authenticated/app/notes'
     | '/_authenticated/app/profile'
     | '/_authenticated/app/resume-analyzer'
+    | '/_authenticated/app/resume-builder'
     | '/_authenticated/app/settings'
     | '/_authenticated/app/students'
     | '/_authenticated/app/'
@@ -510,6 +485,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiSyncAttendanceRoute: typeof ApiSyncAttendanceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -563,6 +539,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/api/sync-attendance': {
+      id: '/api/sync-attendance'
+      path: '/api/sync-attendance'
+      fullPath: '/api/sync-attendance'
+      preLoaderRoute: typeof ApiSyncAttendanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -612,13 +595,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReportsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
-    '/admin/notes-monitoring': {
-      id: '/admin/notes-monitoring'
-      path: '/notes-monitoring'
-      fullPath: '/admin/notes-monitoring'
-      preLoaderRoute: typeof AdminNotesMonitoringRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
     '/admin/live-activity': {
       id: '/admin/live-activity'
       path: '/live-activity'
@@ -661,13 +637,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPaperSimplifierRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/notes-gap-analyzer': {
-      id: '/_authenticated/notes-gap-analyzer'
-      path: '/notes-gap-analyzer'
-      fullPath: '/notes-gap-analyzer'
-      preLoaderRoute: typeof AuthenticatedNotesGapAnalyzerRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/app/': {
       id: '/_authenticated/app/'
       path: '/app'
@@ -689,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/resume-builder': {
+      id: '/_authenticated/app/resume-builder'
+      path: '/app/resume-builder'
+      fullPath: '/app/resume-builder'
+      preLoaderRoute: typeof AuthenticatedAppResumeBuilderRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/resume-analyzer': {
       id: '/_authenticated/app/resume-analyzer'
       path: '/app/resume-analyzer'
@@ -701,20 +677,6 @@ declare module '@tanstack/react-router' {
       path: '/app/profile'
       fullPath: '/app/profile'
       preLoaderRoute: typeof AuthenticatedAppProfileRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/app/notes': {
-      id: '/_authenticated/app/notes'
-      path: '/app/notes'
-      fullPath: '/app/notes'
-      preLoaderRoute: typeof AuthenticatedAppNotesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/app/lab-buddy': {
-      id: '/_authenticated/app/lab-buddy'
-      path: '/app/lab-buddy'
-      fullPath: '/app/lab-buddy'
-      preLoaderRoute: typeof AuthenticatedAppLabBuddyRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/extra': {
@@ -791,7 +753,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedNotesGapAnalyzerRoute: typeof AuthenticatedNotesGapAnalyzerRoute
   AuthenticatedPaperSimplifierRoute: typeof AuthenticatedPaperSimplifierRoute
   AuthenticatedAppThreadIdRoute: typeof AuthenticatedAppThreadIdRoute
   AuthenticatedAppAiAssistantRoute: typeof AuthenticatedAppAiAssistantRoute
@@ -803,17 +764,15 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppCommunityRoute: typeof AuthenticatedAppCommunityRoute
   AuthenticatedAppConversionsRoute: typeof AuthenticatedAppConversionsRoute
   AuthenticatedAppExtraRoute: typeof AuthenticatedAppExtraRoute
-  AuthenticatedAppLabBuddyRoute: typeof AuthenticatedAppLabBuddyRoute
-  AuthenticatedAppNotesRoute: typeof AuthenticatedAppNotesRoute
   AuthenticatedAppProfileRoute: typeof AuthenticatedAppProfileRoute
   AuthenticatedAppResumeAnalyzerRoute: typeof AuthenticatedAppResumeAnalyzerRoute
+  AuthenticatedAppResumeBuilderRoute: typeof AuthenticatedAppResumeBuilderRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
   AuthenticatedAppStudentsRoute: typeof AuthenticatedAppStudentsRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedNotesGapAnalyzerRoute: AuthenticatedNotesGapAnalyzerRoute,
   AuthenticatedPaperSimplifierRoute: AuthenticatedPaperSimplifierRoute,
   AuthenticatedAppThreadIdRoute: AuthenticatedAppThreadIdRoute,
   AuthenticatedAppAiAssistantRoute: AuthenticatedAppAiAssistantRoute,
@@ -825,10 +784,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppCommunityRoute: AuthenticatedAppCommunityRoute,
   AuthenticatedAppConversionsRoute: AuthenticatedAppConversionsRoute,
   AuthenticatedAppExtraRoute: AuthenticatedAppExtraRoute,
-  AuthenticatedAppLabBuddyRoute: AuthenticatedAppLabBuddyRoute,
-  AuthenticatedAppNotesRoute: AuthenticatedAppNotesRoute,
   AuthenticatedAppProfileRoute: AuthenticatedAppProfileRoute,
   AuthenticatedAppResumeAnalyzerRoute: AuthenticatedAppResumeAnalyzerRoute,
+  AuthenticatedAppResumeBuilderRoute: AuthenticatedAppResumeBuilderRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
   AuthenticatedAppStudentsRoute: AuthenticatedAppStudentsRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
@@ -843,7 +801,6 @@ interface AdminRouteRouteChildren {
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminLiveActivityRoute: typeof AdminLiveActivityRoute
-  AdminNotesMonitoringRoute: typeof AdminNotesMonitoringRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminRolesRoute: typeof AdminRolesRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
@@ -859,7 +816,6 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminLiveActivityRoute: AdminLiveActivityRoute,
-  AdminNotesMonitoringRoute: AdminNotesMonitoringRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminRolesRoute: AdminRolesRoute,
   AdminSecurityRoute: AdminSecurityRoute,
@@ -890,6 +846,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiSyncAttendanceRoute: ApiSyncAttendanceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

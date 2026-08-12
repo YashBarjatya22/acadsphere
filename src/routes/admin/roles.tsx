@@ -15,9 +15,8 @@ const ROLES = [
 ];
 
 const MODULES = [
-  "Dashboard", "AI Assistant", "Smart Notes",
-  "Lab Helper", "Resume Builder",
-  "Attendance", "Community", "Profile",
+  "Dashboard", "AI Assistant", "Classroom",
+  "Resume Tailorer", "Attendance", "Community", "Profile",
   "Student Management", "User Management", "Announcements",
   "Reports", "Analytics", "Audit Logs", "System Settings",
 ];
@@ -25,8 +24,8 @@ const MODULES = [
 // Default permission matrix
 const DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
   super_admin: Object.fromEntries(MODULES.map((m) => [m, true])),
-  admin: Object.fromEntries(MODULES.map((m) => [m, !["AI Assistant", "Smart Notes", "Lab Helper", "Resume Builder"].includes(m)])),
-  faculty: Object.fromEntries(MODULES.map((m) => [m, ["Dashboard", "AI Assistant", "Smart Notes", "Attendance", "Community", "Profile", "Announcements"].includes(m)])),
+  admin: Object.fromEntries(MODULES.map((m) => [m, !["AI Assistant", "Resume Tailorer"].includes(m)])),
+  faculty: Object.fromEntries(MODULES.map((m) => [m, ["Dashboard", "AI Assistant", "Classroom", "Attendance", "Community", "Profile", "Announcements"].includes(m)])),
   class_rep: Object.fromEntries(MODULES.map((m) => [m, ["Dashboard", "Community", "Announcements", "Profile"].includes(m)])),
   student: Object.fromEntries(MODULES.map((m) => [m, !["Student Management", "User Management", "Announcements", "Reports", "Analytics", "Audit Logs", "System Settings"].includes(m)])),
 };

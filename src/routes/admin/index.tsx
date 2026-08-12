@@ -201,9 +201,9 @@ function AdminDashboard() {
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             {[
-              { name: "John Doe", usn: "1CR22CS045", dept: "CSE", sem: "6", status: "Online", page: "Smart Notes", login: "9:12 AM", session: "42 mins" },
+              { name: "John Doe", usn: "1CR22CS045", dept: "CSE", sem: "6", status: "Online", page: "Classroom", login: "9:12 AM", session: "42 mins" },
               { name: "Evana Joseph", usn: "1CR22CS088", dept: "CSE", sem: "6", status: "Online", page: "AI Assistant", login: "9:30 AM", session: "24 mins" },
-              { name: "Rahul Kumar", usn: "1CR22EC012", dept: "ECE", sem: "4", status: "Online", page: "Lab Helper", login: "9:05 AM", session: "49 mins" },
+              { name: "Rahul Kumar", usn: "1CR22EC012", dept: "ECE", sem: "4", status: "Online", page: "Resume Tailorer", login: "9:05 AM", session: "49 mins" },
             ].map((s) => (
               <div key={s.usn} className="flex items-center justify-between p-3 rounded-xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/80 dark:border-zinc-800">
                 <div className="flex items-center gap-3">

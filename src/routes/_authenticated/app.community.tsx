@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,79 +7,60 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Users, MessageSquare, Heart, Plus, Search, Hash, Circle, Send, X,
-  CheckCheck, MessageCircle, RefreshCw, Sparkles, UserCheck
+  Users, MessageSquare, Heart, Plus, Search, Circle, Send, X,
+  CheckCheck, MessageCircle, RefreshCw, UserCheck, UserPlus, Hash,
+  UsersRound, Loader2, Trash2, Lock
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/community")({
   component: CommunityPage,
 });
 
-interface Post {
+/* ─────────────────────────── Types ─────────────────────────── */
+
+interface CommunityPost {
   id: string;
-  author: string;
-  avatar: string;
-  channel: string;
+  user_id: string;
+  author_name: string;
+  author_initials: string;
   content: string;
   likes: number;
-  likedByMe: boolean;
-  time: string;
-  timestamp: number;
+  created_at: string;
+  likedByMe?: boolean;
 }
 
-interface PeerMember {
+interface ClassmateMember {
   id: string;
   name: string;
-  avatar: string;
+  initials: string;
   department: string;
-  semester: string;
-  status: "online" | "offline";
   activity: string;
-  lastSeen?: string;
+  status: "online" | "offline";
 }
 
-interface DirectMessage {
+interface PrivateMessage {
   id: string;
-  sender: "me" | "peer";
-  text: string;
-  timestamp: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
 }
 
-const STORAGE_KEY_POSTS = "acadsphere_community_posts";
-const STORAGE_KEY_CHATS = "acadsphere_community_chats_v2";
+interface Group {
+  id: string;
+  name: string;
+  description: string;
+  created_by: string;
+  memberCount?: number;
+  isMember?: boolean;
+}
 
-const INITIAL_POSTS: Post[] = [
-  { id: "1", author: "Yash Barjatya", avatar: "YB", channel: "#placement-prep", content: "Just compiled a list of 50 core SQL JOIN questions commonly asked in product-based company interviews. Focus on INNER JOIN vs LEFT JOIN edge cases.", likes: 18, likedByMe: false, time: "2h ago", timestamp: Date.now() - 7200000 },
-  { id: "2", author: "Rohan Patel", avatar: "RP", channel: "#dbms-lab", content: "Is anyone getting connection errors in DBMS Lab Exercise 4 on Port 1433? Sharing the working SQLite / MySQL connection string configuration here.", likes: 8, likedByMe: false, time: "5h ago", timestamp: Date.now() - 18000000 },
-  { id: "3", author: "Sneha Kapoor", avatar: "SK", channel: "#viva-questions", content: "Pro tip for OS Lab: Examiners are heavily focusing on Semaphore vs Mutex differences and Producer-Consumer problem in C. Review the code templates on Lab Helper!", likes: 25, likedByMe: false, time: "1d ago", timestamp: Date.now() - 86400000 },
-  { id: "4", author: "Neha Sharma", avatar: "NS", channel: "#general-chat", content: "Sharing the career roadmap I built using AcadSphere — it scheduled my revision sessions automatically based on my weakest topics.", likes: 31, likedByMe: false, time: "2d ago", timestamp: Date.now() - 172800000 },
-  { id: "5", author: "Arjun Singh", avatar: "AS", channel: "#placement-prep", content: "Amazon SDE-1 campus placement drive schedule has been announced. Make sure your ATS Resume score is above 85% on Resume Builder before applying!", likes: 14, likedByMe: false, time: "3d ago", timestamp: Date.now() - 259200000 },
-];
-
-const CHANNELS = [
-  { name: "all", label: "All Topics", icon: Hash, count: 5 },
-  { name: "#placement-prep", label: "placement-prep", icon: Hash, count: 2 },
-  { name: "#dbms-lab", label: "dbms-lab", icon: Hash, count: 1 },
-  { name: "#viva-questions", label: "viva-questions", icon: Hash, count: 1 },
-  { name: "#general-chat", label: "general-chat", icon: Hash, count: 1 },
-  { name: "#study-groups", label: "study-groups", icon: Hash, count: 0 },
-];
-
-const AUTOMATED_REPLIES: Record<string, string[]> = {
-  default: [
-    "Hey! Thanks for texting. I'm currently working on my coursework and will get back to you shortly!",
-    "Got your message! Let's catch up during the lab break.",
-    "Hi! Thanks for reaching out via AcadSphere Community Chat.",
-    "Hey! Comparing notes for tomorrow's session. Let's study together!"
-  ]
-};
+/* ─────────────────────────── Helpers ─────────────────────────── */
 
 function getInitials(name: string): string {
   if (!name) return "ST";
   const parts = name.trim().split(" ").filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
 }
 
@@ -91,303 +72,457 @@ function avatarColor(initials: string) {
     "from-rose-500 to-red-600",
     "from-amber-500 to-orange-600",
     "from-cyan-500 to-blue-600",
+    "from-fuchsia-500 to-pink-600",
+    "from-lime-500 to-green-600",
   ];
   const code = initials ? initials.charCodeAt(0) : 0;
   return colors[code % colors.length];
 }
 
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/* ─────────────────────────── Component ─────────────────────────── */
+
+type RightPanel = "members" | "groups";
+
 function CommunityPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [members, setMembers] = useState<PeerMember[]>([]);
-  const [isLoadingMembers, setIsLoadingMembers] = useState(true);
+
+  /* Posts */
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [newPostText, setNewPostText] = useState("");
+  const [postSubmitting, setPostSubmitting] = useState(false);
+  const [search, setSearch] = useState("");
+
+  /* Classmates presence */
+  const [members, setMembers] = useState<ClassmateMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-
-  const [posts, setPosts] = useState<Post[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_POSTS);
-      return saved ? JSON.parse(saved) : INITIAL_POSTS;
-    } catch { return INITIAL_POSTS; }
-  });
-
-  const [chats, setChats] = useState<Record<string, DirectMessage[]>>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_CHATS);
-      return saved ? JSON.parse(saved) : {};
-    } catch { return {}; }
-  });
-
-  const [activePeerId, setActivePeerId] = useState<string | null>(null);
-  const [chatInputText, setChatInputText] = useState("");
   const [memberFilter, setMemberFilter] = useState<"all" | "online" | "offline">("all");
   const [memberSearch, setMemberSearch] = useState("");
 
-  const [newPostText, setNewPostText] = useState("");
-  const [newPostChannel, setNewPostChannel] = useState("#general-chat");
-  const [activeChannel, setActiveChannel] = useState("all");
-  const [search, setSearch] = useState("");
+  /* Right panel */
+  const [rightPanel, setRightPanel] = useState<RightPanel>("members");
 
-  // 1. Fetch live student profiles from Supabase
-  const fetchProfiles = async () => {
-    setIsLoadingMembers(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
+  /* Groups */
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [groupSubmitting, setGroupSubmitting] = useState(false);
+
+  /* Private DMs — Supabase-backed */
+  const [activePeerId, setActivePeerId] = useState<string | null>(null);
+  const [dmMessages, setDmMessages] = useState<PrivateMessage[]>([]);
+  const [dmLoading, setDmLoading] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [dmSending, setDmSending] = useState(false);
+
+  /* Refs */
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const feedEndRef = useRef<HTMLDivElement>(null);
+  const activePeerIdRef = useRef<string | null>(null);
+  useEffect(() => { activePeerIdRef.current = activePeerId; }, [activePeerId]);
+
+  /* ── Bootstrap: get current user ── */
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
       setCurrentUser(user);
+    });
+  }, []);
 
-      const { data: profilesData, error } = await supabase
-        .from("profiles")
-        .select("*, students(*)");
-
-      if (error) {
-        console.error("Error fetching student profiles from Supabase:", error);
-      }
-
-      if (profilesData && profilesData.length > 0) {
-        const mappedMembers: PeerMember[] = profilesData
-          .filter((p: any) => p.id !== user?.id)
-          .map((p: any) => {
-            const studentInfo = Array.isArray(p.students) ? p.students[0] : p.students;
-            const fullName = p.full_name || "Classmate";
-            return {
-              id: p.id,
-              name: fullName,
-              avatar: getInitials(fullName),
-              department: studentInfo?.department || p.degree || "Computer Science",
-              semester: studentInfo?.semester || "Sem 6",
-              status: "offline" as const,
-              activity: p.target_role ? `Goal: ${p.target_role}` : "Active Student",
-            };
-          });
-        setMembers(mappedMembers);
-      } else {
-        setMembers([]);
+  /* ── Fetch ALL classmate profiles via DB function ── */
+  const fetchProfiles = async () => {
+    setMembersLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("get_all_students");
+      if (error) { console.error("Error fetching students:", error); return; }
+      if (data) {
+        const mapped: ClassmateMember[] = data.map((p: any) => ({
+          id: p.id,
+          name: p.full_name || p.email?.split("@")[0] || "Student",
+          initials: getInitials(p.full_name || p.email?.split("@")[0] || "ST"),
+          department: p.degree || "Computer Science",
+          activity: p.target_role ? `Goal: ${p.target_role}` : "Active Student",
+          status: "offline" as const,
+        }));
+        setMembers(mapped);
       }
     } catch (err) {
-      console.error("Failed to load classmate profiles:", err);
-      setMembers([]);
+      console.error("Failed to load students:", err);
     } finally {
-      setIsLoadingMembers(false);
+      setMembersLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchProfiles();
-  }, []);
+  useEffect(() => { if (currentUser) fetchProfiles(); }, [currentUser?.id]);
 
-  // 2. Establish Supabase Realtime Presence Channel
+  /* ── Realtime Presence ── */
   useEffect(() => {
     if (!currentUser?.id) return;
-
-    const room = supabase.channel("online-users", {
+    const room = supabase.channel("community-presence", {
       config: { presence: { key: currentUser.id } },
     });
-
+    const syncPresence = () => {
+      const state = room.presenceState();
+      const onlineSet = new Set<string>();
+      Object.keys(state).forEach((key) => {
+        onlineSet.add(key);
+        const presences = state[key] as any[];
+        presences?.forEach((p) => { if (p.user_id) onlineSet.add(p.user_id); });
+      });
+      setOnlineUserIds(onlineSet);
+    };
     room
-      .on("presence", { event: "sync" }, () => {
-        const state = room.presenceState();
-        const onlineSet = new Set<string>();
-
-        Object.keys(state).forEach((key) => {
-          onlineSet.add(key);
-          const presences = state[key] as any[];
-          presences?.forEach((p) => {
-            if (p.user_id) onlineSet.add(p.user_id);
-          });
-        });
-
-        setOnlineUserIds(onlineSet);
-      })
-      .on("presence", { event: "join" }, () => {
-        const state = room.presenceState();
-        const onlineSet = new Set<string>();
-        Object.keys(state).forEach((key) => {
-          onlineSet.add(key);
-          const presences = state[key] as any[];
-          presences?.forEach((p) => {
-            if (p.user_id) onlineSet.add(p.user_id);
-          });
-        });
-        setOnlineUserIds(onlineSet);
-      })
-      .on("presence", { event: "leave" }, () => {
-        const state = room.presenceState();
-        const onlineSet = new Set<string>();
-        Object.keys(state).forEach((key) => {
-          onlineSet.add(key);
-          const presences = state[key] as any[];
-          presences?.forEach((p) => {
-            if (p.user_id) onlineSet.add(p.user_id);
-          });
-        });
-        setOnlineUserIds(onlineSet);
-      })
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          await room.track({
-            user_id: currentUser.id,
-            online_at: new Date().toISOString(),
-          });
+          await room.track({ user_id: currentUser.id, online_at: new Date().toISOString() });
         }
       });
-
-    return () => {
-      supabase.removeChannel(room);
-    };
+    return () => { supabase.removeChannel(room); };
   }, [currentUser?.id]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_POSTS, JSON.stringify(posts));
-  }, [posts]);
+  /* ── Fetch community posts ── */
+  const fetchPosts = useCallback(async (uid?: string) => {
+    setPostsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("community_posts")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      const userId = uid || currentUser?.id;
+      let likedPostIds = new Set<string>();
+      if (userId) {
+        const { data: likeData } = await supabase
+          .from("community_post_likes").select("post_id").eq("user_id", userId);
+        if (likeData) likedPostIds = new Set(likeData.map((l: any) => l.post_id));
+      }
+      const mapped: CommunityPost[] = (data || []).map((p: any) => ({
+        id: p.id, user_id: p.user_id,
+        author_name: p.author_name || "", author_initials: p.author_initials || "",
+        content: p.content, likes: p.likes || 0, created_at: p.created_at,
+        likedByMe: likedPostIds.has(p.id),
+      }));
+      setPosts(mapped);
+    } catch (err) {
+      console.error("Failed to fetch posts:", err);
+      toast.error("Could not refresh posts — showing cached feed");
+    } finally {
+      setPostsLoading(false);
+    }
+  }, [currentUser?.id]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats));
-  }, [chats]);
+  useEffect(() => { if (currentUser?.id) fetchPosts(currentUser.id); }, [currentUser?.id]);
 
-  // Combine members with realtime online status
-  const membersWithPresence = useMemo(() => {
-    return members.map((m) => ({
-      ...m,
-      status: onlineUserIds.has(m.id) ? ("online" as const) : ("offline" as const),
-    }));
-  }, [members, onlineUserIds]);
+  /* ── Realtime: community posts ── */
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = supabase
+      .channel("community-posts-realtime-v2")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
+        (payload) => {
+          const p = payload.new as any;
+          const newPost: CommunityPost = {
+            id: p.id, user_id: p.user_id, author_name: p.author_name || "",
+            author_initials: p.author_initials || "", content: p.content,
+            likes: p.likes || 0, created_at: p.created_at, likedByMe: false,
+          };
+          setPosts((prev) => {
+            if (prev.some((x) => x.id === newPost.id)) return prev;
+            return [...prev, newPost];
+          });
+        })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "community_posts" },
+        (payload) => {
+          const p = payload.new as any;
+          setPosts((prev) => prev.map((post) =>
+            post.id === p.id ? { ...post, likes: p.likes ?? post.likes, content: p.content ?? post.content } : post
+          ));
+        })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "community_posts" },
+        (payload) => {
+          const p = payload.old as any;
+          setPosts((prev) => prev.filter((post) => post.id !== p.id));
+        })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_post_likes" },
+        (payload) => {
+          const p = payload.new as any;
+          setPosts((prev) => prev.map((post) =>
+            post.id === p.post_id ? { ...post, likes: post.likes + 1, likedByMe: p.user_id === currentUser.id ? true : post.likedByMe } : post
+          ));
+        })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "community_post_likes" },
+        (payload) => {
+          const p = payload.old as any;
+          setPosts((prev) => prev.map((post) =>
+            post.id === p.post_id ? { ...post, likes: Math.max(0, post.likes - 1), likedByMe: p.user_id === currentUser.id ? false : post.likedByMe } : post
+          ));
+        })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") console.log("[Community] Posts channel subscribed ✓");
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
+  /* ── Fetch DM conversation ── */
+  const fetchDMs = useCallback(async (peerId: string) => {
+    if (!currentUser?.id) return;
+    setDmLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("private_messages")
+        .select("*")
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${currentUser.id})`)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      setDmMessages(data || []);
+    } catch (err) {
+      console.error("Failed to load DMs:", err);
+      toast.error("Could not load messages");
+    } finally {
+      setDmLoading(false);
+    }
+  }, [currentUser?.id]);
+
+  /* ── Load DMs when peer changes ── */
+  useEffect(() => {
+    if (activePeerId && currentUser?.id) {
+      fetchDMs(activePeerId);
+    } else {
+      setDmMessages([]);
+    }
+  }, [activePeerId, currentUser?.id]);
+
+  /* ── Realtime: incoming private messages ── */
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = supabase
+      .channel(`private-messages-${currentUser.id}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "private_messages", filter: `receiver_id=eq.${currentUser.id}` },
+        (payload) => {
+          const msg = payload.new as PrivateMessage;
+          // Only append if the chat with this sender is currently open
+          if (msg.sender_id === activePeerIdRef.current) {
+            setDmMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev;
+              return [...prev, msg];
+            });
+          }
+        })
+      .on("postgres_changes",
+        { event: "DELETE", schema: "public", table: "private_messages" },
+        (payload) => {
+          const p = payload.old as any;
+          setDmMessages((prev) => prev.filter((m) => m.id !== p.id));
+        })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") console.log("[Community] DM channel subscribed ✓");
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
+  /* ── Fetch groups ── */
+  const fetchGroups = async () => {
+    if (!currentUser?.id) return;
+    setGroupsLoading(true);
+    try {
+      const { data: groupData, error } = await supabase
+        .from("community_groups").select("*, community_group_members(user_id)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const mapped: Group[] = (groupData || []).map((g: any) => ({
+        id: g.id, name: g.name, description: g.description || "", created_by: g.created_by,
+        memberCount: g.community_group_members?.length || 0,
+        isMember: g.community_group_members?.some((m: any) => m.user_id === currentUser?.id),
+      }));
+      setGroups(mapped);
+    } catch (err) { console.error("Failed to load groups:", err); }
+    finally { setGroupsLoading(false); }
+  };
+
+  useEffect(() => { if (currentUser?.id && rightPanel === "groups") fetchGroups(); }, [currentUser?.id, rightPanel]);
+
+  /* ── Auto-scroll ── */
+  useEffect(() => { feedEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [posts.length]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [dmMessages.length, activePeerId]);
+
+  /* ── Derived data ── */
+  const membersWithPresence = useMemo(() =>
+    members.map((m) => ({ ...m, status: onlineUserIds.has(m.id) ? ("online" as const) : ("offline" as const) })),
+    [members, onlineUserIds]
+  );
 
   const onlineMembersCount = useMemo(() => {
-    const classmatesOnline = membersWithPresence.filter((m) => m.status === "online").length;
-    return Math.max(onlineUserIds.size, classmatesOnline + (currentUser ? 1 : 0));
+    const classOnline = membersWithPresence.filter((m) => m.status === "online").length;
+    return Math.max(onlineUserIds.size, classOnline + (currentUser ? 1 : 0));
   }, [membersWithPresence, onlineUserIds, currentUser]);
 
-  const offlineMembersCount = useMemo(() => {
-    return membersWithPresence.filter((m) => m.status === "offline").length;
-  }, [membersWithPresence]);
-
-  const filteredPosts = useMemo(() => {
-    let list = activeChannel === "all" ? posts : posts.filter((p) => p.channel === activeChannel);
-    if (search.trim()) {
-      list = list.filter((p) =>
-        p.content.toLowerCase().includes(search.toLowerCase()) ||
-        p.author.toLowerCase().includes(search.toLowerCase())
-      );
-    }
-    return [...list].sort((a, b) => b.timestamp - a.timestamp);
-  }, [posts, activeChannel, search]);
-
   const filteredMembers = useMemo(() => {
-    return membersWithPresence.filter((m) => {
+    const result = membersWithPresence.filter((m) => {
       if (memberFilter === "online" && m.status !== "online") return false;
       if (memberFilter === "offline" && m.status !== "offline") return false;
       if (memberSearch.trim()) {
-        const query = memberSearch.toLowerCase();
-        return m.name.toLowerCase().includes(query) || m.department.toLowerCase().includes(query);
+        const q = memberSearch.toLowerCase();
+        return m.name.toLowerCase().includes(q) || m.department.toLowerCase().includes(q);
       }
       return true;
     });
+    return result.sort((a, b) => {
+      if (a.status === b.status) return a.name.localeCompare(b.name);
+      return a.status === "online" ? -1 : 1;
+    });
   }, [membersWithPresence, memberFilter, memberSearch]);
 
-  const activePeer = useMemo(() => {
-    if (!activePeerId) return null;
-    return membersWithPresence.find((m) => m.id === activePeerId) || null;
-  }, [membersWithPresence, activePeerId]);
+  const filteredPosts = useMemo(() => {
+    if (!search.trim()) return posts;
+    const q = search.toLowerCase();
+    return posts.filter((p) => p.content.toLowerCase().includes(q) || p.author_name.toLowerCase().includes(q));
+  }, [posts, search]);
 
-  const currentPeerMessages = activePeerId ? chats[activePeerId] || [] : [];
+  const activePeer = useMemo(() =>
+    activePeerId ? membersWithPresence.find((m) => m.id === activePeerId) || null : null,
+    [membersWithPresence, activePeerId]
+  );
 
-  const handlePost = (e: React.FormEvent) => {
+  /* ── Actions ── */
+  const handlePost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPostText.trim()) return;
-    const authorName = currentUser?.user_metadata?.full_name || "You";
-    const newPost: Post = {
-      id: Date.now().toString(),
-      author: authorName,
-      avatar: getInitials(authorName),
-      channel: newPostChannel,
-      content: newPostText,
-      likes: 0,
-      likedByMe: false,
-      time: "Just now",
-      timestamp: Date.now(),
+    if (!newPostText.trim() || !currentUser) return;
+    setPostSubmitting(true);
+    const authorName = currentUser.user_metadata?.full_name || currentUser.email?.split("@")[0] || "Student";
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticPost: CommunityPost = {
+      id: optimisticId, user_id: currentUser.id, author_name: authorName,
+      author_initials: getInitials(authorName), content: newPostText.trim(),
+      likes: 0, created_at: new Date().toISOString(), likedByMe: false,
     };
-    setPosts((prev) => [newPost, ...prev]);
+    setPosts((prev) => [...prev, optimisticPost]);
     setNewPostText("");
-    toast.success("Post published to " + newPostChannel);
+    try {
+      const { data, error } = await supabase.from("community_posts").insert({
+        user_id: currentUser.id, author_name: authorName,
+        author_initials: getInitials(authorName), content: optimisticPost.content, likes: 0,
+      }).select().single();
+      if (error) throw error;
+      setPosts((prev) => prev.map((p) => (p.id === optimisticId ? { ...optimisticPost, id: data.id, created_at: data.created_at } : p)));
+      toast.success("Post published!");
+    } catch (err: any) {
+      setPosts((prev) => prev.filter((p) => p.id !== optimisticId));
+      toast.error("Failed to post: " + (err.message || "Unknown error"));
+    } finally { setPostSubmitting(false); }
   };
 
-  const handleLike = (id: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? { ...p, likes: p.likedByMe ? p.likes - 1 : p.likes + 1, likedByMe: !p.likedByMe }
-          : p
-      )
-    );
-  };
-
-  const openDirectMessage = (peerId: string) => {
-    setActivePeerId(peerId);
-  };
-
-  const openMessageByAuthorName = (authorName: string) => {
-    const currentName = currentUser?.user_metadata?.full_name || "You";
-    if (authorName.toLowerCase() === currentName.toLowerCase() || authorName === "You") {
-      toast.info("This is your post.");
-      return;
-    }
-
-    const found = membersWithPresence.find((m) => m.name.toLowerCase() === authorName.toLowerCase());
-    if (found) {
-      setActivePeerId(found.id);
-    } else {
-      const tempId = `temp_${Date.now()}`;
-      const initials = getInitials(authorName);
-      const tempMember: PeerMember = {
-        id: tempId,
-        name: authorName,
-        avatar: initials,
-        department: "CSE",
-        semester: "Sem 6",
-        status: "online",
-        activity: "Active in Forum",
-      };
-      setMembers((prev) => [...prev, tempMember]);
-      setActivePeerId(tempId);
+  const handleDeletePost = async (postId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from("community_posts").delete().eq("id", postId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      toast.success("Post deleted");
+    } catch (err: any) {
+      toast.error("Could not delete post: " + (err.message || ""));
     }
   };
 
-  const handleSendDirectMessage = (e: React.FormEvent) => {
+  const handleLike = async (post: CommunityPost) => {
+    if (!currentUser) return;
+    try {
+      if (post.likedByMe) {
+        await supabase.from("community_post_likes").delete().eq("post_id", post.id).eq("user_id", currentUser.id);
+        await supabase.from("community_posts").update({ likes: Math.max(0, post.likes - 1) }).eq("id", post.id);
+      } else {
+        await supabase.from("community_post_likes").insert({ post_id: post.id, user_id: currentUser.id });
+        await supabase.from("community_posts").update({ likes: post.likes + 1 }).eq("id", post.id);
+      }
+    } catch (err) { console.error("Like error:", err); }
+  };
+
+  const handleSendDM = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInputText.trim() || !activePeerId) return;
-
-    const messageText = chatInputText.trim();
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const newMsg: DirectMessage = {
-      id: Date.now().toString(),
-      sender: "me",
-      text: messageText,
-      timestamp: timeStr,
+    if (!chatInput.trim() || !activePeerId || !currentUser) return;
+    setDmSending(true);
+    const content = chatInput.trim();
+    setChatInput("");
+    // Optimistic message
+    const optimisticMsg: PrivateMessage = {
+      id: `opt-${Date.now()}`, sender_id: currentUser.id,
+      receiver_id: activePeerId, content, created_at: new Date().toISOString(),
     };
-
-    setChats((prev) => ({
-      ...prev,
-      [activePeerId]: [...(prev[activePeerId] || []), newMsg],
-    }));
-
-    setChatInputText("");
-
-    // Automated peer response after 1.2s
-    setTimeout(() => {
-      const peerReplies = AUTOMATED_REPLIES[activePeerId] || AUTOMATED_REPLIES.default;
-      const randomReply = peerReplies[Math.floor(Math.random() * peerReplies.length)];
-      const replyMsg: DirectMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: "peer",
-        text: randomReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setChats((prev) => ({
-        ...prev,
-        [activePeerId]: [...(prev[activePeerId] || []), replyMsg],
-      }));
-    }, 1200);
+    setDmMessages((prev) => [...prev, optimisticMsg]);
+    try {
+      const { data, error } = await supabase.from("private_messages").insert({
+        sender_id: currentUser.id, receiver_id: activePeerId, content,
+      }).select().single();
+      if (error) throw error;
+      setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? data : m));
+    } catch (err: any) {
+      setDmMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+      setChatInput(content);
+      toast.error("Failed to send: " + (err.message || ""));
+    } finally { setDmSending(false); }
   };
+
+  const handleDeleteDM = async (msgId: string) => {
+    try {
+      const { error } = await supabase.from("private_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
+      if (error) throw error;
+      setDmMessages((prev) => prev.filter((m) => m.id !== msgId));
+    } catch (err: any) {
+      toast.error("Could not delete message");
+    }
+  };
+
+  const handleCreateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGroupName.trim() || !currentUser) return;
+    setGroupSubmitting(true);
+    try {
+      const { data, error } = await supabase.from("community_groups").insert({
+        name: newGroupName.trim(), description: newGroupDesc.trim(), created_by: currentUser.id,
+      }).select().single();
+      if (error) throw error;
+      await supabase.from("community_group_members").insert({ group_id: data.id, user_id: currentUser.id });
+      toast.success(`Group "${newGroupName}" created!`);
+      setNewGroupName(""); setNewGroupDesc(""); setShowCreateGroup(false);
+      fetchGroups();
+    } catch (err: any) { toast.error("Failed to create group: " + (err.message || "")); }
+    finally { setGroupSubmitting(false); }
+  };
+
+  const handleJoinGroup = async (groupId: string, isMember: boolean) => {
+    if (!currentUser) return;
+    try {
+      if (isMember) {
+        await supabase.from("community_group_members").delete().eq("group_id", groupId).eq("user_id", currentUser.id);
+        toast.success("Left group");
+      } else {
+        await supabase.from("community_group_members").insert({ group_id: groupId, user_id: currentUser.id });
+        toast.success("Joined group!");
+      }
+      fetchGroups();
+    } catch (err: any) { toast.error(err.message || "Error updating group membership"); }
+  };
+
+  /* ─────────────────────────── Render ─────────────────────────── */
 
   return (
     <ChatLayout activeThreadId={null}>
@@ -402,24 +537,23 @@ function CommunityPage() {
                 <Users className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-sm font-extrabold tracking-tight">Community Forum & Peer Texting</h1>
-                <p className="text-[10px] text-muted-foreground">Live student directory with real-time presence & 1-on-1 direct messaging</p>
+                <h1 className="text-sm font-extrabold tracking-tight">Community Forum</h1>
+                <p className="text-[10px] text-muted-foreground">
+                  Shared class feed · Real-time presence · Private messaging
+                </p>
               </div>
             </div>
-            
             <div className="flex items-center gap-2">
               <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
                 <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500 animate-pulse" />
-                {onlineMembersCount} Online Now
+                {onlineMembersCount} Online
               </span>
               <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchProfiles}
-                className="h-7 text-[10px] gap-1 px-2.5"
-                title="Refresh student list"
+                variant="outline" size="sm"
+                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); }}
+                className="h-7 text-[10px] gap-1 px-2.5" title="Refresh"
               >
-                <RefreshCw className={`h-3 w-3 ${isLoadingMembers ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-3 w-3 ${membersLoading ? "animate-spin" : ""}`} />
                 Sync
               </Button>
             </div>
@@ -428,39 +562,6 @@ function CommunityPage() {
 
         <div className="flex-1 flex overflow-hidden">
 
-          {/* Left: Channels */}
-          <aside className="w-56 border-r border-border bg-card p-3 flex flex-col gap-4 overflow-y-auto shrink-0 scrollbar-thin">
-            <div>
-              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-2 mb-1">Channels</p>
-              <nav className="space-y-0.5">
-                {CHANNELS.map((ch) => {
-                  const Icon = ch.icon;
-                  return (
-                    <button
-                      key={ch.name}
-                      onClick={() => setActiveChannel(ch.name)}
-                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${
-                        activeChannel === ch.name
-                          ? "bg-primary text-white shadow-sm"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon className="h-3.5 w-3.5 shrink-0" />
-                        {ch.label}
-                      </span>
-                      {ch.count > 0 && (
-                        <span className={`text-[9px] font-bold px-1.5 rounded-full ${
-                          activeChannel === ch.name ? "bg-white/20" : "bg-muted text-muted-foreground"
-                        }`}>{ch.count}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-          </aside>
-
           {/* Center: Community Feed */}
           <main className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto scrollbar-thin bg-muted/10">
 
@@ -468,10 +569,8 @@ function CommunityPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
-                type="text"
-                placeholder="Search forum posts or authors..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                type="text" placeholder="Search posts or authors..."
+                value={search} onChange={(e) => setSearch(e.target.value)}
                 className="w-full h-9 pl-9 pr-4 text-xs bg-card border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
               />
             </div>
@@ -480,29 +579,22 @@ function CommunityPage() {
             <Card className="border-border bg-card shadow-sm">
               <CardContent className="p-4">
                 <form onSubmit={handlePost} className="space-y-3">
-                  <Textarea
-                    placeholder="Share notes, ask a question, or post a placement tip to the community..."
-                    value={newPostText}
-                    onChange={(e) => setNewPostText(e.target.value)}
-                    className="h-20 text-xs bg-muted/40 border-border resize-none focus:ring-1 focus:ring-primary"
-                    required
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <select
-                      value={newPostChannel}
-                      onChange={(e) => setNewPostChannel(e.target.value)}
-                      className="h-8 text-xs bg-muted/40 border border-border rounded-lg px-2 font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                  <div className="flex items-start gap-3">
+                    <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(getInitials(currentUser?.user_metadata?.full_name || "You"))} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-1`}>
+                      {getInitials(currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "You")}
+                    </div>
+                    <Textarea
+                      placeholder="Share notes, ask a question, or post a tip to your class..."
+                      value={newPostText} onChange={(e) => setNewPostText(e.target.value)}
+                      className="flex-1 h-20 text-xs bg-muted/40 border-border resize-none focus:ring-1 focus:ring-primary"
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="submit" size="sm" disabled={postSubmitting || !newPostText.trim()}
+                      className="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs h-8 px-5 shadow-sm"
                     >
-                      {CHANNELS.filter((c) => c.name !== "all").map((c) => (
-                        <option key={c.name} value={c.name}>#{c.label}</option>
-                      ))}
-                    </select>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      className="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs h-8 px-4 shadow-sm"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Post
+                      {postSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3.5 w-3.5 mr-1" />Post</>}
                     </Button>
                   </div>
                 </form>
@@ -510,66 +602,95 @@ function CommunityPage() {
             </Card>
 
             {/* Posts List */}
-            {filteredPosts.length === 0 ? (
+            {postsLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />
+                ))}
+              </div>
+            ) : filteredPosts.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center space-y-2 p-8 rounded-2xl border border-dashed border-border">
                   <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                  <p className="text-xs font-semibold text-muted-foreground">No posts yet in this channel</p>
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    {search ? "No posts match your search" : "No posts yet"}
+                  </p>
                   <p className="text-[10px] text-muted-foreground/70">Be the first to start a discussion!</p>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
                 {filteredPosts.map((post) => (
-                  <Card key={post.id} className="border-border bg-card shadow-sm hover:shadow-md transition-shadow">
+                  <Card key={post.id} className="border-border bg-card shadow-sm hover:shadow-md transition-shadow group">
                     <CardContent className="p-4 space-y-3">
-                      {/* Meta */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                          <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(post.avatar)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                            {post.avatar}
+                          <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(post.author_initials)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                            {post.author_initials}
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="text-xs font-bold text-foreground">{post.author}</p>
-                              {post.author !== "You" && post.author !== (currentUser?.user_metadata?.full_name) && (
+                              <p className="text-xs font-bold text-foreground">{post.author_name}</p>
+                              {post.user_id !== currentUser?.id && (
                                 <button
-                                  onClick={() => openMessageByAuthorName(post.author)}
-                                  className="text-[10px] font-bold text-primary hover:underline flex items-center gap-0.5"
+                                  onClick={() => {
+                                    const found = membersWithPresence.find((m) => m.id === post.user_id);
+                                    if (found) setActivePeerId(found.id);
+                                    else {
+                                      // Open DM even if not found in members list yet
+                                      setActivePeerId(post.user_id);
+                                    }
+                                  }}
+                                  className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 transition-colors"
                                 >
-                                  <MessageCircle className="h-3 w-3" /> Text
+                                  <MessageCircle className="h-3 w-3" /> DM
                                 </button>
                               )}
+                              {post.user_id === currentUser?.id && (
+                                <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>
+                              )}
                             </div>
-                            <p className="text-[9px] text-muted-foreground">{post.time}</p>
+                            <p className="text-[9px] text-muted-foreground">{timeAgo(post.created_at)}</p>
                           </div>
                         </div>
-                        <span className="text-[9px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
-                          {post.channel}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Hash className="h-2.5 w-2.5" />general
+                          </span>
+                          {/* Delete button — only for own posts */}
+                          {post.user_id === currentUser?.id && (
+                            <button
+                              onClick={() => handleDeletePost(post.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                              title="Delete post"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Content */}
                       <p className="text-xs text-foreground/90 leading-relaxed">{post.content}</p>
 
-                      {/* Actions */}
                       <div className="flex items-center justify-between pt-1 border-t border-border/40">
                         <button
-                          onClick={() => handleLike(post.id)}
-                          className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${
-                            post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-red-500"
-                          }`}
+                          onClick={() => handleLike(post)}
+                          className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
                         >
                           <Heart className={`h-3.5 w-3.5 transition-all ${post.likedByMe ? "fill-red-500" : ""}`} />
                           {post.likes} {post.likes === 1 ? "Like" : "Likes"}
                         </button>
 
-                        {post.author !== "You" && post.author !== (currentUser?.user_metadata?.full_name) && (
+                        {post.user_id !== currentUser?.id && (
                           <button
-                            onClick={() => openMessageByAuthorName(post.author)}
+                            onClick={() => {
+                              const found = membersWithPresence.find((m) => m.id === post.user_id);
+                              if (found) setActivePeerId(found.id);
+                              else setActivePeerId(post.user_id);
+                            }}
                             className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
                           >
-                            <MessageSquare className="h-3.5 w-3.5" /> Direct Text Message
+                            <MessageSquare className="h-3.5 w-3.5" /> Direct Message
                           </button>
                         )}
                       </div>
@@ -578,137 +699,229 @@ function CommunityPage() {
                 ))}
               </div>
             )}
+            {/* Sentinel: auto-scroll target for newest post */}
+            <div ref={feedEndRef} />
           </main>
 
-          {/* Right: Members & Online/Offline Status */}
-          <aside className="w-64 border-l border-border bg-card p-3 flex flex-col gap-3 overflow-y-auto shrink-0 scrollbar-thin">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
-                  Classmates Presence
-                </p>
-                <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
-                  <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
-                </span>
-              </div>
+          {/* Right Panel: Members / Groups toggle */}
+          <aside className="w-64 border-l border-border bg-card flex flex-col gap-0 overflow-hidden shrink-0">
 
-              {/* Online / Offline Filter Pills */}
-              <div className="grid grid-cols-3 gap-1 mb-3 bg-muted/40 p-1 rounded-xl">
-                <button
-                  onClick={() => setMemberFilter("all")}
-                  className={`text-[10px] font-bold py-1 rounded-lg transition-all ${
-                    memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
-                  }`}
-                >
-                  All ({membersWithPresence.length})
-                </button>
-                <button
-                  onClick={() => setMemberFilter("online")}
-                  className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
-                    memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"
-                  }`}
-                >
-                  <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
-                  ({membersWithPresence.filter(m => m.status === "online").length})
-                </button>
-                <button
-                  onClick={() => setMemberFilter("offline")}
-                  className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
-                    memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
-                  }`}
-                >
-                  <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
-                  ({offlineMembersCount})
-                </button>
-              </div>
+            {/* Tab switcher */}
+            <div className="grid grid-cols-2 border-b border-border">
+              <button
+                onClick={() => setRightPanel("members")}
+                className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "members" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                <Users className="h-3 w-3" /> Classmates
+              </button>
+              <button
+                onClick={() => { setRightPanel("groups"); fetchGroups(); }}
+                className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "groups" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                <UsersRound className="h-3 w-3" /> Groups
+              </button>
+            </div>
 
-              {/* Member Search */}
-              <div className="relative mb-3">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Filter classmate..."
-                  value={memberSearch}
-                  onChange={(e) => setMemberSearch(e.target.value)}
-                  className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
+            {/* ── Members panel ── */}
+            {rightPanel === "members" && (
+              <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                      Classmates Presence
+                    </p>
+                    <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
+                      <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
+                    </span>
+                  </div>
 
-              {/* Member List */}
-              {isLoadingMembers ? (
-                <div className="space-y-2 p-2">
-                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
-                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
-                  <div className="h-10 bg-muted/40 animate-pulse rounded-xl" />
-                </div>
-              ) : filteredMembers.length === 0 ? (
-                <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
-                  <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
-                  <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
-                  <p className="text-[9px] text-muted-foreground/60">Registered student profiles will appear here.</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {filteredMembers.map((member) => (
-                    <div
-                      key={member.id}
-                      onClick={() => openDirectMessage(member.id)}
-                      className="flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-border hover:bg-accent/50 transition-all cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="relative shrink-0">
-                          <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.avatar)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
-                            {member.avatar}
+                  {/* Filter Pills */}
+                  <div className="grid grid-cols-3 gap-1 mb-3 bg-muted/40 p-1 rounded-xl">
+                    <button onClick={() => setMemberFilter("all")}
+                      className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                      All ({membersWithPresence.length})
+                    </button>
+                    <button onClick={() => setMemberFilter("online")}
+                      className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
+                      <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
+                      ({membersWithPresence.filter((m) => m.status === "online").length})
+                    </button>
+                    <button onClick={() => setMemberFilter("offline")}
+                      className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                      <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
+                      ({membersWithPresence.filter((m) => m.status === "offline").length})
+                    </button>
+                  </div>
+
+                  {/* Member Search */}
+                  <div className="relative mb-3">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <input type="text" placeholder="Filter classmate..."
+                      value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+                      className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  {/* Member List */}
+                  {membersLoading ? (
+                    <div className="space-y-2">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                      ))}
+                    </div>
+                  ) : filteredMembers.length === 0 ? (
+                    <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
+                      <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
+                      <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          onClick={() => setActivePeerId(member.id === currentUser?.id ? null : member.id)}
+                          className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
+                            ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
+                              activePeerId === member.id ? "border-primary bg-primary/5" :
+                              "border-transparent hover:border-border hover:bg-accent/50"}`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="relative shrink-0">
+                              <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
+                                {member.initials}
+                              </div>
+                              <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                                {member.name}
+                                {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
+                              </p>
+                              <p className="text-[9px] text-muted-foreground truncate">
+                                <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                                  {member.status === "online" ? "● Online" : "○ Offline"}
+                                </span>
+                                {" · "}{member.department}
+                              </p>
+                            </div>
                           </div>
-                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
-                            member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
-                          }`} />
+                          {member.id !== currentUser?.id && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setActivePeerId(member.id); }}
+                              className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
+                              title={`Message ${member.name}`}
+                            >
+                              <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                            </button>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">{member.name}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Groups panel ── */}
+            {rightPanel === "groups" && (
+              <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Class Groups</p>
+                  <Button size="sm" variant="outline" onClick={() => setShowCreateGroup(!showCreateGroup)} className="h-6 text-[10px] px-2 gap-1">
+                    <Plus className="h-2.5 w-2.5" /> New Group
+                  </Button>
+                </div>
+
+                {showCreateGroup && (
+                  <Card className="border-primary/30 bg-primary/5">
+                    <CardContent className="p-3">
+                      <form onSubmit={handleCreateGroup} className="space-y-2">
+                        <input type="text" placeholder="Group name (e.g. DBMS Study)" value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" required />
+                        <input type="text" placeholder="Description (optional)" value={newGroupDesc}
+                          onChange={(e) => setNewGroupDesc(e.target.value)}
+                          className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" />
+                        <div className="flex gap-1">
+                          <Button type="submit" size="sm" disabled={groupSubmitting || !newGroupName.trim()} className="flex-1 h-7 text-[10px] bg-primary text-white">
+                            {groupSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setShowCreateGroup(false)} className="h-7 w-7 p-0">
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {groupsLoading ? (
+                  <div className="space-y-2">{[1, 2].map((i) => <div key={i} className="h-16 bg-muted/40 animate-pulse rounded-xl" />)}</div>
+                ) : groups.length === 0 ? (
+                  <div className="text-center p-6 rounded-xl border border-dashed border-border">
+                    <UsersRound className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
+                    <p className="text-[10px] font-semibold text-muted-foreground">No groups yet</p>
+                    <p className="text-[9px] text-muted-foreground/60">Create the first study group!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {groups.map((group) => (
+                      <div key={group.id} className="p-2.5 rounded-xl border border-border bg-card hover:border-primary/30 transition-all">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
+                                <UsersRound className="h-3 w-3 text-white" />
+                              </div>
+                              <p className="text-xs font-bold text-foreground truncate">{group.name}</p>
+                            </div>
+                            {group.description && (
+                              <p className="text-[9px] text-muted-foreground mt-1 truncate">{group.description}</p>
+                            )}
+                            <p className="text-[9px] text-muted-foreground mt-0.5">
+                              {group.memberCount} member{group.memberCount !== 1 ? "s" : ""}
+                            </p>
                           </div>
-                          <p className="text-[9px] text-muted-foreground truncate">{member.activity}</p>
+                          <button
+                            onClick={() => handleJoinGroup(group.id, group.isMember || false)}
+                            className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg transition-all ${group.isMember ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+                          >
+                            {group.isMember ? "Leave" : <><UserPlus className="h-2.5 w-2.5 inline mr-0.5" />Join</>}
+                          </button>
                         </div>
                       </div>
-
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <MessageCircle className="h-3.5 w-3.5 text-primary" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </aside>
-
         </div>
 
-        {/* 1-on-1 Direct Chat Window Drawer Modal */}
+        {/* ── Private Chat Drawer ── */}
         {activePeer && (
-          <div className="fixed bottom-4 right-6 w-80 md:w-96 bg-card border border-border rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+          <div className="fixed bottom-4 right-6 w-80 md:w-96 bg-card border border-border rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
+            style={{ animation: "slideUpFade 0.2s ease-out" }}>
             {/* Header */}
-            <div className="p-3 bg-card border-b border-border flex items-center justify-between">
+            <div className="p-3 bg-gradient-to-r from-primary/10 via-card to-card border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="relative">
-                  <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(activePeer.avatar)} flex items-center justify-center text-white text-[10px] font-bold`}>
-                    {activePeer.avatar}
+                  <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(activePeer.initials)} flex items-center justify-center text-white text-[10px] font-bold`}>
+                    {activePeer.initials}
                   </div>
-                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
-                    activePeer.status === "online" ? "bg-emerald-500" : "bg-slate-400"
-                  }`} />
+                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${activePeer.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
                 </div>
                 <div>
                   <p className="text-xs font-bold text-foreground">{activePeer.name}</p>
                   <p className="text-[9px] text-muted-foreground flex items-center gap-1">
-                    <span className={activePeer.status === "online" ? "text-emerald-500 font-bold" : "text-slate-400"}>
-                      {activePeer.status === "online" ? "🟢 Online" : "⚪ Offline"}
+                    <Lock className="h-2.5 w-2.5" />
+                    <span className="text-[8px]">Private · End-to-end</span>
+                    <span className={`font-bold ${activePeer.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                      · {activePeer.status === "online" ? "🟢 Online" : "⚪ Offline"}
                     </span>
-                    · {activePeer.department}
                   </p>
                 </div>
               </div>
-
               <button
                 onClick={() => setActivePeerId(null)}
                 className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-center transition-colors"
@@ -718,58 +931,76 @@ function CommunityPage() {
             </div>
 
             {/* Chat Body */}
-            <div className="p-3 h-64 overflow-y-auto scrollbar-thin space-y-2.5 bg-muted/20 text-xs">
-              {currentPeerMessages.length === 0 ? (
+            <div className="p-3 h-72 overflow-y-auto scrollbar-thin space-y-2.5 bg-muted/20">
+              {dmLoading ? (
+                <div className="h-full flex items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : dmMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-1">
                   <MessageSquare className="h-6 w-6 text-muted-foreground/40" />
-                  <p className="text-xs font-bold text-foreground">Start 1-on-1 Direct Texting</p>
-                  <p className="text-[10px] text-muted-foreground">Send a message to {activePeer.name} on AcadSphere Community Network.</p>
+                  <p className="text-xs font-bold text-foreground">Start a private conversation</p>
+                  <p className="text-[10px] text-muted-foreground">Your messages with {activePeer.name} are private</p>
                 </div>
               ) : (
-                currentPeerMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.sender === "me" ? "items-end" : "items-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
-                        msg.sender === "me"
-                          ? "bg-primary text-primary-foreground rounded-br-xs"
-                          : "bg-card border border-border text-foreground rounded-bl-xs shadow-xs"
-                      }`}
-                    >
-                      {msg.text}
+                dmMessages.map((msg) => {
+                  const isMe = msg.sender_id === currentUser?.id;
+                  return (
+                    <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
+                      <div className={`flex items-end gap-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                        <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs leading-relaxed
+                          ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-card border border-border text-foreground rounded-bl-sm shadow-xs"}`}>
+                          {msg.content}
+                        </div>
+                        {/* Delete button for own messages */}
+                        {isMe && (
+                          <button
+                            onClick={() => handleDeleteDM(msg.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1"
+                            title="Delete message"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[8px] text-muted-foreground mt-0.5 px-1 flex items-center gap-0.5">
+                        {fmtTime(msg.created_at)}
+                        {isMe && <CheckCheck className="h-2.5 w-2.5 text-blue-500 inline" />}
+                      </span>
                     </div>
-                    <span className="text-[8px] text-muted-foreground mt-0.5 px-1 flex items-center gap-0.5">
-                      {msg.timestamp}
-                      {msg.sender === "me" && <CheckCheck className="h-2.5 w-2.5 text-blue-500 inline" />}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               )}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Input Footer */}
-            <form onSubmit={handleSendDirectMessage} className="p-2 bg-card border-t border-border flex items-center gap-2">
+            <form onSubmit={handleSendDM} className="p-2 bg-card border-t border-border flex items-center gap-2">
               <input
                 type="text"
-                placeholder={`Text ${activePeer.name.split(" ")[0]}...`}
-                value={chatInputText}
-                onChange={(e) => setChatInputText(e.target.value)}
+                placeholder={`Message ${activePeer.name.split(" ")[0]}...`}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
                 className="flex-1 h-8 px-3 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
+                autoFocus
               />
               <Button
-                type="submit"
-                size="sm"
+                type="submit" size="sm"
                 className="h-8 w-8 p-0 bg-primary text-primary-foreground rounded-xl shrink-0"
-                disabled={!chatInputText.trim()}
+                disabled={!chatInput.trim() || dmSending}
               >
-                <Send className="h-3.5 w-3.5" />
+                {dmSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </Button>
             </form>
           </div>
         )}
 
+        <style>{`
+          @keyframes slideUpFade {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
       </div>
     </ChatLayout>
   );

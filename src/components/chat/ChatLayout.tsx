@@ -144,8 +144,6 @@ export function ChatLayout({
     { label: "Dashboard",         to: "/app",                    icon: LayoutDashboard },
     { label: "AI Assistant",       to: "/app/ai-assistant",       icon: Sparkles },
     { label: "Classroom",          to: "/app/classroom",          icon: GraduationCap },
-    { label: "Smart Notes",        to: "/app/notes",              icon: BookOpen },
-    { label: "Lab Helper",         to: "/app/lab-buddy",          icon: Code },
     { label: "Resume Tailorer",    to: "/app/resume-builder",     icon: Wand2 },
     { label: "Attendance",         to: "/app/attendance",         icon: CheckCircle2 },
     { label: "File Converter",     to: "/app/conversions",        icon: FileOutput },

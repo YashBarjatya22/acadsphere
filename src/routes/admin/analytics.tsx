@@ -52,9 +52,9 @@ const DAILY_STUDY_TIME = [
 ];
 
 const AI_FEATURE_USAGE = [
-  { name: "Smart Notes", value: 45 },
-  { name: "AI Assistant", value: 35 },
-  { name: "Lab Helper", value: 20 },
+  { name: "AI Assistant", value: 45 },
+  { name: "Resume Tailorer", value: 35 },
+  { name: "Classroom", value: 20 },
 ];
 
 const PLATFORM_GROWTH = [

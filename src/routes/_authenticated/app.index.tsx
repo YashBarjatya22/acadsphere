@@ -361,10 +361,10 @@ function AppIndex() {
                 {[
                   { label: "Active Courses",  value: "5 Subjects", sub: "Classroom Synced",   icon: GraduationCap },
                   { label: "Assignments",     value: "2 tasks", sub: "Due before Monday",  icon: CalendarIcon },
-                  { label: "Notes Created",   value: "14",      sub: "4 added recently",   icon: BookOpen },
+                  { label: "Attendance",      value: "87.94%",  sub: "CUE Synced",         icon: CheckCircle2 },
                   { label: "AI Queries",      value: "38/100",  sub: "Resets in 12 days",  icon: Sparkles },
                   { label: "Weekly Study",    value: "12.2h",   sub: "Goal: 15 hours",     icon: Clock },
-                  { label: "Lab Projects",    value: "5/5",     sub: "Manuals verified",   icon: Code },
+                  { label: "Resume Tailored", value: "3 versions", sub: "ATS Optimized",   icon: FileCheck2 },
                 ].map((card, idx) => {
                   const Icon = card.icon;
                   return (
@@ -386,10 +386,9 @@ function AppIndex() {
               <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground mb-5">Quick Actions</p>
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
                 {[
-                  { label: "Ask AI",     icon: Sparkles,   action: () => createThreadFn().then(t => navigate({ to: "/app/$threadId", params: { threadId: t.id } })) },
-                  { label: "Smart Notes", icon: BookOpen,   action: () => navigate({ to: "/app/notes" }) },
-                  { label: "Resume",     icon: FileCheck2, action: () => navigate({ to: "/app/resume-analyzer" }) },
-                  { label: "Lab Helper", icon: Code,       action: () => navigate({ to: "/app/lab-buddy" }) },
+                  { label: "Ask AI",          icon: Sparkles,    action: () => createThreadFn().then(t => navigate({ to: "/app/$threadId", params: { threadId: t.id } })) },
+                  { label: "Resume Tailorer", icon: FileCheck2,  action: () => navigate({ to: "/app/resume-builder" }) },
+                  { label: "Attendance",      icon: CheckCircle2,action: () => navigate({ to: "/app/attendance" }) },
                 ].map((act, idx) => {
                   const Icon = act.icon;
                   return (

@@ -1,19 +1,11 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { config } from "dotenv";
-import path from "node:path";
-
-// Ensure environment variables from .env.local and .env are loaded
-if (typeof process !== "undefined" && process.cwd) {
-  config({ path: path.resolve(process.cwd(), ".env.local") });
-  config({ path: path.resolve(process.cwd(), ".env") });
-}
 
 /**
  * Returns a Vercel AI SDK-compatible model instance using Groq API.
- * Uses Groq's high-speed OpenAI-compatible REST endpoint (specification version v2).
+ * Uses Groq's high-speed OpenAI-compatible REST endpoint.
  *
  * Primary Model: llama-3.3-70b-versatile (ultra fast, high intelligence)
- * Backup Models: llama-3.1-8b-instant, mixtral-8x7b-32768
+ * Reads GROQ_API_KEY from the environment (set in .env.local).
  */
 export function getAiModel(modelName: string = "llama-3.3-70b-versatile") {
   const groqKey = process.env.GROQ_API_KEY?.trim();
@@ -47,6 +39,7 @@ export function getAiModel(modelName: string = "llama-3.3-70b-versatile") {
     return provider("gemini-1.5-flash");
   }
 
+  // No key configured — return null, caller handles fallback
   return null;
 }
 
@@ -69,7 +62,16 @@ export function getAiModelWithCustomKey(
     return p("gpt-4o-mini");
   }
 
-  // Default: Groq API key
+  if (provider === "Gemini") {
+    const p = createOpenAICompatible({
+      name: "gemini",
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      apiKey: customKey,
+    });
+    return p("gemini-1.5-flash");
+  }
+
+  // Default: treat as Groq API key
   const p = createOpenAICompatible({
     name: "groq-custom",
     baseURL: "https://api.groq.com/openai/v1",

@@ -23,7 +23,7 @@ interface ReportTemplate {
 const REPORT_TEMPLATES: ReportTemplate[] = [
   { id: "rep-1", title: "Comprehensive Student Activity Report", description: "Detailed log of active study sessions, page views, and engagement duration per USN.", category: "Activity", lastGenerated: "Today 8:00 AM", fileSize: "2.4 MB" },
   { id: "rep-2", title: "Institutional Login & Session Statistics", description: "Login frequencies, active IP range logs, peak usage hours, and session timeouts.", category: "Logins", lastGenerated: "Today 6:00 AM", fileSize: "1.8 MB" },
-  { id: "rep-3", title: "Platform & Module Usage Breakdown", description: "Usage metrics distribution across Smart Notes, AI Assistant, Resume Builder, and Lab Helper.", category: "Activity", lastGenerated: "Yesterday", fileSize: "3.1 MB" },
+  { id: "rep-3", title: "Platform & Module Usage Breakdown", description: "Usage metrics distribution across AI Assistant, Classroom, Resume Tailorer, and Attendance.", category: "Activity", lastGenerated: "Yesterday", fileSize: "3.1 MB" },
   { id: "rep-4", title: "AI Assistant & Learning Tool Metrics", description: "Total AI query counts, prompt tokens, code compilations, and learning module engagement.", category: "AI", lastGenerated: "Yesterday", fileSize: "1.2 MB" },
   { id: "rep-5", title: "Department-wise Performance Audit", description: "Comparative analysis of CSE, ECE, ISE, MECH, CIVIL, and MCA headcount & engagement.", category: "Performance", lastGenerated: "2 days ago", fileSize: "4.5 MB" },
   { id: "rep-6", title: "Semester-wise CGPA & Attendance Summary", description: "Academic standing, average CGPA score, and attendance compliance breakdown for Semesters 1 to 8.", category: "Performance", lastGenerated: "3 days ago", fileSize: "2.9 MB" },

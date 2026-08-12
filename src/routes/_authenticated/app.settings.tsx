@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { interpretSettlerInstruction } from "@/lib/viva-lab.functions";
+import { interpretSettlerInstruction } from "@/lib/settler.functions";
 import { updateProfile } from "@/lib/analytics.functions";
 import {
   Settings, Bell, Lock, Monitor, Sun, Moon, Palette, Zap, Shield, Check,
