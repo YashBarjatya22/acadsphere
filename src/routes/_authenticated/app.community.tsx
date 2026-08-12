@@ -9,7 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Users, MessageSquare, Heart, Plus, Search, Circle, Send, X,
   CheckCheck, MessageCircle, RefreshCw, UserCheck, UserPlus, Hash,
-  UsersRound, Loader2, Trash2, Lock, Globe, Sparkles, ChevronRight
+  UsersRound, Loader2, Trash2, Lock, Globe, Sparkles, ChevronRight,
+  UserCheck2, MessageSquarePlus
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/community")({
@@ -80,6 +81,7 @@ function avatarColor(initials: string) {
 }
 
 function timeAgo(iso: string) {
+  if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Just now";
@@ -90,6 +92,7 @@ function timeAgo(iso: string) {
 }
 
 function fmtTime(iso: string) {
+  if (!iso) return "";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -129,18 +132,27 @@ function CommunityPage() {
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [groupSubmitting, setGroupSubmitting] = useState(false);
 
-  /* Direct Messages — Supabase direct_messages table */
+  /* Direct Messages — Active Conversations & Unread Tracking */
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
   const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
   const [dmLoading, setDmLoading] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [dmSending, setDmSending] = useState(false);
 
-  /* Refs */
+  /* Active DM Conversation Peer IDs & Recent Message Details + Unread Counts */
+  const [activePeerIds, setActivePeerIds] = useState<string[]>([]);
+  const [recentDmMap, setRecentDmMap] = useState<Record<string, { lastMessage: string; lastMessageAt: string; unreadCount: number }>>({});
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState("");
+
+  /* Refs for latest state in realtime callbacks */
   const chatEndRef = useRef<HTMLDivElement>(null);
   const feedEndRef = useRef<HTMLDivElement>(null);
   const activePeerIdRef = useRef<string | null>(null);
   useEffect(() => { activePeerIdRef.current = activePeerId; }, [activePeerId]);
+
+  const mainTabRef = useRef<MainTab>("global");
+  useEffect(() => { mainTabRef.current = mainTab; }, [mainTab]);
 
   /* ── Bootstrap: get current user ── */
   useEffect(() => {
@@ -203,6 +215,92 @@ function CommunityPage() {
     return () => { supabase.removeChannel(room); };
   }, [currentUser?.id]);
 
+  /* ── Fetch all recent DM conversations for logged-in user ── */
+  const fetchRecentConversations = useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      // 1. Primary lookup: direct_messages table
+      let { data: dms, error: dmError } = await supabase
+        .from("direct_messages")
+        .select("*")
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+        .order("created_at", { ascending: false });
+
+      // Fallback: private_messages table
+      if (dmError || !dms || dms.length === 0) {
+        const { data: pms } = await supabase
+          .from("private_messages")
+          .select("*")
+          .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+          .order("created_at", { ascending: false });
+        dms = pms || [];
+      }
+
+      const convMap: Record<string, { lastMessage: string; lastMessageAt: string; unreadCount: number }> = {};
+      const peerOrder: string[] = [];
+
+      const getReadTime = (peerId: string): number => {
+        const val = localStorage.getItem(`acadsphere_dm_read_${currentUser.id}_${peerId}`);
+        return val ? new Date(val).getTime() : 0;
+      };
+
+      for (const msg of dms || []) {
+        const peerId = msg.sender_id === currentUser.id ? msg.receiver_id : msg.sender_id;
+        if (!peerOrder.includes(peerId)) peerOrder.push(peerId);
+
+        if (!convMap[peerId]) {
+          convMap[peerId] = {
+            lastMessage: msg.content,
+            lastMessageAt: msg.created_at,
+            unreadCount: 0,
+          };
+        }
+
+        // Count unread incoming messages received after stored read timestamp
+        const isIncoming = msg.receiver_id === currentUser.id;
+        const readTime = getReadTime(peerId);
+        const msgTime = new Date(msg.created_at).getTime();
+
+        if (isIncoming && msgTime > readTime && (activePeerIdRef.current !== peerId || mainTabRef.current !== "dms")) {
+          convMap[peerId].unreadCount += 1;
+        }
+      }
+
+      setRecentDmMap(convMap);
+      setActivePeerIds(peerOrder);
+
+      // Auto-select first conversation if in DM mode and no active peer selected
+      if (peerOrder.length > 0 && !activePeerIdRef.current) {
+        setActivePeerId(peerOrder[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load recent DM conversations:", err);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser?.id) fetchRecentConversations();
+  }, [currentUser?.id, fetchRecentConversations]);
+
+  /* ── Open Chat with a Peer & Mark as Read ── */
+  const openChatWithPeer = (peerId: string) => {
+    setActivePeerId(peerId);
+    setMainTab("dms");
+    setActivePeerIds((prev) => [peerId, ...prev.filter((id) => id !== peerId)]);
+
+    if (currentUser?.id) {
+      const nowStr = new Date().toISOString();
+      localStorage.setItem(`acadsphere_dm_read_${currentUser.id}_${peerId}`, nowStr);
+      setRecentDmMap((prev) => ({
+        ...prev,
+        [peerId]: {
+          ...(prev[peerId] || { lastMessage: "", lastMessageAt: nowStr }),
+          unreadCount: 0,
+        },
+      }));
+    }
+  };
+
   /* ── Fetch community posts ── */
   const fetchPosts = useCallback(async (uid?: string) => {
     setPostsLoading(true);
@@ -240,7 +338,7 @@ function CommunityPage() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
-      .channel("community-posts-realtime-v3")
+      .channel("community-posts-realtime-v4")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
         (payload) => {
           const p = payload.new as any;
@@ -284,13 +382,12 @@ function CommunityPage() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser?.id]);
 
-  /* ── Fetch DM conversation (direct_messages table with private_messages fallback) ── */
+  /* ── Fetch DM conversation messages for active peer ── */
   const fetchDMs = useCallback(async (peerId: string) => {
     if (!currentUser?.id) return;
     setDmLoading(true);
     try {
-      // 1. Direct Messages table lookup
-      const { data: dmData, error: dmError } = await supabase
+      let { data: dmData, error: dmError } = await supabase
         .from("direct_messages")
         .select("*")
         .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${currentUser.id})`)
@@ -301,7 +398,6 @@ function CommunityPage() {
         return;
       }
 
-      // 2. Private Messages fallback lookup
       const { data: pmData, error: pmError } = await supabase
         .from("private_messages")
         .select("*")
@@ -322,37 +418,79 @@ function CommunityPage() {
     }
   }, [currentUser?.id]);
 
-  /* ── Load DMs when active peer changes ── */
+  /* ── Load DMs when active peer changes & mark as read ── */
   useEffect(() => {
     if (activePeerId && currentUser?.id) {
       fetchDMs(activePeerId);
+      // Mark conversation read
+      const nowStr = new Date().toISOString();
+      localStorage.setItem(`acadsphere_dm_read_${currentUser.id}_${activePeerId}`, nowStr);
+      setRecentDmMap((prev) => ({
+        ...prev,
+        [activePeerId]: {
+          ...(prev[activePeerId] || { lastMessage: "", lastMessageAt: nowStr }),
+          unreadCount: 0,
+        },
+      }));
     } else {
       setDmMessages([]);
     }
   }, [activePeerId, currentUser?.id, fetchDMs]);
 
-  /* ── Realtime: incoming & outgoing direct_messages ── */
+  /* ── Realtime: incoming & outgoing direct_messages + unread counter updates ── */
   useEffect(() => {
     if (!currentUser?.id) return;
 
+    const handleNewMessage = (msg: DirectMessage) => {
+      const peerId = msg.sender_id === currentUser.id ? msg.receiver_id : msg.sender_id;
+
+      // Bring peer to top of conversation list
+      setActivePeerIds((prev) => [peerId, ...prev.filter((id) => id !== peerId)]);
+
+      const isIncoming = msg.receiver_id === currentUser.id;
+      const isCurrentChatOpen = activePeerIdRef.current === peerId && mainTabRef.current === "dms";
+
+      if (isCurrentChatOpen) {
+        setDmMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        localStorage.setItem(`acadsphere_dm_read_${currentUser.id}_${peerId}`, new Date().toISOString());
+      }
+
+      setRecentDmMap((prev) => {
+        const currentUnread = prev[peerId]?.unreadCount || 0;
+        const newUnread = isIncoming && !isCurrentChatOpen ? currentUnread + 1 : 0;
+        return {
+          ...prev,
+          [peerId]: {
+            lastMessage: msg.content,
+            lastMessageAt: msg.created_at,
+            unreadCount: newUnread,
+          },
+        };
+      });
+
+      if (isIncoming && !isCurrentChatOpen) {
+        const senderName = members.find((m) => m.id === msg.sender_id)?.name || "Classmate";
+        toast.info(`Message from ${senderName}`, {
+          description: msg.content.slice(0, 45) + (msg.content.length > 45 ? "..." : ""),
+          action: {
+            label: "Open Chat",
+            onClick: () => openChatWithPeer(msg.sender_id),
+          },
+        });
+      }
+    };
+
     const channel = supabase
-      .channel("custom-all-channel")
+      .channel("custom-dm-channel-v3")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "direct_messages" },
-        (payload) => {
-          const msg = payload.new as DirectMessage;
-          const currentPeer = activePeerIdRef.current;
-          if (
-            (msg.sender_id === currentPeer && msg.receiver_id === currentUser.id) ||
-            (msg.sender_id === currentUser.id && msg.receiver_id === currentPeer)
-          ) {
-            setDmMessages((prev) => {
-              if (prev.some((m) => m.id === msg.id)) return prev;
-              return [...prev, msg];
-            });
-          }
-        }
+        (payload) => handleNewMessage(payload.new as DirectMessage)
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "private_messages" },
+        (payload) => handleNewMessage(payload.new as DirectMessage)
       )
       .on(
         "postgres_changes",
@@ -362,29 +500,12 @@ function CommunityPage() {
           setDmMessages((prev) => prev.filter((m) => m.id !== p.id));
         }
       )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "private_messages" },
-        (payload) => {
-          const msg = payload.new as DirectMessage;
-          const currentPeer = activePeerIdRef.current;
-          if (
-            (msg.sender_id === currentPeer && msg.receiver_id === currentUser.id) ||
-            (msg.sender_id === currentUser.id && msg.receiver_id === currentPeer)
-          ) {
-            setDmMessages((prev) => {
-              if (prev.some((m) => m.id === msg.id)) return prev;
-              return [...prev, msg];
-            });
-          }
-        }
-      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, members]);
 
   /* ── Fetch groups ── */
   const fetchGroups = async () => {
@@ -422,6 +543,30 @@ function CommunityPage() {
     return Math.max(onlineUserIds.size, classOnline + (currentUser ? 1 : 0));
   }, [membersWithPresence, onlineUserIds, currentUser]);
 
+  /* FILTER 1: Members for Direct Messages sidebar — ONLY show active conversation peers! */
+  const conversationMembers = useMemo(() => {
+    const activeSet = new Set(activePeerIds);
+    const list = membersWithPresence.filter((m) => m.id !== currentUser?.id && activeSet.has(m.id));
+
+    return list.sort((a, b) => {
+      const idxA = activePeerIds.indexOf(a.id);
+      const idxB = activePeerIds.indexOf(b.id);
+      return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+    });
+  }, [membersWithPresence, activePeerIds, currentUser]);
+
+  const filteredConversationMembers = useMemo(() => {
+    if (!memberSearch.trim()) return conversationMembers;
+    const q = memberSearch.toLowerCase();
+    return conversationMembers.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.department.toLowerCase().includes(q) ||
+        (recentDmMap[m.id]?.lastMessage || "").toLowerCase().includes(q)
+    );
+  }, [conversationMembers, memberSearch, recentDmMap]);
+
+  /* FILTER 2: Members for Global Community Right Sidebar (all classmates) */
   const filteredMembers = useMemo(() => {
     const result = membersWithPresence.filter((m) => {
       if (memberFilter === "online" && m.status !== "online") return false;
@@ -437,6 +582,19 @@ function CommunityPage() {
       return a.status === "online" ? -1 : 1;
     });
   }, [membersWithPresence, memberFilter, memberSearch]);
+
+  /* FILTER 3: All classmates list for + New Chat Modal */
+  const allClassmatesForNewChat = useMemo(() => {
+    const list = membersWithPresence.filter((m) => m.id !== currentUser?.id);
+    if (!newChatSearch.trim()) return list;
+    const q = newChatSearch.toLowerCase();
+    return list.filter((m) => m.name.toLowerCase().includes(q) || m.department.toLowerCase().includes(q));
+  }, [membersWithPresence, newChatSearch, currentUser]);
+
+  /* Total Unread DM Count across all conversations */
+  const totalUnreadCount = useMemo(() => {
+    return Object.values(recentDmMap).reduce((sum, item) => sum + (item.unreadCount || 0), 0);
+  }, [recentDmMap]);
 
   const filteredPosts = useMemo(() => {
     if (!search.trim()) return posts;
@@ -509,27 +667,37 @@ function CommunityPage() {
     setDmSending(true);
     const content = chatInput.trim();
     setChatInput("");
+    const nowIso = new Date().toISOString();
     // Optimistic message
     const optimisticMsg: DirectMessage = {
       id: `opt-${Date.now()}`, sender_id: currentUser.id,
-      receiver_id: activePeerId, content, created_at: new Date().toISOString(),
+      receiver_id: activePeerId, content, created_at: nowIso,
     };
     setDmMessages((prev) => [...prev, optimisticMsg]);
+
+    // Update recent DM snippet immediately
+    setRecentDmMap((prev) => ({
+      ...prev,
+      [activePeerId]: {
+        lastMessage: content,
+        lastMessageAt: nowIso,
+        unreadCount: 0,
+      },
+    }));
+
     try {
-      // Primary insert to direct_messages table
       const { data, error } = await supabase.from("direct_messages").insert({
         sender_id: currentUser.id, receiver_id: activePeerId, content,
       }).select().single();
 
       if (error) {
-        // Fallback insert to private_messages table
         const { data: pmData, error: pmError } = await supabase.from("private_messages").insert({
           sender_id: currentUser.id, receiver_id: activePeerId, content,
         }).select().single();
         if (pmError) throw error;
-        setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? pmData : m));
+        setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? pmData : m)));
       } else {
-        setDmMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? data : m));
+        setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? data : m)));
       }
     } catch (err: any) {
       setDmMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
@@ -619,12 +787,11 @@ function CommunityPage() {
               <button
                 onClick={() => {
                   setMainTab("dms");
-                  if (!activePeerId && membersWithPresence.length > 0) {
-                    const firstPeer = membersWithPresence.find((m) => m.id !== currentUser?.id);
-                    if (firstPeer) setActivePeerId(firstPeer.id);
+                  if (!activePeerId && conversationMembers.length > 0) {
+                    openChatWithPeer(conversationMembers[0].id);
                   }
                 }}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 relative ${
                   mainTab === "dms"
                     ? "bg-card text-foreground shadow-sm border border-border"
                     : "text-muted-foreground hover:text-foreground hover:bg-card/50"
@@ -632,10 +799,16 @@ function CommunityPage() {
               >
                 <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
                 <span>Direct Messages</span>
-                {membersWithPresence.length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-primary/10 text-primary">
-                    {membersWithPresence.filter((m) => m.id !== currentUser?.id).length}
+                {totalUnreadCount > 0 ? (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
+                    {totalUnreadCount}
                   </span>
+                ) : (
+                  conversationMembers.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-primary/10 text-primary">
+                      {conversationMembers.length}
+                    </span>
+                  )
                 )}
               </button>
             </div>
@@ -647,7 +820,7 @@ function CommunityPage() {
               </span>
               <Button
                 variant="outline" size="sm"
-                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); if (activePeerId) fetchDMs(activePeerId); }}
+                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); fetchRecentConversations(); if (activePeerId) fetchDMs(activePeerId); }}
                 className="h-7 text-[10px] gap-1 px-2.5" title="Refresh"
               >
                 <RefreshCw className={`h-3 w-3 ${membersLoading ? "animate-spin" : ""}`} />
@@ -731,10 +904,7 @@ function CommunityPage() {
                                 <p className="text-xs font-bold text-foreground">{post.author_name}</p>
                                 {post.user_id !== currentUser?.id && (
                                   <button
-                                    onClick={() => {
-                                      setActivePeerId(post.user_id);
-                                      setMainTab("dms");
-                                    }}
+                                    onClick={() => openChatWithPeer(post.user_id)}
                                     className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 transition-colors"
                                   >
                                     <MessageCircle className="h-3 w-3" /> DM
@@ -776,10 +946,7 @@ function CommunityPage() {
 
                           {post.user_id !== currentUser?.id && (
                             <button
-                              onClick={() => {
-                                setActivePeerId(post.user_id);
-                                setMainTab("dms");
-                              }}
+                              onClick={() => openChatWithPeer(post.user_id)}
                               className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
                             >
                               <MessageSquare className="h-3.5 w-3.5" /> Direct Message
@@ -867,8 +1034,7 @@ function CommunityPage() {
                             key={member.id}
                             onClick={() => {
                               if (member.id !== currentUser?.id) {
-                                setActivePeerId(member.id);
-                                setMainTab("dms");
+                                openChatWithPeer(member.id);
                               }
                             }}
                             className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
@@ -900,8 +1066,7 @@ function CommunityPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setActivePeerId(member.id);
-                                  setMainTab("dms");
+                                  openChatWithPeer(member.id);
                                 }}
                                 className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
                                 title={`Message ${member.name}`}
@@ -998,97 +1163,123 @@ function CommunityPage() {
         {mainTab === "dms" && (
           <div className="flex-1 flex overflow-hidden">
 
-            {/* Left DM Sidebar: Classmates List */}
+            {/* Left DM Sidebar: ONLY Active Conversation Peers + New Chat Action */}
             <aside className="w-72 md:w-80 border-r border-border bg-card flex flex-col shrink-0 overflow-hidden">
               <div className="p-3 border-b border-border space-y-2">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-extrabold tracking-tight flex items-center gap-1.5">
-                    <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
-                    Direct Messages
-                  </h2>
-                  <span className="text-[9px] text-muted-foreground font-semibold">
-                    {filteredMembers.filter((m) => m.id !== currentUser?.id).length} Classmates
-                  </span>
+                  <div>
+                    <h2 className="text-xs font-extrabold tracking-tight flex items-center gap-1.5">
+                      <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
+                      Direct Messages
+                    </h2>
+                    <p className="text-[9px] text-muted-foreground font-medium">
+                      {conversationMembers.length} active conversation{conversationMembers.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  {/* + New Chat Button */}
+                  <Button
+                    size="sm"
+                    onClick={() => setShowNewChatModal(true)}
+                    className="h-7 text-[10px] font-bold gap-1 px-2.5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white rounded-xl shadow-xs"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>New Chat</span>
+                  </Button>
                 </div>
 
-                {/* Filter Pills */}
-                <div className="grid grid-cols-3 gap-1 bg-muted/40 p-1 rounded-xl">
-                  <button onClick={() => setMemberFilter("all")}
-                    className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
-                    All
-                  </button>
-                  <button onClick={() => setMemberFilter("online")}
-                    className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
-                    <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
-                    Online
-                  </button>
-                  <button onClick={() => setMemberFilter("offline")}
-                    className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
-                    <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
-                    Offline
-                  </button>
-                </div>
-
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                  <input type="text" placeholder="Search classmate..."
-                    value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
-                    className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
+                {/* Search in Conversations */}
+                {conversationMembers.length > 0 && (
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <input type="text" placeholder="Search active chats..."
+                      value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+                      className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Classmates DM List */}
+              {/* DM Conversations List — ONLY active conversation peers! */}
               <div className="flex-1 overflow-y-auto p-2 scrollbar-thin space-y-1">
                 {membersLoading ? (
                   <div className="space-y-2 p-2">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div key={i} className="h-12 bg-muted/40 animate-pulse rounded-xl" />
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-14 bg-muted/40 animate-pulse rounded-xl" />
                     ))}
                   </div>
-                ) : filteredMembers.filter((m) => m.id !== currentUser?.id).length === 0 ? (
-                  <div className="text-center p-6 rounded-xl border border-dashed border-border my-4">
-                    <UserCheck className="h-8 w-8 mx-auto text-muted-foreground/40 mb-1" />
-                    <p className="text-xs font-semibold text-muted-foreground">No classmates found</p>
+                ) : filteredConversationMembers.length === 0 ? (
+                  <div className="text-center p-6 rounded-2xl border border-dashed border-border my-6 space-y-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                      <MessageSquarePlus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-foreground">No active conversations</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Start a direct message with any classmate using the button below.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowNewChatModal(true)}
+                      className="h-8 text-xs font-bold gap-1 px-4 bg-primary text-primary-foreground rounded-xl shadow-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Start New Chat
+                    </Button>
                   </div>
                 ) : (
-                  filteredMembers
-                    .filter((m) => m.id !== currentUser?.id)
-                    .map((member) => {
-                      const isActive = activePeerId === member.id;
-                      return (
-                        <div
-                          key={member.id}
-                          onClick={() => setActivePeerId(member.id)}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer group
-                            ${isActive
-                              ? "border-primary bg-primary/10 shadow-xs"
-                              : "border-transparent hover:border-border hover:bg-accent/40"}`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="relative shrink-0">
-                              <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
-                                {member.initials}
-                              </div>
-                              <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                  filteredConversationMembers.map((member) => {
+                    const isActive = activePeerId === member.id;
+                    const dmMeta = recentDmMap[member.id];
+                    const unread = dmMeta?.unreadCount || 0;
+                    const lastMsg = dmMeta?.lastMessage || "";
+                    const timeStr = dmMeta?.lastMessageAt ? fmtTime(dmMeta.lastMessageAt) : "";
+
+                    return (
+                      <div
+                        key={member.id}
+                        onClick={() => openChatWithPeer(member.id)}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer group relative
+                          ${isActive
+                            ? "border-primary bg-primary/10 shadow-xs"
+                            : "border-transparent hover:border-border hover:bg-accent/40"}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="relative shrink-0">
+                            <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
+                              {member.initials}
                             </div>
-                            <div className="min-w-0">
+                            <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
                               <p className={`text-xs font-bold truncate transition-colors ${isActive ? "text-primary" : "text-foreground group-hover:text-primary"}`}>
                                 {member.name}
                               </p>
-                              <p className="text-[9.5px] text-muted-foreground truncate">
-                                <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                                  {member.status === "online" ? "Online" : "Offline"}
+                              {timeStr && (
+                                <span className={`text-[8.5px] shrink-0 font-mono ${unread > 0 ? "text-emerald-600 font-bold" : "text-muted-foreground"}`}>
+                                  {timeStr}
                                 </span>
-                                {" · "}{member.department}
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between gap-1 mt-0.5">
+                              <p className={`text-[10px] truncate max-w-[170px] ${unread > 0 ? "font-bold text-foreground" : "text-muted-foreground"}`}>
+                                {lastMsg || `${member.department}`}
                               </p>
+
+                              {/* WhatsApp-Style Green Unread Counter Badge */}
+                              {unread > 0 && (
+                                <span className="shrink-0 min-w-[18px] h-4 px-1 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white flex items-center justify-center shadow-xs animate-pulse">
+                                  {unread}
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isActive ? "text-primary translate-x-0.5" : "text-muted-foreground/40 group-hover:text-muted-foreground"}`} />
                         </div>
-                      );
-                    })
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </aside>
@@ -1198,12 +1389,102 @@ function CommunityPage() {
                   </div>
                   <h3 className="text-base font-bold text-foreground">Your Direct Messages</h3>
                   <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
-                    Select a classmate from the list on the left to start a persistent, real-time 1-on-1 direct message chat.
+                    Select an active conversation on the left, or click "+ New Chat" to message any classmate.
                   </p>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowNewChatModal(true)}
+                    className="h-9 text-xs font-bold gap-1.5 px-5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white rounded-xl shadow-sm"
+                  >
+                    <Plus className="h-4 w-4" /> Start New Chat
+                  </Button>
                 </div>
               )}
             </main>
 
+          </div>
+        )}
+
+        {/* ── MODAL: Start New Chat (Search All Registered Classmates) ── */}
+        {showNewChatModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-4 border-b border-border flex items-center justify-between bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <MessageSquarePlus className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-foreground">Start a New Chat</h3>
+                    <p className="text-[10px] text-muted-foreground">Select a classmate from the directory</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNewChatModal(false)}
+                  className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-center transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="p-3 border-b border-border bg-card">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search classmate by name or department..."
+                    value={newChatSearch}
+                    onChange={(e) => setNewChatSearch(e.target.value)}
+                    className="w-full h-9 pl-9 pr-3 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Classmates Directory List */}
+              <div className="flex-1 overflow-y-auto p-2 scrollbar-thin space-y-1">
+                {allClassmatesForNewChat.length === 0 ? (
+                  <div className="text-center p-6 text-muted-foreground text-xs font-semibold">
+                    No classmates match "{newChatSearch}"
+                  </div>
+                ) : (
+                  allClassmatesForNewChat.map((classmate) => (
+                    <div
+                      key={classmate.id}
+                      onClick={() => {
+                        openChatWithPeer(classmate.id);
+                        setShowNewChatModal(false);
+                      }}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-transparent hover:border-border hover:bg-accent/40 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(classmate.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
+                            {classmate.initials}
+                          </div>
+                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${classmate.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                            {classmate.name}
+                          </p>
+                          <p className="text-[9.5px] text-muted-foreground truncate">
+                            <span className={`font-semibold ${classmate.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
+                              {classmate.status === "online" ? "● Online" : "○ Offline"}
+                            </span>
+                            {" · "}{classmate.department}
+                          </p>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" className="h-7 text-[10px] font-bold gap-1 text-primary group-hover:bg-primary/10">
+                        <MessageCircle className="h-3 w-3" /> Chat
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
 
