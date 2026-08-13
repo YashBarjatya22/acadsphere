@@ -177,59 +177,8 @@ async function initAttendanceDbInternal(db: any) {
   `);
 }
 
-async function seedDefaultStudentAttendanceInternal(studentId: string, db: any) {
-  await initAttendanceDbInternal(db);
-
-  const existing = db.prepare("SELECT COUNT(*) as cnt FROM subject_attendance WHERE student_id = ?").get(studentId) as any;
-  if (existing && existing.cnt > 0) return;
-
-  const defaultSubjects = [
-    { id: "sub1", name: "Database Management Systems", code: "CS301", attended: 42, conducted: 50 },
-    { id: "sub2", name: "Operating Systems", code: "CS302", attended: 46, conducted: 50 },
-    { id: "sub3", name: "Computer Networks", code: "CS303", attended: 37, conducted: 50 },
-    { id: "sub4", name: "Artificial Intelligence", code: "CS304", attended: 44, conducted: 50 },
-    { id: "sub5", name: "Software Engineering", code: "CS305", attended: 48, conducted: 50 },
-  ];
-
-  const insertStmt = db.prepare(`
-    INSERT INTO subject_attendance 
-    (id, student_id, subject_id, subject_name, subject_code, classes_attended, classes_conducted, attendance_percentage)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  for (const s of defaultSubjects) {
-    const pct = Math.round((s.attended / s.conducted) * 100);
-    insertStmt.run(crypto.randomUUID(), studentId, s.id, s.name, s.code, s.attended, s.conducted, pct);
-  }
-
-  const insertNotification = db.prepare(`
-    INSERT INTO attendance_reminders 
-    (id, student_id, subject_id, subject_name, threshold, level, message, last_percentage, is_active, is_read)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
-  `);
-
-  insertNotification.run(
-    crypto.randomUUID(),
-    studentId,
-    "sub3",
-    "Computer Networks",
-    75,
-    "critical",
-    "🚨 Attendance Alert: Your attendance in Computer Networks is 74%. You are now below the mandatory 75% threshold! Attend upcoming classes immediately.",
-    74.0
-  );
-
-  insertNotification.run(
-    crypto.randomUUID(),
-    studentId,
-    "sub1",
-    "Database Management Systems",
-    85,
-    "warning",
-    "⚠️ Heads Up: Your attendance in Database Management Systems has fallen to 84%. Maintain regular attendance to stay above the 85% safe zone.",
-    84.0
-  );
-}
+// Note: Dummy seed data removed. Real attendance data flows from Supabase via the CUE extension sync.
+// The SQLite DB is still used for manual attendance tracking (+/- buttons) but starts empty.
 
 function evaluateReminderRulesInternal(
   db: any,
@@ -355,12 +304,7 @@ export const getAttendanceDashboardData = createServerFn({ method: "GET" })
     }
     subjectsRaw.sort((a, b) => a.subject_name.localeCompare(b.subject_name));
 
-    if (subjectsRaw.length === 0) {
-      await seedDefaultStudentAttendanceInternal(studentId, db);
-      subjectsRaw = db.prepare(`
-        SELECT * FROM subject_attendance WHERE student_id = ? ORDER BY subject_name ASC
-      `).all(studentId) as any[];
-    }
+    // No seed — return empty subjects if none exist (user must sync via CUE extension)
 
     let totalAttended = 0;
     let totalConducted = 0;

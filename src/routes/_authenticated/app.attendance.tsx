@@ -65,59 +65,6 @@ interface CueSubject {
 
 const CUE_SESSION_KEY = "cue_attendance_v1";
 
-const DEMO_CUE_SUBJECTS: any[] = [
-  {
-    code: "CS301",
-    name: "Database Management Systems",
-    type: "Theory",
-    attended: 42,
-    total: 50,
-    percentage: 84.0,
-    target85: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 4 },
-    target75: { status: "SAFE", leavesAllowed: 6, classesNeeded: 0 },
-  },
-  {
-    code: "CS302",
-    name: "Operating Systems",
-    type: "Theory",
-    attended: 46,
-    total: 50,
-    percentage: 92.0,
-    target85: { status: "SAFE", leavesAllowed: 4, classesNeeded: 0 },
-    target75: { status: "SAFE", leavesAllowed: 11, classesNeeded: 0 },
-  },
-  {
-    code: "CS303",
-    name: "Computer Networks",
-    type: "Theory",
-    attended: 37,
-    total: 50,
-    percentage: 74.0,
-    target85: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 11 },
-    target75: { status: "NEED_ATTENDANCE", leavesAllowed: 0, classesNeeded: 2 },
-  },
-  {
-    code: "CS304",
-    name: "Artificial Intelligence Lab",
-    type: "Practical",
-    attended: 28,
-    total: 30,
-    percentage: 93.33,
-    target85: { status: "SAFE", leavesAllowed: 2, classesNeeded: 0 },
-    target75: { status: "SAFE", leavesAllowed: 7, classesNeeded: 0 },
-  },
-  {
-    code: "CS305",
-    name: "Software Engineering",
-    type: "Theory",
-    attended: 48,
-    total: 50,
-    percentage: 96.0,
-    target85: { status: "SAFE", leavesAllowed: 6, classesNeeded: 0 },
-    target75: { status: "SAFE", leavesAllowed: 14, classesNeeded: 0 },
-  },
-];
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
 function AttendancePage() {
@@ -125,16 +72,94 @@ function AttendancePage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "simulator" | "notifications" | "faculty">("dashboard");
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("sub1");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSupabaseFetching, setIsSupabaseFetching] = useState(true);
 
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user?.id) setUserId(data.user.id);
+      else setIsSupabaseFetching(false); // not logged in, stop loader
     });
   }, []);
 
-  // CUE data is cached in sessionStorage or updated via Chrome Extension
+  // ── Supabase live fetch from student_attendance table ─────────────────────
+  useEffect(() => {
+    if (!userId) return;
+
+    // Initial fetch
+    setIsSupabaseFetching(true);
+    supabase
+      .from("student_attendance")
+      .select("*")
+      .eq("user_id", userId)
+      .order("last_synced_at", { ascending: false })
+      .then(({ data, error }) => {
+        setIsSupabaseFetching(false);
+        if (error) {
+          console.error("[Attendance] Supabase fetch error:", error.message);
+          return;
+        }
+        if (data && data.length > 0) {
+          const mapped: CueSubject[] = data.map((row: any) => ({
+            code: row.subject_code,
+            name: row.subject_name,
+            type: row.subject_type || "Theory",
+            attended: row.attended_classes,
+            total: row.total_classes,
+            percentage: row.percentage,
+          }));
+          setCueData(mapped);
+          setCueLastSynced(data[0].last_synced_at || new Date().toISOString());
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify({ subjects: mapped, lastSynced: data[0].last_synced_at }));
+          }
+        }
+      });
+
+    // Real-time subscription — fires instantly when CUE extension upserts rows
+    const channel = supabase
+      .channel(`attendance-live-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "student_attendance",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          // Re-fetch all subjects on any change
+          supabase
+            .from("student_attendance")
+            .select("*")
+            .eq("user_id", userId)
+            .order("last_synced_at", { ascending: false })
+            .then(({ data }) => {
+              if (data && data.length > 0) {
+                const mapped: CueSubject[] = data.map((row: any) => ({
+                  code: row.subject_code,
+                  name: row.subject_name,
+                  type: row.subject_type || "Theory",
+                  attended: row.attended_classes,
+                  total: row.total_classes,
+                  percentage: row.percentage,
+                }));
+                setCueData(mapped);
+                setCueLastSynced(new Date().toISOString());
+                toast.success(`✅ Attendance synced! ${mapped.length} subjects updated in real-time.`);
+              }
+            });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  // CUE data cached in sessionStorage (fallback if Supabase hasn't loaded yet)
   // NOTE: must guard with typeof window check — this initializer runs during SSR on Node.js
   const [cueData, setCueData] = useState<CueSubject[] | null>(() => {
     if (typeof window === "undefined") return null;
@@ -153,20 +178,6 @@ function AttendancePage() {
 
   const [showCueModal, setShowCueModal] = useState(false);
 
-  const handleDemoSync = () => {
-    const syncedAt = new Date().toISOString();
-    const sessionPayload = {
-      subjects: DEMO_CUE_SUBJECTS,
-      lastSynced: syncedAt,
-    };
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify(sessionPayload));
-    }
-    setCueData(DEMO_CUE_SUBJECTS);
-    setCueLastSynced(syncedAt);
-    setShowCueModal(false);
-    toast.success(`Successfully loaded ${DEMO_CUE_SUBJECTS.length} demo subjects!`);
-  };
 
   // ── Purge sessionStorage when tab closes ──
   useEffect(() => {
@@ -176,7 +187,7 @@ function AttendancePage() {
   }, []);
 
 
-  // ── Server functions ──────────────────────────────────────────────────────────
+  // ── Server functions (for manual attendance tracking & notifications) ───────
   const getDashboardFn = useServerFn(getAttendanceDashboardData);
   const updateAttendanceFn = useServerFn(updateSubjectAttendance);
   const markReadFn = useServerFn(markNotificationRead);
@@ -187,48 +198,9 @@ function AttendancePage() {
     queryFn: () => getDashboardFn(),
     retry: 2,
     retryDelay: 1000,
-    // Auto-poll every 10s when no CUE data yet — detects Chrome Extension sync automatically.
-    // Once CUE subjects appear in DB, polling stops (refetchInterval returns false).
-    refetchInterval: (query) => {
-      const hasCue = query.state.data?.subjects?.some((s: any) => s.id?.startsWith("cue-"));
-      return hasCue ? false : 10000;
-    },
+    // No auto-poll — Supabase realtime subscription handles live CUE sync updates
+    refetchInterval: false,
   });
-
-  // Listen for Chrome Extension sync bridge events
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "acadsphere_cue_synced") {
-        refetch();
-        toast.success("Dashboard synced with latest database records.");
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [refetch]);
-
-  // Automatically update cueData when server DB returns synced attendance subjects
-  useEffect(() => {
-    if (dashboardData?.subjects && dashboardData.subjects.length > 0) {
-      const formattedCue: CueSubject[] = dashboardData.subjects.map((s: any) => ({
-        code: s.code || "N/A",
-        name: s.name,
-        type:
-          s.type ||
-          (s.name.toLowerCase().includes("project") ||
-          s.name.toLowerCase().includes("lab")
-            ? "Practical"
-            : "Theory"),
-        attended: s.attended,
-        total: s.conducted,
-        percentage: s.percentage,
-      }));
-      setCueData(formattedCue);
-      if (!cueLastSynced) {
-        setCueLastSynced(new Date().toISOString());
-      }
-    }
-  }, [dashboardData]);
 
   const updateMutation = useMutation({
     mutationFn: ({ subjectId, action }: { subjectId: string; action: "present" | "absent" | "reset" }) =>
@@ -391,13 +363,38 @@ function AttendancePage() {
     </div>
   );
 
-  // ── CASE 1: Still fetching — show spinner ────────────────────────────────────
-  if (isLoading) {
+  // ── CASE 1: Still fetching — show skeleton loader ────────────────────────────
+  if (isLoading || isSupabaseFetching) {
     return (
       <ChatLayout activeThreadId={null}>
-        <div className="h-full bg-background flex flex-col items-center justify-center gap-3">
-          <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-          <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Loading Attendance Engine...</p>
+        <div className="h-full bg-background flex flex-col overflow-y-auto">
+          {/* Skeleton header */}
+          <div className="px-6 py-5 border-b border-border shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-muted animate-pulse" />
+              <div className="space-y-2">
+                <div className="h-4 w-48 bg-muted rounded-lg animate-pulse" />
+                <div className="h-3 w-64 bg-muted/60 rounded-lg animate-pulse" />
+              </div>
+            </div>
+          </div>
+          {/* Skeleton body */}
+          <div className="p-6 space-y-4">
+            <div className="h-3 w-56 bg-muted/60 rounded animate-pulse" />
+            <div className="grid gap-4 md:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-28 rounded-2xl bg-muted/40 border border-border animate-pulse" />
+              ))}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-44 rounded-2xl bg-muted/30 border border-border animate-pulse" />
+              ))}
+            </div>
+            <p className="text-[11px] text-center text-muted-foreground animate-pulse font-mono">
+              Fetching live attendance from Supabase...
+            </p>
+          </div>
         </div>
       </ChatLayout>
     );
@@ -688,27 +685,32 @@ function AttendancePage() {
                 </button>
               </div>
             ) : (
-              <div
-                onClick={() => setShowCueModal(true)}
-                className="flex items-center justify-between p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 border-dashed cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/10 transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                    <Globe className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold text-foreground">Connect to CUE/KP Portal</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Enter your Christ University credentials to sync real-time attendance data.
-                      Credentials are never stored.
-                    </p>
-                  </div>
+              <div className="flex items-center gap-4 p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 border-dashed">
+                <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shrink-0 shadow-md">
+                  <Database className="h-5 w-5" />
                 </div>
-                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 group-hover:underline">
-                  <Lock className="h-3.5 w-3.5" /> Secure Login <ChevronDown className="h-3 w-3 -rotate-90" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-extrabold text-foreground">No Attendance Data Synced Yet</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Open <strong>cue.christuniversity.in</strong> in your browser, then click the{" "}
+                    <strong>AcadSphere CUE Sync</strong> Chrome Extension to push your live attendance here.
+                    Your data will appear instantly — no page refresh needed.
+                  </p>
                 </div>
+                {userId && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(userId);
+                      toast.success("User ID copied! Paste it in the Chrome Extension.");
+                    }}
+                    className="shrink-0 px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-500/20 transition-all flex items-center gap-1.5"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy User ID
+                  </button>
+                )}
               </div>
             )}
+
 
             {/* ── Overall Summary Cards ── */}
             {cueData && cueOverall ? (
