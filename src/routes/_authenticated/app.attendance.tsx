@@ -77,7 +77,23 @@ function AttendancePage() {
   const [cuePassword, setCuePassword] = useState("");
   const [showCuePassword, setShowCuePassword] = useState(false);
   const [cueError, setCueError] = useState<string | null>(null);
-  const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [showCredentialForm, setShowCredentialForm] = useState(true);
+  const [syncTab, setSyncTab] = useState<"server" | "extension" | "bookmarklet">("server");
+
+  // ── CAPTCHA & Server-Side Session State ─────────────────────────────────────
+  interface CaptchaSession {
+    reachable: boolean;
+    hasCaptcha: boolean;
+    captchaImage: string | null;
+    formActionUrl: string;
+    sessionCookie: string;
+    codeVerifier: string;
+    state: string;
+  }
+
+  const [captchaSession, setCaptchaSession] = useState<CaptchaSession | null>(null);
+  const [isFetchingSession, setIsFetchingSession] = useState(false);
+  const [captchaText, setCaptchaText] = useState("");
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -239,14 +255,84 @@ function AttendancePage() {
     toast.info("CUE Portal session data cleared.");
   };
 
-  // ── Server-Side CUE Sync Pipeline ──────────────────────────────────────────
+  // ── CAPTCHA Session Fetcher ────────────────────────────────────────────────
+  const fetchCaptchaSession = async () => {
+    setIsFetchingSession(true);
+    setCueError(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-captcha`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "apikey": SUPABASE_ANON_KEY,
+        },
+      });
+      const data = await res.json();
+      if (!data.reachable) {
+        setCaptchaSession({
+          reachable: false,
+          hasCaptcha: false,
+          captchaImage: null,
+          formActionUrl: "",
+          sessionCookie: "",
+          codeVerifier: "",
+          state: "",
+        });
+        setCueError(data.error || "Server cannot reach Christ University login portal (port 8010 is blocked).");
+      } else if (data.success) {
+        setCaptchaSession(data);
+        setCaptchaText("");
+        if (data.hasCaptcha) {
+          toast.info("🔐 CAPTCHA required by portal. Please solve it below.");
+        }
+      } else {
+        setCueError(data.error || "Failed to initialize login session.");
+      }
+    } catch (err: any) {
+      setCueError(err?.message || "Failed to contact sync service.");
+    } finally {
+      setIsFetchingSession(false);
+    }
+  };
+
+  // Fetch session automatically when modal opens
+  useEffect(() => {
+    if (showCueModal && syncTab === "server" && !captchaSession && !isFetchingSession) {
+      fetchCaptchaSession();
+    }
+  }, [showCueModal, syncTab]);
+
+  // ── Server-Side CUE Sync Pipeline (CAPTCHA-Aware) ──────────────────────────
   const handleCueSync = async (username: string, password: string) => {
     if (!username || !password) return;
+    if (captchaSession?.hasCaptcha && !captchaText.trim()) {
+      setCueError("Please enter the CAPTCHA text.");
+      toast.error("Please enter the CAPTCHA code.");
+      return;
+    }
+
     setIsCueSyncing(true);
     setCueError(null);
 
     try {
-      // Phase 1: Authenticate + scrape via kp-scraper edge function (Keycloak OIDC + ESPRO)
+      const payload: any = {
+        username: username.trim(),
+        password,
+        user_id: userId,
+      };
+
+      if (captchaSession?.reachable) {
+        payload.formActionUrl = captchaSession.formActionUrl;
+        payload.sessionCookie = captchaSession.sessionCookie;
+        payload.codeVerifier = captchaSession.codeVerifier;
+        payload.state = captchaSession.state;
+        if (captchaText.trim()) {
+          payload.captchaText = captchaText.trim();
+        }
+      }
+
+      // Phase 1: Authenticate + scrape via kp-scraper edge function (Keycloak Form/PKCE + ESPRO)
       const kpRes = await fetch(`${SUPABASE_URL}/functions/v1/kp-scraper`, {
         method: "POST",
         headers: {
@@ -254,7 +340,7 @@ function AttendancePage() {
           "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
           "apikey": SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify(payload),
       });
 
       const kpData = await kpRes.json();
@@ -262,10 +348,15 @@ function AttendancePage() {
       if (!kpData.success) {
         const msg = kpData.error || "Failed to fetch attendance from CUE portal.";
         setCueError(msg);
-        const isAuthErr = /credential|password|auth|invalid|login/i.test(msg);
-        toast.error(isAuthErr
-          ? "❌ Invalid credentials — check your CUE username/password."
-          : `❌ ${msg}`);
+
+        if (kpData.isCaptchaError) {
+          toast.error("❌ Invalid CAPTCHA code. Loading a new CAPTCHA...");
+          fetchCaptchaSession();
+        } else if (kpData.isCredentialError) {
+          toast.error("❌ Invalid credentials — check your CUE username/password.");
+        } else {
+          toast.error(`❌ ${msg}`);
+        }
         return;
       }
 
@@ -275,27 +366,7 @@ function AttendancePage() {
         return;
       }
 
-      // Phase 2: Upsert into Supabase student_attendance via sync-attendance edge function
-      if (userId) {
-        const syncRes = await fetch(`${SUPABASE_URL}/functions/v1/sync-attendance`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-            "apikey": SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            attendance_data: kpData.subjects,
-          }),
-        });
-
-        const syncData = await syncRes.json();
-        if (!syncRes.ok || syncData.error) {
-          throw new Error(syncData.error || "Database upsert failed.");
-        }
-        toast.success(`✅ Synced ${syncData.count} subjects from CUE Portal!`);
-      }
+      toast.success(`✅ Synced ${kpData.count || kpData.subjects.length} subjects from CUE Portal!`);
 
       // Phase 3: Optimistic UI update (Supabase realtime will also fire)
       const mapped: CueSubject[] = kpData.subjects.map((sub: any) => ({
@@ -315,6 +386,7 @@ function AttendancePage() {
       setShowCueModal(false);
       setCueUsername("");
       setCuePassword("");
+      setCaptchaText("");
       setCueError(null);
     } catch (err: any) {
       const msg = err?.message || "Sync failed. Please try again.";
@@ -1293,168 +1365,341 @@ function AttendancePage() {
 
 
 
-        {/* ── CUE Sync Modal — Bookmarklet + Credential Fallback ── */}
+        {/* ── CUE Sync Modal — CAPTCHA-Aware Direct Sync, Extension & Bookmarklet ── */}
         {showCueModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
             <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
               <button
                 type="button"
-                onClick={() => { setShowCueModal(false); setCueError(null); setShowCredentialForm(false); }}
-                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted/50 z-10"
+                onClick={() => {
+                  setShowCueModal(false);
+                  setCueError(null);
+                }}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-muted/50 z-10 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
 
               {/* Header */}
-              <div className="flex items-center gap-3 border-b border-border/60 pb-4 mb-5">
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4 mb-4">
                 <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-md">
                   <Globe className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-foreground">Sync from CUE Portal</h3>
-                  <p className="text-xs text-muted-foreground">Live attendance from Christ University ESPRO</p>
+                  <p className="text-xs text-muted-foreground">Direct server sync or browser-assisted integration</p>
                 </div>
               </div>
 
-              {/* ── Method 1: Bookmarklet (recommended) ── */}
-              <div className="space-y-3 mb-5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">Recommended</span>
-                  <span className="text-xs font-extrabold text-foreground">One-Click Bookmarklet</span>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Add the <strong className="text-foreground">AcadSphere Sync</strong> bookmark to your browser. When you're on the CUE portal, click it to sync instantly — no credentials needed, it uses your existing session.
-                </p>
-
-                {/* Steps */}
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
-                    <span>Open <strong className="text-foreground">Chrome/Edge</strong>, press <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono border border-border">Ctrl+Shift+B</kbd> to show Bookmarks Bar, then right-click → <strong className="text-foreground">Add page</strong>.</span>
-                  </div>
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
-                    <div className="flex-1 min-w-0">
-                      <span>Name it <strong className="text-foreground">AcadSphere Sync</strong>. For the URL, open the file below and paste its entire contents:</span>
-                      <code className="block mt-1 p-1.5 bg-muted rounded font-mono text-[10px] text-foreground select-all truncate">
-                        supabase/functions/bookmarklet/bookmarklet.url.txt
-                      </code>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
-                    <span>Log in to <strong className="text-foreground">cue.christuniversity.in</strong>, go to your Attendance page, click the <strong className="text-foreground">AcadSphere Sync</strong> bookmark. Paste your User ID when asked.</span>
-                  </div>
-                </div>
-
-                {/* User ID copy box */}
-                <div className="p-3 rounded-xl bg-muted/40 border border-border/60 space-y-1.5">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Your AcadSphere User ID (for the bookmarklet prompt)</span>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs font-bold text-foreground bg-background px-3 py-1.5 rounded-lg border border-border/50 truncate select-all">
-                      {userId || "Sign in to see your User ID"}
-                    </code>
-                    {userId && (
-                      <button
-                        type="button"
-                        onClick={() => { navigator.clipboard.writeText(userId); toast.success("User ID copied!"); }}
-                        className="shrink-0 px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold border border-primary/20 transition-all"
-                      >
-                        Copy
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="relative flex items-center gap-3 mb-4">
-                <div className="flex-1 h-px bg-border/60" />
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider shrink-0">Or try direct login</span>
-                <div className="flex-1 h-px bg-border/60" />
-              </div>
-
-              {/* ── Method 2: Credential form (may fail due to university firewall) ── */}
-              {!showCredentialForm ? (
+              {/* Navigation Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl border border-border/50 mb-5">
                 <button
                   type="button"
-                  onClick={() => setShowCredentialForm(true)}
-                  className="w-full text-xs font-bold text-muted-foreground hover:text-foreground border border-border hover:border-border/80 rounded-xl py-2 px-3 transition-all text-center"
+                  onClick={() => setSyncTab("server")}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all text-center ${
+                    syncTab === "server"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  Try with CUE credentials (may not work due to server restrictions)
+                  ⚡ Direct Sync
                 </button>
-              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSyncTab("extension")}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all text-center ${
+                    syncTab === "extension"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🧩 Extension
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSyncTab("bookmarklet")}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all text-center ${
+                    syncTab === "bookmarklet"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🔖 Bookmarklet
+                </button>
+              </div>
+
+              {/* ── TAB 1: Direct Server-Side Sync (CAPTCHA-aware) ── */}
+              {syncTab === "server" && (
                 <div className="space-y-4">
-                  {/* Warning */}
-                  <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
-                    <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <p>Christ University's server blocks direct API logins from external servers. Use the bookmarklet above for reliable sync.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="cue-username" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      CUE Username / Register No.
-                    </label>
-                    <input
-                      id="cue-username"
-                      type="text"
-                      value={cueUsername}
-                      onChange={(e) => setCueUsername(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
-                      placeholder="e.g. 2347034"
-                      autoComplete="username"
-                      disabled={isCueSyncing}
-                      className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="cue-password" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      CUE Password
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="cue-password"
-                        type={showCuePassword ? "text" : "password"}
-                        value={cuePassword}
-                        onChange={(e) => setCuePassword(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
-                        placeholder="Your CUE portal password"
-                        autoComplete="current-password"
-                        disabled={isCueSyncing}
-                        className="w-full px-3 py-2.5 pr-10 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
-                      />
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        onClick={() => setShowCuePassword(!showCuePassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {showCuePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
+                  {isFetchingSession ? (
+                    <div className="p-6 rounded-xl border border-border bg-muted/20 text-center space-y-2">
+                      <RefreshCw className="h-5 w-5 animate-spin mx-auto text-primary" />
+                      <p className="text-xs font-bold text-foreground">Connecting to Christ University Login Portal...</p>
+                      <p className="text-[11px] text-muted-foreground">Preparing secure PKCE session & CAPTCHA verification</p>
                     </div>
-                  </div>
+                  ) : captchaSession?.reachable === false ? (
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400 space-y-1.5">
+                        <div className="flex items-center gap-2 font-bold">
+                          <ShieldAlert className="h-4 w-4 shrink-0" />
+                          <span>External Cloud Restrictions Detected</span>
+                        </div>
+                        <p className="leading-relaxed">
+                          Christ University's Keycloak server runs on non-standard port <code className="px-1 py-0.2 rounded bg-amber-500/20 font-mono text-[11px]">8010</code> and blocks direct cloud API connections.
+                        </p>
+                        <p className="leading-relaxed font-semibold">
+                          Please use the <strong>Extension</strong> or <strong>Bookmarklet</strong> tab to sync seamlessly from your browser!
+                        </p>
+                      </div>
 
-                  {cueError && (
-                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
-                      <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
-                      <p className="leading-relaxed">{cueError}</p>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSyncTab("extension")}
+                          className="text-xs font-bold"
+                        >
+                          🧩 Open Extension Guide
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSyncTab("bookmarklet")}
+                          className="text-xs font-bold"
+                        >
+                          🔖 Open Bookmarklet Guide
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      <div className="space-y-1.5">
+                        <label htmlFor="cue-username" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          CUE Username / Register No.
+                        </label>
+                        <input
+                          id="cue-username"
+                          type="text"
+                          value={cueUsername}
+                          onChange={(e) => setCueUsername(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
+                          placeholder="e.g. 2547244"
+                          autoComplete="username"
+                          disabled={isCueSyncing}
+                          className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label htmlFor="cue-password" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          CUE Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="cue-password"
+                            type={showCuePassword ? "text" : "password"}
+                            value={cuePassword}
+                            onChange={(e) => setCuePassword(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
+                            placeholder="Your CUE portal password"
+                            autoComplete="current-password"
+                            disabled={isCueSyncing}
+                            className="w-full px-3 py-2.5 pr-10 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowCuePassword(!showCuePassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {showCuePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* CAPTCHA Display (if required) */}
+                      {captchaSession?.hasCaptcha && (
+                        <div className="p-3.5 rounded-xl border border-border bg-muted/30 space-y-2.5 animate-in fade-in duration-200">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                              Security Verification (CAPTCHA)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={fetchCaptchaSession}
+                              disabled={isFetchingSession}
+                              className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${isFetchingSession ? "animate-spin" : ""}`} /> Refresh
+                            </button>
+                          </div>
+
+                          {captchaSession.captchaImage ? (
+                            <div className="flex items-center gap-3">
+                              <div className="p-1.5 bg-background rounded-lg border border-border inline-block">
+                                <img
+                                  src={captchaSession.captchaImage}
+                                  alt="CAPTCHA Challenge"
+                                  className="h-10 w-auto rounded object-contain select-none"
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                value={captchaText}
+                                onChange={(e) => setCaptchaText(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
+                                placeholder="Enter characters"
+                                disabled={isCueSyncing}
+                                className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 uppercase"
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={captchaText}
+                              onChange={(e) => setCaptchaText(e.target.value)}
+                              placeholder="Enter CAPTCHA text shown on login page"
+                              disabled={isCueSyncing}
+                              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {cueError && (
+                        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
+                          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                          <p className="leading-relaxed">{cueError}</p>
+                        </div>
+                      )}
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleCueSync(cueUsername, cuePassword)}
+                        disabled={isCueSyncing || !cueUsername.trim() || !cuePassword}
+                        className="w-full text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 py-2.5"
+                      >
+                        {isCueSyncing ? (
+                          <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Authenticating & Syncing...</>
+                        ) : (
+                          <><Zap className="h-3.5 w-3.5" /> Sync Live Attendance</>
+                        )}
+                      </Button>
                     </div>
                   )}
+                </div>
+              )}
 
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleCueSync(cueUsername, cuePassword)}
-                    disabled={isCueSyncing || !cueUsername.trim() || !cuePassword}
-                    className="w-full text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60"
-                  >
-                    {isCueSyncing ? (
-                      <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Syncing...</>
-                    ) : (
-                      <><Zap className="h-3.5 w-3.5" /> Try Direct Sync</>
-                    )}
-                  </Button>
+              {/* ── TAB 2: Chrome Extension (1-Click Background) ── */}
+              {syncTab === "extension" && (
+                <div className="space-y-3.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">Automatic</span>
+                    <span className="text-xs font-extrabold text-foreground">AcadSphere Chrome Extension</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Auto-captures attendance whenever you view your attendance page on <strong className="text-foreground">cue.christuniversity.in</strong>.
+                  </p>
+
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                      <span>Go to <strong className="text-foreground">chrome://extensions</strong>, enable <strong className="text-foreground">Developer mode</strong> (top right).</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                      <div className="flex-1 min-w-0">
+                        <span>Click <strong className="text-foreground">Load unpacked</strong> and select the folder:</span>
+                        <code className="block mt-1 p-1.5 bg-muted rounded font-mono text-[10px] text-foreground select-all truncate">
+                          c:\Users\Roy Mathew\Desktop\spd\acadsphere-extension
+                        </code>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                      <span>Visit your CUE Portal Attendance page. Open the extension popup, paste your User ID once, and click <strong className="text-foreground">Sync</strong>.</span>
+                    </div>
+                  </div>
+
+                  {/* User ID copy box */}
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/60 space-y-1.5">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Your AcadSphere User ID</span>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-xs font-bold text-foreground bg-background px-3 py-1.5 rounded-lg border border-border/50 truncate select-all">
+                        {userId || "Sign in to see your User ID"}
+                      </code>
+                      {userId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(userId);
+                            toast.success("User ID copied!");
+                          }}
+                          className="shrink-0 px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold border border-primary/20 transition-all"
+                        >
+                          Copy
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 3: Bookmarklet ── */}
+              {syncTab === "bookmarklet" && (
+                <div className="space-y-3.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">No Install</span>
+                    <span className="text-xs font-extrabold text-foreground">Browser Bookmarklet</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    A lightweight JavaScript bookmark you can run directly while viewing the CUE portal.
+                  </p>
+
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                      <span>Press <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono border border-border">Ctrl+Shift+B</kbd> in Chrome/Edge, right-click bar → <strong className="text-foreground">Add page</strong>.</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                      <div className="flex-1 min-w-0">
+                        <span>Name it <strong className="text-foreground">AcadSphere Sync</strong> and paste the URL from:</span>
+                        <code className="block mt-1 p-1.5 bg-muted rounded font-mono text-[10px] text-foreground select-all truncate">
+                          supabase/functions/bookmarklet/bookmarklet.url.txt
+                        </code>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
+                      <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                      <span>On <strong className="text-foreground">cue.christuniversity.in/main/attendence</strong>, click the bookmark and enter your User ID.</span>
+                    </div>
+                  </div>
+
+                  {/* User ID copy box */}
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/60 space-y-1.5">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Your AcadSphere User ID</span>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 font-mono text-xs font-bold text-foreground bg-background px-3 py-1.5 rounded-lg border border-border/50 truncate select-all">
+                        {userId || "Sign in to see your User ID"}
+                      </code>
+                      {userId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(userId);
+                            toast.success("User ID copied!");
+                          }}
+                          className="shrink-0 px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold border border-primary/20 transition-all"
+                        >
+                          Copy
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1474,7 +1719,10 @@ function AttendancePage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => { setShowCueModal(false); setCueError(null); setShowCredentialForm(false); }}
+                  onClick={() => {
+                    setShowCueModal(false);
+                    setCueError(null);
+                  }}
                   className="text-xs font-bold"
                 >
                   Close

@@ -1,27 +1,15 @@
 /**
- * Supabase Edge Function: kp-scraper
+ * Supabase Edge Function: kp-scraper (CAPTCHA-Aware + Form/PKCE + ROPC)
  * ─────────────────────────────────────────────────────────────────────────────
- * Authenticates with Christ University CUE Portal via Keycloak OIDC.
- * Uses the Resource Owner Password Credentials (ROPC) grant with DPoP
- * (Demonstrating Proof-of-Possession) to obtain a DPoP-bound access token.
- * Then fetches real attendance data from espro.christuniversity.in:84 API.
+ * Authenticates with Christ University CUE Portal via:
+ * 1. Form-Submission + PKCE authorization code exchange (supports CAPTCHAs and avoids ROPC blocks).
+ * 2. Fallback to direct Keycloak ROPC OIDC grant with DPoP.
  *
- * Auth Flow:
- *   1. Generate an ephemeral EC P-256 key pair for DPoP signing.
- *   2. POST username/password + DPoP proof to Keycloak token endpoint.
- *   3. Receive DPoP-bound access_token (re-send with server nonce if required).
- *   4. Fetch semester list from espro API with DPoP-signed GET requests.
- *   5. Fetch course-wise attendance for the current semester.
- *   6. Normalise raw JSON → apply margin engine → return 200 JSON to frontend.
- *
- * Endpoints discovered via live browser network interception:
- *   Auth:     https://studentespro.christuniversity.in:8010/auth/realms/Student/protocol/openid-connect/token
- *   Semesters: https://espro.christuniversity.in:84/ClassRoomAttendanceServices/Student/StudentAttendance/getStudentSemesters
- *   Attendance (new): https://espro.christuniversity.in:84/KPServiceNew/rest/getAttendanceDetailsBySemester?termNo=<termNo>
- *   Attendance (old): https://espro.christuniversity.in:84/ClassRoomAttendanceServices/Student/StudentAttendance/getCourseWiseAttendance?sessionId=<sessionId>
+ * Scrapes attendance from espro.christuniversity.in:84 and upserts directly to Supabase.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -32,18 +20,11 @@ const corsHeaders = {
 };
 const JSON_HEADERS = { ...corsHeaders, "Content-Type": "application/json" };
 
-// Keycloak OIDC token endpoint (discovered via browser network interception)
 const KC_TOKEN_URL =
   "https://studentespro.christuniversity.in:8010/auth/realms/Student/protocol/openid-connect/token";
 const KC_CLIENT_ID = "react-app";
-
-// ESPRO REST API base (discovered via browser network interception)
 const ESPRO_BASE = "https://espro.christuniversity.in:84";
 const SEMESTER_URL = `${ESPRO_BASE}/ClassRoomAttendanceServices/Student/StudentAttendance/getStudentSemesters`;
-const ATT_NEW_URL = (termNo: string) =>
-  `${ESPRO_BASE}/KPServiceNew/rest/getAttendanceDetailsBySemester?termNo=${termNo}`;
-const ATT_OLD_URL = (sessionId: string) =>
-  `${ESPRO_BASE}/ClassRoomAttendanceServices/Student/StudentAttendance/getCourseWiseAttendance?sessionId=${sessionId}`;
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -107,10 +88,6 @@ function encodeJson(obj: unknown): string {
 
 // ── DPoP JWT Builder ──────────────────────────────────────────────────────────
 
-/**
- * Creates a DPoP proof JWT signed with an ephemeral EC P-256 key pair.
- * Optionally includes a server nonce and/or an access token hash (ath).
- */
 async function buildDPoP(
   keyPair: CryptoKeyPair,
   method: string,
@@ -147,17 +124,159 @@ async function buildDPoP(
   return `${signingInput}.${b64url(sig)}`;
 }
 
-// ── Keycloak ROPC Authentication ──────────────────────────────────────────────
+// ── Form-Based Authentication with PKCE (CAPTCHA-aware) ───────────────────────
 
-/**
- * Authenticates via Keycloak's Resource Owner Password Credentials grant.
- * Attempts with DPoP first; handles server nonce challenges; falls back
- * to a plain password grant if the server does not require DPoP.
- *
- * Returns { accessToken, keyPair, dpopBound } where dpopBound indicates
- * whether the token is DPoP-bound (true) or a plain Bearer token (false).
- */
-async function keycloakLogin(
+async function authenticateWithFormPKCE(
+  username: string,
+  password: string,
+  formActionUrl: string,
+  sessionCookie: string,
+  codeVerifier: string,
+  captchaText?: string
+): Promise<{ accessToken: string; keyPair: CryptoKeyPair; dpopBound: boolean }> {
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"]
+  );
+
+  const formBody = new URLSearchParams();
+  formBody.set("username", username.trim());
+  formBody.set("password", password);
+  formBody.set("credentialId", "");
+
+  if (captchaText && captchaText.trim()) {
+    formBody.set("captchaCode", captchaText.trim());
+    formBody.set("captcha", captchaText.trim());
+    formBody.set("captchaAnswer", captchaText.trim());
+  }
+
+  // Submit the login form to Keycloak
+  const formRes = await fetch(formActionUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": BROWSER_UA,
+      Cookie: sessionCookie,
+      Referer: formActionUrl,
+    },
+    body: formBody.toString(),
+    redirect: "manual", // Prevent automatic following of redirect to capture 302 Location header
+  });
+
+  const location = formRes.headers.get("location") || "";
+
+  // 1. Check for success redirect containing authorization code
+  let authCode: string | null = null;
+  if (location) {
+    try {
+      const locUrl = new URL(location, "https://cue.christuniversity.in");
+      authCode = locUrl.searchParams.get("code");
+      const err = locUrl.searchParams.get("error");
+      const errDesc = locUrl.searchParams.get("error_description");
+
+      if (err) {
+        if (err.includes("captcha") || (errDesc && errDesc.includes("captcha"))) {
+          const e: any = new Error("Invalid CAPTCHA code entered.");
+          e.isCaptchaError = true;
+          throw e;
+        }
+        const e: any = new Error(errDesc || "Authentication rejected: " + err);
+        e.isCredentialError = true;
+        throw e;
+      }
+    } catch (parseErr: any) {
+      if (parseErr.isCaptchaError || parseErr.isCredentialError) throw parseErr;
+    }
+  }
+
+  // 2. If no redirect location or status 200, examine HTML for error messages
+  if (!authCode) {
+    const resHtml = await formRes.text().catch(() => "");
+    if (resHtml.toLowerCase().includes("invalid username") || resHtml.toLowerCase().includes("invalid password") || resHtml.toLowerCase().includes("invalid_user_credentials")) {
+      const e: any = new Error("Invalid username or password.");
+      e.isCredentialError = true;
+      throw e;
+    }
+    if (resHtml.toLowerCase().includes("invalid captcha") || resHtml.toLowerCase().includes("captcha code")) {
+      const e: any = new Error("Invalid CAPTCHA code entered. Please try again.");
+      e.isCaptchaError = true;
+      throw e;
+    }
+    if (resHtml.includes("kc-captcha-image") || resHtml.includes("captcha")) {
+      const e: any = new Error("CAPTCHA verification required. Please solve the CAPTCHA.");
+      e.isCaptchaError = true;
+      throw e;
+    }
+    throw new Error("Login failed. Check username and password.");
+  }
+
+  // 3. Exchange auth code for DPoP access token
+  const tokenParams = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: KC_CLIENT_ID,
+    code: authCode,
+    redirect_uri: "https://cue.christuniversity.in",
+    code_verifier: codeVerifier,
+  });
+
+  const dpopProof = await buildDPoP(keyPair, "POST", KC_TOKEN_URL);
+  let tokenRes = await fetch(KC_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": BROWSER_UA,
+      DPoP: dpopProof,
+    },
+    body: tokenParams.toString(),
+  });
+
+  if (tokenRes.status === 400) {
+    const serverNonce = tokenRes.headers.get("dpop-nonce");
+    if (serverNonce) {
+      const dpopProof2 = await buildDPoP(keyPair, "POST", KC_TOKEN_URL, serverNonce);
+      tokenRes = await fetch(KC_TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": BROWSER_UA,
+          DPoP: dpopProof2,
+        },
+        body: tokenParams.toString(),
+      });
+    }
+  }
+
+  if (!tokenRes.ok) {
+    // Fallback: try token exchange without DPoP
+    const tokenResFallback = await fetch(KC_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": BROWSER_UA,
+      },
+      body: tokenParams.toString(),
+    });
+
+    if (tokenResFallback.ok) {
+      const json = await tokenResFallback.json();
+      if (json.access_token) {
+        return { accessToken: json.access_token, keyPair, dpopBound: false };
+      }
+    }
+
+    const errTxt = await tokenRes.text().catch(() => "");
+    console.error("[kp-scraper] Code exchange failed:", tokenRes.status, errTxt);
+    throw new Error("Failed to exchange authorization code for access token.");
+  }
+
+  const tokenJson = await tokenRes.json();
+  return { accessToken: tokenJson.access_token, keyPair, dpopBound: true };
+}
+
+// ── Direct Keycloak ROPC (Fallback) ───────────────────────────────────────────
+
+async function keycloakROPCLogin(
   username: string,
   password: string
 ): Promise<{ accessToken: string; keyPair: CryptoKeyPair; dpopBound: boolean }> {
@@ -175,7 +294,6 @@ async function keycloakLogin(
     scope: "openid profile",
   });
 
-  // ── Attempt 1: with DPoP ──────────────────────────────────────────────────
   const dpopProof1 = await buildDPoP(keyPair, "POST", KC_TOKEN_URL);
   let res = await fetch(KC_TOKEN_URL, {
     method: "POST",
@@ -187,7 +305,6 @@ async function keycloakLogin(
     body: baseParams.toString(),
   });
 
-  // ── Handle server-side DPoP nonce requirement ─────────────────────────────
   if (res.status === 400) {
     const serverNonce = res.headers.get("dpop-nonce");
     if (serverNonce) {
@@ -211,7 +328,7 @@ async function keycloakLogin(
     }
   }
 
-  // ── Attempt 2: plain password grant (no DPoP) ─────────────────────────────
+  // Fallback plain Bearer
   const resFallback = await fetch(KC_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -228,16 +345,10 @@ async function keycloakLogin(
     }
   }
 
-  const errBody = await resFallback.text().catch(() => "");
-  console.error("[kp-scraper] Auth failed:", resFallback.status, errBody.slice(0, 300));
-  throw new Error("Authentication failed. Please verify credentials.");
+  throw new Error("Invalid username or password.");
 }
 
-// ── Authenticated ESPRO API helpers ───────────────────────────────────────────
-
-function authHeader(token: string, dpopBound: boolean): string {
-  return dpopBound ? `DPoP ${token}` : `Bearer ${token}`;
-}
+// ── Authenticated ESPRO API Fetcher ───────────────────────────────────────────
 
 async function esproFetch(
   url: string,
@@ -245,15 +356,14 @@ async function esproFetch(
   body: unknown,
   token: string,
   keyPair: CryptoKeyPair,
-  dpopBound: boolean,
-  nonce?: string
+  dpopBound: boolean
 ): Promise<Response> {
   const dpopProof = dpopBound
-    ? await buildDPoP(keyPair, method, url, nonce, token)
+    ? await buildDPoP(keyPair, method, url, undefined, token)
     : undefined;
 
   const headers: Record<string, string> = {
-    Authorization: authHeader(token, dpopBound),
+    Authorization: dpopBound ? `DPoP ${token}` : `Bearer ${token}`,
     "User-Agent": BROWSER_UA,
     Accept: "application/json",
   };
@@ -267,84 +377,89 @@ async function esproFetch(
   });
 }
 
-// ── JSON normaliser → ProcessedSubject[] ─────────────────────────────────────
+// ── Subject Data Normalizer ───────────────────────────────────────────────────
 
-// deno-lint-ignore no-explicit-any
-function normaliseSubjects(raw: any[]): ProcessedSubject[] {
+function normaliseAttendanceData(raw: any): ProcessedSubject[] {
   const seen = new Set<string>();
   const results: ProcessedSubject[] = [];
 
-  for (const item of raw) {
-    const code = String(
-      item.subjectCode ?? item.courseCode ?? item.subject_code ?? item.code ?? "N/A"
-    ).trim();
-    const name = String(
-      item.subjectName ?? item.courseName ?? item.subject_name ??
-      item.course_name ?? item.name ?? item.subject ?? ""
-    ).trim();
-
-    const attended = Math.max(
-      0,
-      Number(
-        item.attendedHours ?? item.attended_hours ?? item.attendedClasses ??
-        item.classesAttended ?? item.attended ?? item.present ?? 0
-      )
-    );
-    const total = Math.max(
-      0,
-      Number(
-        item.conductedHours ?? item.conducted_hours ?? item.totalHours ??
-        item.total_hours ?? item.totalClasses ?? item.classesConducted ??
-        item.total ?? item.conducted ?? 0
-      )
-    );
-
-    if (!name && code === "N/A") continue;
-    const subjectName = name || code;
-    const key = `${code}-${subjectName}`.toLowerCase();
-    if (seen.has(key)) continue;
+  const addSubject = (code: string, name: string, type: string, attended: number, total: number) => {
+    if (!name && (!code || code === "N/A")) return;
+    const finalName = name || code;
+    const key = `${code}-${finalName}-${type}`.toLowerCase();
+    if (seen.has(key)) return;
     seen.add(key);
 
-    const percentage = total > 0 ? Math.round((attended / total) * 10000) / 100 : 100;
-    const isLab =
-      String(item.type ?? item.courseType ?? item.subject_type ?? "")
-        .toLowerCase()
-        .includes("lab") ||
-      subjectName.toLowerCase().includes("lab") ||
-      subjectName.toLowerCase().includes("practical");
+    const safeAttended = Math.round(Math.max(0, attended));
+    const safeTotal = Math.round(Math.max(0, total));
+    const pct =
+      safeTotal > 0
+        ? Math.round((safeAttended / safeTotal) * 10000) / 100
+        : 100;
 
     results.push({
-      code,
-      name: subjectName,
-      type: isLab ? "Practical" : "Theory",
-      attended: Math.round(attended),
-      total: Math.round(total),
-      percentage,
-      target85: calculateMargin(attended, total, 85),
-      target75: calculateMargin(attended, total, 75),
+      code: code || "N/A",
+      name: finalName,
+      type: type || "Theory",
+      attended: safeAttended,
+      total: safeTotal,
+      percentage: pct,
+      target85: calculateMargin(safeAttended, safeTotal, 85),
+      target75: calculateMargin(safeAttended, safeTotal, 75),
     });
+  };
+
+  // 1. Structure: Object keyed by course ID with Theory / Practical sub-objects
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const skip = new Set(["AllCodes", "TotalClasses", "totalClassesPresent", "TotalPercentage", "AllPercentage"]);
+    for (const [codeKey, item] of Object.entries(raw)) {
+      if (isNaN(Number(codeKey)) || skip.has(codeKey) || !item || typeof item !== "object") continue;
+      const subItem = item as any;
+
+      for (const type of ["Theory", "Practical"]) {
+        const d = subItem[type];
+        if (d && (d.SubjectName || d.subjectName)) {
+          const subName = d.SubjectName || d.subjectName;
+          const att = parseFloat(d.SubjectClassesAttended || d.attended || "0");
+          const tot = parseFloat(d.SubjectClassesHeld || d.total || "0");
+          addSubject(codeKey, subName, type, att, tot);
+        }
+      }
+
+      // If no nested Theory/Practical, check root of item
+      if (!subItem.Theory && !subItem.Practical) {
+        const subName = subItem.SubjectName || subItem.subjectName || subItem.courseName || codeKey;
+        const att = parseFloat(subItem.TotalSubjectClassesAtt || subItem.attended || "0");
+        const tot = parseFloat(subItem.TotalSubjectClasses || subItem.total || "0");
+        const isLab = String(subItem.type || "").toLowerCase().includes("lab") || subName.toLowerCase().includes("lab") || subName.toLowerCase().includes("practical");
+        addSubject(codeKey, subName, isLab ? "Practical" : "Theory", att, tot);
+      }
+    }
+  }
+
+  // 2. Structure: Array of subjects
+  const list = Array.isArray(raw)
+    ? raw
+    : raw?.attendanceDetails ?? raw?.courseWiseAttendance ?? raw?.subjects ?? raw?.courses ?? raw?.data ?? [];
+
+  if (Array.isArray(list)) {
+    for (const item of list) {
+      if (!item || typeof item !== "object") continue;
+      const code = String(item.subjectCode ?? item.courseCode ?? item.code ?? "N/A").trim();
+      const name = String(item.subjectName ?? item.courseName ?? item.name ?? "").trim();
+      const attended = Number(item.attendedHours ?? item.attended_hours ?? item.attendedClasses ?? item.attended ?? item.present ?? 0);
+      const total = Number(item.conductedHours ?? item.conducted_hours ?? item.totalHours ?? item.totalClasses ?? item.total ?? item.conducted ?? 0);
+      const isLab = String(item.type ?? item.courseType ?? "").toLowerCase().includes("lab") || name.toLowerCase().includes("lab") || name.toLowerCase().includes("practical");
+      addSubject(code, name, isLab ? "Practical" : "Theory", attended, total);
+    }
   }
 
   return results;
 }
 
-// deno-lint-ignore no-explicit-any
-function extractList(json: any): any[] {
-  if (Array.isArray(json)) return json;
-  return (
-    json?.attendanceDetails ??
-    json?.courseWiseAttendance ??
-    json?.subjects ??
-    json?.courses ??
-    json?.data ??
-    []
-  );
-}
-
-// ── Serve Handler ─────────────────────────────────────────────────────────────
+// ── Main Request Handler ──────────────────────────────────────────────────────
 
 serve(async (req) => {
-  // Phase 4: Strict CORS preflight handling
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -357,217 +472,155 @@ serve(async (req) => {
   }
 
   try {
-    // Parse request body — frontend sends strictly { username, password }
-    let body: { username?: string; password?: string };
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-        status: 400,
-        headers: JSON_HEADERS,
-      });
-    }
+    const {
+      username,
+      password,
+      captchaText,
+      formActionUrl,
+      sessionCookie,
+      codeVerifier,
+      user_id,
+    } = await req.json();
 
-    const { username, password } = body;
     if (!username || !password) {
       return new Response(
-        JSON.stringify({ error: "Username and password are required" }),
+        JSON.stringify({ error: "Username and password are required." }),
         { status: 400, headers: JSON_HEADERS }
       );
     }
 
-    // Demo mode support for testing
-    if (username.trim().toLowerCase() === "demo" || password === "demo") {
-      const demoSubjects: ProcessedSubject[] = [
-        {
-          code: "CS301",
-          name: "Database Management Systems",
-          type: "Theory",
-          attended: 42,
-          total: 50,
-          percentage: 84.0,
-          target85: calculateMargin(42, 50, 85),
-          target75: calculateMargin(42, 50, 75),
-        },
-        {
-          code: "CS302",
-          name: "Operating Systems",
-          type: "Theory",
-          attended: 46,
-          total: 50,
-          percentage: 92.0,
-          target85: calculateMargin(46, 50, 85),
-          target75: calculateMargin(46, 50, 75),
-        },
-        {
-          code: "CS303",
-          name: "Computer Networks",
-          type: "Theory",
-          attended: 37,
-          total: 50,
-          percentage: 74.0,
-          target85: calculateMargin(37, 50, 85),
-          target75: calculateMargin(37, 50, 75),
-        },
-        {
-          code: "CS304",
-          name: "Artificial Intelligence Lab",
-          type: "Practical",
-          attended: 28,
-          total: 30,
-          percentage: 93.33,
-          target85: calculateMargin(28, 30, 85),
-          target75: calculateMargin(28, 30, 75),
-        },
-        {
-          code: "CS305",
-          name: "Software Engineering",
-          type: "Theory",
-          attended: 48,
-          total: 50,
-          percentage: 96.0,
-          target85: calculateMargin(48, 50, 85),
-          target75: calculateMargin(48, 50, 75),
-        },
-      ];
-      return new Response(
-        JSON.stringify({
-          success: true,
-          count: demoSubjects.length,
-          subjects: demoSubjects,
-          overall: {
-            percentage: 87.3,
-            attended: 201,
-            total: 230,
-            target85: calculateMargin(201, 230, 85),
-            target75: calculateMargin(201, 230, 75),
-          },
-        }),
-        { status: 200, headers: JSON_HEADERS }
+    // Authenticate
+    let authResult: { accessToken: string; keyPair: CryptoKeyPair; dpopBound: boolean };
+
+    if (formActionUrl && sessionCookie && codeVerifier) {
+      // Flow 1: CAPTCHA-aware form submission with PKCE
+      authResult = await authenticateWithFormPKCE(
+        username,
+        password,
+        formActionUrl,
+        sessionCookie,
+        codeVerifier,
+        captchaText
       );
-    }
-
-    // ── Phase 1: Keycloak OIDC ROPC + DPoP ──────────────────────────────────
-    let accessToken: string;
-    let keyPair: CryptoKeyPair;
-    let dpopBound: boolean;
-    try {
-      ({ accessToken, keyPair, dpopBound } = await keycloakLogin(username, password));
-    } catch (authErr: unknown) {
-      const errMsg = authErr instanceof Error ? authErr.message : String(authErr);
-      console.error("[kp-scraper] Auth error:", errMsg);
-
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Christ University's Keycloak OIDC server disables direct programmatic password login. To sync your 100% real live attendance, please open cue.christuniversity.in and use the AcadSphere Chrome Extension or Demo Sync.",
-        }),
-        { status: 200, headers: JSON_HEADERS }
-      );
-    }
-
-    // ── Phase 2: Fetch Semesters → detect current semester ───────────────────
-    // deno-lint-ignore no-explicit-any
-    let rawAttendance: any[] = [];
-    let dpopNonce: string | undefined;
-
-    const semRes = await esproFetch(
-      SEMESTER_URL, "POST", {}, accessToken, keyPair, dpopBound, dpopNonce
-    );
-    if (semRes.headers.get("dpop-nonce")) {
-      dpopNonce = semRes.headers.get("dpop-nonce")!;
-    }
-
-    if (semRes.ok) {
-      try {
-        const semJson = await semRes.json();
-        // deno-lint-ignore no-explicit-any
-        const semesters: any[] = Array.isArray(semJson)
-          ? semJson
-          : semJson?.data ?? semJson?.semesters ?? semJson?.response ?? [];
-
-        // Find the current semester
-        // deno-lint-ignore no-explicit-any
-        const currentSem: any =
-          semesters.find(
-            // deno-lint-ignore no-explicit-any
-            (s: any) =>
-              s.isCurrent === true ||
-              s.isCurrent === "Y" ||
-              s.isCurrent === 1 ||
-              s.isCurrentSemester === true
-          ) ?? semesters[0];
-
-        if (currentSem) {
-          const useNew =
-            currentSem.callKpServiceNew === true ||
-            currentSem.callKpServiceNew === "true" ||
-            currentSem.callKpServiceNew === 1;
-          const termNo = String(currentSem.termNumber ?? currentSem.termNo ?? "");
-          const sessionId = String(currentSem.sessionId ?? currentSem.session_id ?? "");
-
-          let attUrl = "";
-          let attMethod: "GET" | "POST" = "GET";
-          if (useNew && termNo) {
-            attUrl = ATT_NEW_URL(termNo);
-          } else if (sessionId) {
-            attUrl = ATT_OLD_URL(sessionId);
-          }
-
-          if (attUrl) {
-            const attRes = await esproFetch(
-              attUrl, attMethod, undefined, accessToken, keyPair, dpopBound, dpopNonce
-            );
-            if (attRes.headers.get("dpop-nonce")) {
-              dpopNonce = attRes.headers.get("dpop-nonce")!;
-            }
-
-            if (attRes.ok) {
-              const attJson = await attRes.json().catch(() => null);
-              if (attJson) rawAttendance = extractList(attJson);
-            } else {
-              console.warn("[kp-scraper] Attendance API returned:", attRes.status);
-            }
-          }
-        }
-      } catch (semErr) {
-        console.warn("[kp-scraper] Semester processing error:", semErr);
-      }
     } else {
-      console.warn("[kp-scraper] Semester API returned:", semRes.status);
+      // Flow 2: Direct ROPC fallback
+      authResult = await keycloakROPCLogin(username, password);
     }
 
-    // ── Phase 3: Margin Engine & Return Contract ──────────────────────────────
-    const subjects = normaliseSubjects(rawAttendance);
-    const totalAttended = subjects.reduce((s, x) => s + x.attended, 0);
-    const totalConducted = subjects.reduce((s, x) => s + x.total, 0);
-    const overallPercentage =
-      totalConducted > 0
-        ? Math.round((totalAttended / totalConducted) * 10000) / 100
-        : 100;
+    const { accessToken, keyPair, dpopBound } = authResult;
+
+    // Fetch Semesters
+    const semRes = await esproFetch(
+      SEMESTER_URL,
+      "POST",
+      {},
+      accessToken,
+      keyPair,
+      dpopBound
+    );
+
+    if (!semRes.ok) {
+      throw new Error(`Failed to fetch semesters (HTTP ${semRes.status})`);
+    }
+
+    const semJson = await semRes.json();
+    const semesters = Array.isArray(semJson)
+      ? semJson
+      : semJson?.data ?? semJson?.semesters ?? semJson?.response ?? [];
+
+    const currentSem =
+      semesters.find(
+        (s: any) =>
+          s.isCurrent === true ||
+          s.isCurrent === "Y" ||
+          s.isCurrent === 1 ||
+          s.isCurrentSemester === true
+      ) ?? semesters[0];
+
+    if (!currentSem) {
+      throw new Error("Could not detect active semester.");
+    }
+
+    const useNew =
+      currentSem.callKpServiceNew === true ||
+      currentSem.callKpServiceNew === "true" ||
+      currentSem.callKpServiceNew === 1;
+    const termNo = String(currentSem.termNumber ?? currentSem.termNo ?? "");
+    const sessionId = String(currentSem.sessionId ?? currentSem.session_id ?? "");
+
+    const attUrl =
+      useNew && termNo
+        ? `${ESPRO_BASE}/KPServiceNew/rest/getAttendanceDetailsBySemester?termNo=${termNo}`
+        : sessionId
+        ? `${ESPRO_BASE}/ClassRoomAttendanceServices/Student/StudentAttendance/getCourseWiseAttendance?sessionId=${sessionId}`
+        : "";
+
+    if (!attUrl) {
+      throw new Error("Could not determine attendance API endpoint.");
+    }
+
+    // Fetch Attendance
+    const attRes = await esproFetch(
+      attUrl,
+      "GET",
+      undefined,
+      accessToken,
+      keyPair,
+      dpopBound
+    );
+
+    if (!attRes.ok) {
+      throw new Error(`Attendance fetch failed (HTTP ${attRes.status})`);
+    }
+
+    const attJson = await attRes.json();
+    const subjects = normaliseAttendanceData(attJson);
+
+    if (!subjects.length) {
+      throw new Error("No attendance records found for the current semester.");
+    }
+
+    // Direct Database Upsert if user_id is provided
+    if (user_id) {
+      const supabaseAdmin = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+          Deno.env.get("SUPABASE_ANON_KEY") ??
+          ""
+      );
+
+      const recordsToInsert = subjects.map((sub) => ({
+        user_id,
+        subject_code: sub.code,
+        subject_name: sub.name,
+        subject_type: sub.type,
+        attended_classes: sub.attended,
+        total_classes: sub.total,
+        percentage: sub.percentage,
+        last_synced_at: new Date().toISOString(),
+      }));
+
+      await supabaseAdmin
+        .from("student_attendance")
+        .upsert(recordsToInsert, { onConflict: "user_id,subject_code" });
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
         count: subjects.length,
         subjects,
-        overall: {
-          percentage: overallPercentage,
-          attended: totalAttended,
-          total: totalConducted,
-          target85: calculateMargin(totalAttended, totalConducted, 85),
-          target75: calculateMargin(totalAttended, totalConducted, 75),
-        },
       }),
       { status: 200, headers: JSON_HEADERS }
     );
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("[kp-scraper] Unhandled error:", msg);
+  } catch (err: any) {
+    console.error("[kp-scraper] Error:", err.message);
     return new Response(
       JSON.stringify({
         success: false,
-        error: "Authentication failed. Please verify your CUE Register/Roll Number and Password.",
+        error: err.message || "Failed to sync attendance",
+        isCredentialError: !!err.isCredentialError,
+        isCaptchaError: !!err.isCaptchaError,
       }),
       { status: 200, headers: JSON_HEADERS }
     );
