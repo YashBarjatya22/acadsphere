@@ -23,7 +23,7 @@ async function saveCueSubjectsToServerDb(userId: string, subjects: any[]) {
     `);
 
     // Clean up old CUE or demo seed subjects to avoid stale duplicate data
-    db.prepare(`DELETE FROM subject_attendance WHERE student_id IN (?, '00000000-0000-0000-0000-000000000001', 'demo-student-id')`).run(userId);
+    db.prepare(`DELETE FROM subject_attendance WHERE student_id IN (?, '00000000-0000-0000-0000-000000000001', 'e3476b5d-e205-5956-942c-bd7622acb35d', 'fa0beb35-7eec-482c-af0b-596dadeb0b79')`).run(userId);
 
     const upsertStmt = db.prepare(`
       INSERT INTO subject_attendance 
@@ -38,8 +38,10 @@ async function saveCueSubjectsToServerDb(userId: string, subjects: any[]) {
     `);
 
     for (const sub of subjects) {
-      const code = (sub.code || "N/A").trim();
-      const name = (sub.name || code).trim();
+      const code = (sub.code || "CUE").trim();
+      const name = (sub.name || "").trim();
+      if (!name || name === "N/A" || name.toLowerCase() === "n/a") continue;
+
       const attended = Number(sub.attended) || 0;
       const total = Number(sub.total) || 0;
       const pct =
@@ -48,14 +50,11 @@ async function saveCueSubjectsToServerDb(userId: string, subjects: any[]) {
           : sub.percentage
           ? Number(Number(sub.percentage).toFixed(2))
           : 100;
-      const subId = `cue-${code.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+      const subId = `cue-${name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
 
-      // Insert for the active user ID
-      upsertStmt.run(crypto.randomUUID(), userId, subId, name, code, attended, total, pct);
-
-      // Also insert for the default fallback user ID if different
-      if (userId !== "00000000-0000-0000-0000-000000000001") {
-        upsertStmt.run(crypto.randomUUID(), "00000000-0000-0000-0000-000000000001", subId, name, code, attended, total, pct);
+      const targetIds = Array.from(new Set([userId, "00000000-0000-0000-0000-000000000001", "e3476b5d-e205-5956-942c-bd7622acb35d", "fa0beb35-7eec-482c-af0b-596dadeb0b79"]));
+      for (const tid of targetIds) {
+        upsertStmt.run(crypto.randomUUID(), tid, subId, name, code, attended, total, pct);
       }
     }
     console.log(`[sync-attendance] Saved ${subjects.length} CUE subjects into local server DB for user ${userId}`);
