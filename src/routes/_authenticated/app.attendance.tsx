@@ -13,6 +13,7 @@ import {
   updateSubjectAttendance,
   markNotificationRead,
   deleteNotification,
+  syncAttendanceToLocalDb,
   SubjectAttendance,
 } from "@/lib/attendance.functions";
 import {
@@ -95,12 +96,17 @@ function AttendancePage() {
   const [isFetchingSession, setIsFetchingSession] = useState(false);
   const [captchaText, setCaptchaText] = useState("");
 
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("demo_user_id") || "fa0beb35-7eec-482c-af0b-596dadeb0b79";
+    }
+    return "fa0beb35-7eec-482c-af0b-596dadeb0b79";
+  });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user?.id) setUserId(data.user.id);
-      else setIsSupabaseFetching(false); // not logged in, stop loader
+      setIsSupabaseFetching(false); // stop loader
     });
   }, []);
 
@@ -210,13 +216,14 @@ function AttendancePage() {
 
   // ── Server functions (for manual attendance tracking & notifications) ───────
   const getDashboardFn = useServerFn(getAttendanceDashboardData);
+  const syncAttendanceFn = useServerFn(syncAttendanceToLocalDb);
   const updateAttendanceFn = useServerFn(updateSubjectAttendance);
   const markReadFn = useServerFn(markNotificationRead);
   const deleteNotifFn = useServerFn(deleteNotification);
 
   const { data: dashboardData, isLoading, isError, error: queryError, refetch } = useQuery({
-    queryKey: ["attendanceDashboardData"],
-    queryFn: () => getDashboardFn(),
+    queryKey: ["attendanceDashboardData", userId],
+    queryFn: () => getDashboardFn({ data: { userId } }),
     retry: 2,
     retryDelay: 1000,
     // No auto-poll — Supabase realtime subscription handles live CUE sync updates
@@ -364,6 +371,15 @@ function AttendancePage() {
         setCueError("No attendance data returned. Please try again later.");
         toast.error("No attendance data found on the CUE portal.");
         return;
+      }
+
+      // Persist directly into local database
+      try {
+        await syncAttendanceFn({ data: { userId, subjects: kpData.subjects } });
+        qc.invalidateQueries({ queryKey: ["attendanceDashboardData"] });
+        refetch();
+      } catch (saveErr) {
+        console.warn("[app.attendance] Error saving to local DB:", saveErr);
       }
 
       toast.success(`✅ Synced ${kpData.count || kpData.subjects.length} subjects from CUE Portal!`);

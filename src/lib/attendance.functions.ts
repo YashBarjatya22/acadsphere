@@ -261,10 +261,76 @@ function evaluateReminderRulesInternal(
   }
 }
 
+// ─── Server Function: Sync Attendance Directly to Server DB ────────────────
+export const syncAttendanceToLocalDb = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      userId: z.string().optional(),
+      subjects: z.array(z.any()),
+    })
+  )
+  .handler(async ({ data }) => {
+    const db = await getServerDb();
+    if (!db) throw new Error("Database unavailable");
+    const userId = data.userId || "00000000-0000-0000-0000-000000000001";
+    const subjects = data.subjects || [];
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS subject_attendance (
+        id TEXT PRIMARY KEY,
+        student_id TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        subject_name TEXT NOT NULL,
+        subject_code TEXT NOT NULL,
+        classes_attended INTEGER DEFAULT 0,
+        classes_conducted INTEGER DEFAULT 0,
+        attendance_percentage REAL DEFAULT 100.0,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(student_id, subject_id)
+      );
+    `);
+
+    db.prepare(`DELETE FROM subject_attendance WHERE student_id IN (?, '00000000-0000-0000-0000-000000000001')`).run(userId);
+
+    const upsertStmt = db.prepare(`
+      INSERT INTO subject_attendance 
+      (id, student_id, subject_id, subject_name, subject_code, classes_attended, classes_conducted, attendance_percentage, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(student_id, subject_id) DO UPDATE SET
+        subject_name = excluded.subject_name,
+        classes_attended = excluded.classes_attended,
+        classes_conducted = excluded.classes_conducted,
+        attendance_percentage = excluded.attendance_percentage,
+        last_updated = CURRENT_TIMESTAMP
+    `);
+
+    for (const sub of subjects) {
+      const code = (sub.code || "N/A").trim();
+      const name = (sub.name || code).trim();
+      const attended = Number(sub.attended) || 0;
+      const total = Number(sub.total) || 0;
+      const pct =
+        total > 0
+          ? Number(((attended / total) * 100).toFixed(2))
+          : sub.percentage
+          ? Number(Number(sub.percentage).toFixed(2))
+          : 100;
+      const subId = `cue-${code.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+
+      upsertStmt.run(crypto.randomUUID(), userId, subId, name, code, attended, total, pct);
+      if (userId !== "00000000-0000-0000-0000-000000000001") {
+        upsertStmt.run(crypto.randomUUID(), "00000000-0000-0000-0000-000000000001", subId, name, code, attended, total, pct);
+      }
+    }
+
+    return { success: true, count: subjects.length };
+  });
+
 // ─── Server Function: Get Full Attendance Dashboard ───────────────────────
 export const getAttendanceDashboardData = createServerFn({ method: "GET" })
-  .handler(async ({ context }): Promise<AttendanceDashboardData> => {
-    const studentId = (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
+  .inputValidator(z.object({ userId: z.string().optional() }).optional())
+  .handler(async ({ data, context }): Promise<AttendanceDashboardData> => {
+    const studentId = data?.userId || (context as any)?.userId || "00000000-0000-0000-0000-000000000001";
     const db = await getServerDb();
 
     if (!db) {
