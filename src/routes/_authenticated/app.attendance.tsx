@@ -36,16 +36,13 @@ import {
   Lock,
   Eye,
   EyeOff,
-  LogIn,
   Globe,
   X,
   Wifi,
   WifiOff,
   Database,
   Zap,
-  ChevronDown,
   FlaskConical,
-  Copy,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/attendance")({
@@ -64,6 +61,8 @@ interface CueSubject {
 }
 
 const CUE_SESSION_KEY = "cue_attendance_v1";
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "";
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -73,6 +72,11 @@ function AttendancePage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("sub1");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSupabaseFetching, setIsSupabaseFetching] = useState(true);
+  const [isCueSyncing, setIsCueSyncing] = useState(false);
+  const [cueUsername, setCueUsername] = useState("");
+  const [cuePassword, setCuePassword] = useState("");
+  const [showCuePassword, setShowCuePassword] = useState(false);
+  const [cueError, setCueError] = useState<string | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -234,6 +238,94 @@ function AttendancePage() {
     toast.info("CUE Portal session data cleared.");
   };
 
+  // ── Server-Side CUE Sync Pipeline ──────────────────────────────────────────
+  const handleCueSync = async (username: string, password: string) => {
+    if (!username || !password) return;
+    setIsCueSyncing(true);
+    setCueError(null);
+
+    try {
+      // Phase 1: Authenticate + scrape via kp-scraper edge function (Keycloak OIDC + ESPRO)
+      const kpRes = await fetch(`${SUPABASE_URL}/functions/v1/kp-scraper`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "apikey": SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+
+      const kpData = await kpRes.json();
+
+      if (!kpData.success) {
+        const msg = kpData.error || "Failed to fetch attendance from CUE portal.";
+        setCueError(msg);
+        const isAuthErr = /credential|password|auth|invalid|login/i.test(msg);
+        toast.error(isAuthErr
+          ? "❌ Invalid credentials — check your CUE username/password."
+          : `❌ ${msg}`);
+        return;
+      }
+
+      if (!kpData.subjects || kpData.subjects.length === 0) {
+        setCueError("No attendance data returned. Please try again later.");
+        toast.error("No attendance data found on the CUE portal.");
+        return;
+      }
+
+      // Phase 2: Upsert into Supabase student_attendance via sync-attendance edge function
+      if (userId) {
+        const syncRes = await fetch(`${SUPABASE_URL}/functions/v1/sync-attendance`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+            "apikey": SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            attendance_data: kpData.subjects,
+          }),
+        });
+
+        const syncData = await syncRes.json();
+        if (!syncRes.ok || syncData.error) {
+          throw new Error(syncData.error || "Database upsert failed.");
+        }
+        toast.success(`✅ Synced ${syncData.count} subjects from CUE Portal!`);
+      }
+
+      // Phase 3: Optimistic UI update (Supabase realtime will also fire)
+      const mapped: CueSubject[] = kpData.subjects.map((sub: any) => ({
+        code: sub.code,
+        name: sub.name,
+        type: sub.type || "Theory",
+        attended: sub.attended,
+        total: sub.total,
+        percentage: sub.percentage,
+      }));
+      setCueData(mapped);
+      const syncedAt = new Date().toISOString();
+      setCueLastSynced(syncedAt);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(CUE_SESSION_KEY, JSON.stringify({ subjects: mapped, lastSynced: syncedAt }));
+      }
+      setShowCueModal(false);
+      setCueUsername("");
+      setCuePassword("");
+      setCueError(null);
+    } catch (err: any) {
+      const msg = err?.message || "Sync failed. Please try again.";
+      setCueError(msg);
+      toast.error(`❌ ${msg}`);
+    } finally {
+      setIsCueSyncing(false);
+    }
+  };
+
+  const handleDemoSync = () => handleCueSync("demo", "demo");
+
   const lastSyncedLabel = useMemo(() => {
     if (!cueLastSynced) return null;
     const diff = Math.floor((Date.now() - new Date(cueLastSynced).getTime()) / 60000);
@@ -323,7 +415,7 @@ function AttendancePage() {
     );
   };
 
-  // ── Render Extension Sync Banner ─────────────────────────────────────────────
+  // ── Render CUE Sync Banner (server-side, no extension required) ──────────────
   const renderExtensionSyncBanner = () => (
     <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-600/10 via-indigo-600/5 to-purple-600/10 border border-blue-500/20 shadow-sm space-y-4">
       <div className="flex items-start justify-between">
@@ -332,34 +424,25 @@ function AttendancePage() {
             <Globe className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-sm font-extrabold text-foreground">Sync via AcadSphere Chrome Extension</h3>
+            <h3 className="text-sm font-extrabold text-foreground">Sync Live Attendance from CUE Portal</h3>
             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-              To update your attendance, open your CUE Portal (<strong>cue.christuniversity.in</strong>) and click the AcadSphere Chrome Extension.
+              Enter your Christ University credentials to fetch live attendance from{" "}
+              <strong>cue.christuniversity.in</strong> — no extension required.
             </p>
           </div>
         </div>
-        <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 uppercase tracking-wider shrink-0 hidden sm:inline-block">
-          Extension Sync Ready
+        <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider shrink-0 hidden sm:inline-block">
+          Server Sync
         </span>
       </div>
-
-      {userId && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl bg-background/70 border border-border/80 text-xs gap-2">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-muted-foreground uppercase text-[10px]">Your Sync User ID:</span>
-            <code className="font-mono text-primary font-bold text-xs select-all">{userId}</code>
-          </div>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(userId);
-              toast.success("User ID copied to clipboard!");
-            }}
-            className="px-3 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-[11px] transition-all flex items-center gap-1 shrink-0"
-          >
-            <Copy className="h-3 w-3" /> Copy User ID
-          </button>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={() => setShowCueModal(true)}
+        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all"
+      >
+        <Zap className="h-4 w-4" />
+        Sync Attendance Now
+      </button>
     </div>
   );
 
@@ -692,22 +775,16 @@ function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-extrabold text-foreground">No Attendance Data Synced Yet</p>
                   <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Open <strong>cue.christuniversity.in</strong> in your browser, then click the{" "}
-                    <strong>AcadSphere CUE Sync</strong> Chrome Extension to push your live attendance here.
-                    Your data will appear instantly — no page refresh needed.
+                    Click <strong>Sync Now</strong> and enter your Christ University credentials to pull live
+                    attendance from ESPRO — directly, no Chrome Extension required.
                   </p>
                 </div>
-                {userId && (
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(userId);
-                      toast.success("User ID copied! Paste it in the Chrome Extension.");
-                    }}
-                    className="shrink-0 px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-500/20 transition-all flex items-center gap-1.5"
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copy User ID
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowCueModal(true)}
+                  className="shrink-0 px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-500/20 transition-all flex items-center gap-1.5"
+                >
+                  <Zap className="h-3.5 w-3.5" /> Sync Now
+                </button>
               </div>
             )}
 
@@ -1215,97 +1292,139 @@ function AttendancePage() {
 
 
 
-        {/* ── CUE Sync Modal ── */}
-        {/* ── CUE Chrome Extension Sync Modal ── */}
+        {/* ── CUE Auth Modal — Server-Side Credential Sync ── */}
         {showCueModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl relative space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl relative space-y-5 animate-in fade-in zoom-in-95 duration-200">
               <button
                 type="button"
-                onClick={() => setShowCueModal(false)}
+                onClick={() => { setShowCueModal(false); setCueError(null); }}
                 className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted/50"
               >
                 <X className="h-5 w-5" />
               </button>
 
-              <div className="flex items-center gap-3 border-b border-border/60 pb-3">
-                <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <Globe className="h-5 w-5 text-blue-500" />
+              {/* Header */}
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-md">
+                  <Globe className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-foreground">Sync Live CUE Attendance</h3>
-                  <p className="text-xs text-muted-foreground">Using the official AcadSphere Chrome Extension</p>
+                  <h3 className="text-base font-extrabold text-foreground">Sync from CUE Portal</h3>
+                  <p className="text-xs text-muted-foreground">Live attendance via Christ University ESPRO</p>
                 </div>
               </div>
 
-              {/* User ID Box with Copy */}
-              <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Your AcadSphere User ID</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const idToCopy = userId || "00000000-0000-0000-0000-000000000001";
-                      navigator.clipboard.writeText(idToCopy);
-                      toast.success("User ID copied to clipboard!");
-                    }}
-                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+              {/* Credential form */}
+              <div className="space-y-4">
+                {/* Username */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="cue-username"
+                    className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider"
                   >
-                    <Copy className="h-3 w-3" /> Copy User ID
-                  </button>
+                    CUE Username / Register No.
+                  </label>
+                  <input
+                    id="cue-username"
+                    type="text"
+                    value={cueUsername}
+                    onChange={(e) => setCueUsername(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
+                    placeholder="e.g. 2347034"
+                    autoComplete="username"
+                    disabled={isCueSyncing}
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
+                  />
                 </div>
-                <div className="font-mono text-xs font-bold text-foreground bg-background px-3 py-1.5 rounded-lg border border-border/50 truncate">
-                  {userId || "00000000-0000-0000-0000-000000000001"}
+
+                {/* Password */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="cue-password"
+                    className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider"
+                  >
+                    CUE Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="cue-password"
+                      type={showCuePassword ? "text" : "password"}
+                      value={cuePassword}
+                      onChange={(e) => setCuePassword(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleCueSync(cueUsername, cuePassword)}
+                      placeholder="Your CUE portal password"
+                      autoComplete="current-password"
+                      disabled={isCueSyncing}
+                      className="w-full px-3 py-2.5 pr-10 rounded-xl border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 disabled:opacity-60 transition-all"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowCuePassword(!showCuePassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showCuePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error state */}
+                {cueError && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
+                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">{cueError}</p>
+                  </div>
+                )}
+
+                {/* Security note */}
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/40 border border-border/60 text-xs text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-500" />
+                  <p>
+                    Your credentials are sent securely to Christ University's server and are{" "}
+                    <strong className="text-foreground">never stored</strong> by AcadSphere.
+                  </p>
                 </div>
               </div>
 
-              {/* Step by Step Guide */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">How to Sync Live Attendance:</h4>
-                <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
-                    <span>Open <strong>chrome://extensions</strong> in Google Chrome and turn on <strong>Developer Mode</strong> (top right).</span>
-                  </div>
-
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
-                    <div>
-                      <span>Click <strong>Load Unpacked</strong> and select the extension folder:</span>
-                      <code className="block mt-1 p-1.5 bg-muted rounded font-mono text-[10px] text-foreground select-all">
-                        acadsphere\cue-extension
-                      </code>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-2.5 bg-background p-2.5 rounded-xl border border-border/40">
-                    <span className="h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
-                    <span>Open <strong>cue.christuniversity.in</strong> in Chrome, click the extension icon, paste your User ID, and press <strong>Sync to AcadSphere</strong>.</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-border/40">
+              {/* Action buttons */}
+              <div className="flex items-center justify-between pt-1 border-t border-border/40">
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
                   onClick={handleDemoSync}
+                  disabled={isCueSyncing}
                   className="text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 flex items-center gap-1.5 px-3"
                 >
                   <Sparkles className="h-3.5 w-3.5" /> Load Demo Data
                 </Button>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCueModal(false)}
-                  className="text-xs font-bold"
-                >
-                  Close
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setShowCueModal(false); setCueError(null); }}
+                    disabled={isCueSyncing}
+                    className="text-xs font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleCueSync(cueUsername, cuePassword)}
+                    disabled={isCueSyncing || !cueUsername.trim() || !cuePassword}
+                    className="text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center gap-1.5 px-4 disabled:opacity-60"
+                  >
+                    {isCueSyncing ? (
+                      <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Syncing...</>
+                    ) : (
+                      <><Zap className="h-3.5 w-3.5" /> Sync Now</>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
