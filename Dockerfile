@@ -22,11 +22,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy necessary files from builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/local.db ./local.db
+# Copy all application and configuration files from builder
+COPY --from=builder /app ./
 
 EXPOSE 3000
 
