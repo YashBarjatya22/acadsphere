@@ -1,0 +1,1 @@
+import{c as e}from"./createServerFn-DhtWdWYi.js";import{c as a}from"./index-Djmlwups.js";e({method:"POST"}).handler(a("b272cbeb163c485d101e80b1bb37e8ff29ffa31bbe3eb6a24d063016c2ed628a"));const o=e({method:"POST"}).handler(a("9b075d64629f28a178b2216ca82061a296e868b579ed47ce954ba0b92c063625"));export{o as l};
