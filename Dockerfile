@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -30,4 +30,4 @@ COPY --from=builder /app/local.db ./local.db
 
 EXPOSE 3000
 
-CMD ["node", "dist/server/server.js"]
+CMD ["npm", "run", "preview", "--", "--port", "3000", "--host", "0.0.0.0"]
