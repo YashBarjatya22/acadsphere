@@ -1,0 +1,405 @@
+import { jsxs, jsx, Fragment } from "react/jsx-runtime";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "@tanstack/react-router";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { c as createSsrRpc, u as useServerFn } from "./createSsrRpc-BYlyULqi.js";
+import { a as createServerFn } from "./server-ClIdw9oM.js";
+import { r as requireSupabaseAuth } from "./auth-middleware-DcSfQrdP.js";
+import { z } from "zod";
+import { supabase } from "./client-h4N4kZKq.js";
+import { B as Button } from "./button-CUmEMVhO.js";
+import { X, LayoutDashboard, Activity, GraduationCap, Radio, TrendingUp, Megaphone, FileText, UserCog, ScrollText, Lock, Settings, Sparkles, Wand2, CheckCircle2, FileOutput, Users, User, Sun, Moon, LogOut, Menu, Search } from "lucide-react";
+import { l as logo } from "./studentos-logo-CCLo3MN1.js";
+import { c as cn } from "./utils-H80jjgLf.js";
+import { toast } from "sonner";
+import { A as Avatar, b as AvatarImage, a as AvatarFallback } from "./avatar-B-EjQ9LK.js";
+const listThreads = createServerFn({
+  method: "GET"
+}).middleware([requireSupabaseAuth]).handler(createSsrRpc("81f8d6ada944895e886fc9c1b3ea8c0e3fdfbdbcd7073b5a3e588f55517524dd"));
+const createThread = createServerFn({
+  method: "POST"
+}).middleware([requireSupabaseAuth]).inputValidator((input) => z.object({
+  id: z.string().optional(),
+  title: z.string().min(1).max(120).optional(),
+  module: z.string().max(80).optional()
+}).parse(input ?? {})).handler(createSsrRpc("0e7b69b1d91bc88e34354aa34e93348913ee48b5657a1700135375a79d4eb416"));
+const renameThread = createServerFn({
+  method: "POST"
+}).middleware([requireSupabaseAuth]).inputValidator((input) => z.object({
+  id: z.string(),
+  title: z.string().min(1).max(120)
+}).parse(input)).handler(createSsrRpc("152f66fb380cff85728c8839358f8222dd36daa7e513c551908a3b962311dbbc"));
+const deleteThread = createServerFn({
+  method: "POST"
+}).middleware([requireSupabaseAuth]).inputValidator((input) => z.object({
+  id: z.string()
+}).parse(input)).handler(createSsrRpc("e1c7e871a6ff3195deaf3eaa0b7cef206138273224933ee87c94a4e4f020e775"));
+const saveMessage = createServerFn({
+  method: "POST"
+}).middleware([requireSupabaseAuth]).inputValidator((input) => z.object({
+  id: z.string().optional(),
+  threadId: z.string(),
+  role: z.enum(["user", "assistant"]),
+  parts: z.any()
+}).parse(input)).handler(createSsrRpc("818d84d8feb96f9e133b53f553d131a1a13d446631c853c0177ecb078188e07c"));
+const getThreadMessages = createServerFn({
+  method: "GET"
+}).middleware([requireSupabaseAuth]).inputValidator((input) => z.object({
+  threadId: z.string()
+}).parse(input)).handler(createSsrRpc("bc77fc2e18eb996fb643a2019ea9e4d22e813583b9affd0db1f7ed2849c1e317"));
+function ChatLayout({
+  activeThreadId,
+  children
+}) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  const listFn = useServerFn(listThreads);
+  const createFn = useServerFn(createThread);
+  const deleteFn = useServerFn(deleteThread);
+  const { data: threads = [] } = useQuery({
+    queryKey: ["threads"],
+    queryFn: () => listFn()
+  });
+  const userRole = typeof window !== "undefined" ? localStorage.getItem("demo_user_role") || "student" : "student";
+  const isAdmin = userRole === "admin";
+  const [sessionUser, setSessionUser] = useState(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        const name = meta.full_name || meta.name || u.email?.split("@")[0] || (isAdmin ? "Administrator" : "Student");
+        const email = u.email || "";
+        const avatar = meta.avatar_url || meta.picture || "";
+        setSessionUser({ name, email, avatar });
+        if (typeof window !== "undefined") {
+          localStorage.setItem("demo_user_name", name);
+          localStorage.setItem("demo_user_email", email);
+          if (avatar) localStorage.setItem("demo_user_avatar", avatar);
+          if (session.provider_token) localStorage.setItem("google_provider_token", session.provider_token);
+        }
+      }
+    });
+  }, [isAdmin]);
+  const userName = sessionUser?.name || (typeof window !== "undefined" ? localStorage.getItem("demo_user_name") || (isAdmin ? "Administrator" : "Christ Student") : isAdmin ? "Administrator" : "Christ Student");
+  const userEmail = sessionUser?.email || (typeof window !== "undefined" ? localStorage.getItem("demo_user_email") || "" : "");
+  const userAvatar = sessionUser?.avatar || (typeof window !== "undefined" ? localStorage.getItem("demo_user_avatar") || "" : "");
+  const userInitials = userName.split(" ").map((n) => n[0]).filter(Boolean).join("").substring(0, 2).toUpperCase() || "CS";
+  useEffect(() => {
+    const theme = localStorage.getItem("theme");
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+      setIsDark(true);
+    } else {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    }
+  }, []);
+  const toggleTheme = () => {
+    const nextDark = !isDark;
+    setIsDark(nextDark);
+    if (nextDark) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  };
+  const create = useMutation({
+    mutationFn: () => createFn({ data: {} }),
+    onSuccess: (t) => {
+      qc.invalidateQueries({ queryKey: ["threads"] });
+      navigate({ to: "/app/$threadId", params: { threadId: t.id } });
+      setOpen(false);
+    }
+  });
+  useMutation({
+    mutationFn: (id) => deleteFn({ data: { id } }),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["threads"] });
+      if (id === activeThreadId) navigate({ to: "/app" });
+    }
+  });
+  async function handleSignOut() {
+    localStorage.removeItem("demo_session_token");
+    localStorage.removeItem("demo_user_id");
+    localStorage.removeItem("demo_user_email");
+    localStorage.removeItem("demo_user_role");
+    supabase.auth.signOut().catch(() => {
+    });
+    toast.success("Signed out");
+    navigate({ to: "/" });
+  }
+  const studentNavItems = [
+    { label: "Dashboard", to: "/app", icon: LayoutDashboard },
+    { label: "AI Assistant", to: "/app/ai-assistant", icon: Sparkles },
+    { label: "Classroom", to: "/app/classroom", icon: GraduationCap },
+    { label: "Resume Tailorer", to: "/app/resume-builder", icon: Wand2 },
+    { label: "Attendance", to: "/app/attendance", icon: CheckCircle2 },
+    { label: "File Converter", to: "/app/conversions", icon: FileOutput },
+    { label: "Community", to: "/app/community", icon: Users },
+    { label: "Profile", to: "/app/profile", icon: User },
+    { label: "Settings", to: "/app/settings", icon: Settings }
+  ];
+  const adminNavItems = [
+    { label: "Admin Command Center", to: "/admin font-bold", icon: LayoutDashboard },
+    { label: "Student Monitoring", to: "/admin/live-activity", icon: Activity },
+    { label: "Student Management", to: "/admin/students", icon: GraduationCap },
+    { label: "Live Activity", to: "/admin/live-activity", icon: Radio },
+    { label: "Analytics", to: "/admin/analytics", icon: TrendingUp },
+    { label: "Announcements", to: "/admin/announcements", icon: Megaphone },
+    { label: "Reports", to: "/admin/reports", icon: FileText },
+    { label: "User & Role Management", to: "/admin/users", icon: UserCog },
+    { label: "Audit Logs", to: "/admin/audit-logs", icon: ScrollText },
+    { label: "Security", to: "/admin/security", icon: Lock },
+    { label: "Settings", to: "/admin/settings", icon: Settings }
+  ];
+  const navItems = isAdmin ? adminNavItems : studentNavItems;
+  return /* @__PURE__ */ jsxs("div", { className: "flex h-screen bg-background text-foreground", children: [
+    open && /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: "fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] md:hidden",
+        onClick: () => setOpen(false)
+      }
+    ),
+    /* @__PURE__ */ jsxs(
+      "aside",
+      {
+        className: cn(
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col",
+          "border-r border-border bg-sidebar",
+          "transition-transform duration-200 ease-out",
+          "md:static md:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full"
+        ),
+        children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex h-14 items-center justify-between px-5 border-b border-border shrink-0", children: [
+            /* @__PURE__ */ jsxs(Link, { to: isAdmin ? "/admin" : "/", className: "flex items-center gap-2.5 group", children: [
+              /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-foreground overflow-hidden", children: /* @__PURE__ */ jsx(
+                "img",
+                {
+                  src: logo,
+                  alt: "AcadSphere",
+                  className: "h-5 w-5 object-contain invert dark:invert-0"
+                }
+              ) }),
+              /* @__PURE__ */ jsxs("span", { className: "font-sans font-bold text-sm tracking-tight text-foreground", children: [
+                "AcadSphere ",
+                isAdmin && /* @__PURE__ */ jsx("span", { className: "text-[10px] text-blue-500 font-mono", children: "(Admin)" })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setOpen(false),
+                className: "rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms] md:hidden",
+                children: /* @__PURE__ */ jsx(X, { className: "h-3.5 w-3.5" })
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-y-auto py-4 px-3 space-y-0.5 scrollbar-thin", children: [
+            /* @__PURE__ */ jsx("p", { className: "font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground px-2 mb-3", children: isAdmin ? "Admin SIS Monitoring" : "Modules" }),
+            /* @__PURE__ */ jsx("nav", { className: "space-y-0.5", children: navItems.map((item, idx) => {
+              const Icon = item.icon;
+              return /* @__PURE__ */ jsxs(
+                Link,
+                {
+                  to: item.to.split(" ")[0],
+                  onClick: () => setOpen(false),
+                  activeProps: {
+                    className: "bg-foreground text-background font-bold"
+                  },
+                  inactiveProps: {
+                    className: "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  },
+                  className: "flex items-center gap-2.5 px-2.5 py-2 text-[13px] font-sans rounded-lg transition-colors duration-[120ms] group",
+                  children: [
+                    /* @__PURE__ */ jsx(Icon, { className: "h-4 w-4 shrink-0" }),
+                    /* @__PURE__ */ jsx("span", { children: item.label })
+                  ]
+                },
+                item.label + idx
+              );
+            }) })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "border-t border-border p-3 shrink-0", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: toggleTheme,
+                className: "p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-full transition-colors duration-[120ms]",
+                title: isDark ? "Light mode" : "Dark mode",
+                children: isDark ? /* @__PURE__ */ jsx(Sun, { className: "h-4 w-4" }) : /* @__PURE__ */ jsx(Moon, { className: "h-4 w-4" })
+              }
+            ),
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: handleSignOut,
+                className: "flex items-center gap-1.5 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground hover:bg-accent rounded-full transition-colors duration-[120ms]",
+                children: [
+                  /* @__PURE__ */ jsx(LogOut, { className: "h-3.5 w-3.5" }),
+                  "Sign Out"
+                ]
+              }
+            )
+          ] }) })
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { className: "flex-1 flex flex-col min-w-0 overflow-hidden", children: [
+      /* @__PURE__ */ jsxs("header", { className: "flex h-14 items-center justify-between border-b border-border bg-background px-5 shrink-0 relative z-10", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => setOpen(true),
+              className: "rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms] md:hidden",
+              children: /* @__PURE__ */ jsx(Menu, { className: "h-4.5 w-4.5" })
+            }
+          ),
+          /* @__PURE__ */ jsxs("div", { className: "hidden md:flex items-center gap-2", children: [
+            /* @__PURE__ */ jsx("span", { className: "font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground", children: "Workspace" }),
+            /* @__PURE__ */ jsx("span", { className: "text-border", children: "/" }),
+            /* @__PURE__ */ jsx("span", { className: "font-sans text-[13px] font-medium text-foreground", children: isAdmin ? "Admin SIS Monitoring Center" : "AcadSphere Hub" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "flex-1 max-w-sm mx-4 hidden sm:block", children: /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+          /* @__PURE__ */ jsx(Search, { className: "absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "text",
+              placeholder: isAdmin ? "Search students, USNs, or audit logs..." : "Search or ask anything...",
+              value: searchQuery,
+              onChange: (e) => setSearchQuery(e.target.value),
+              className: cn(
+                "w-full pl-9 pr-4 py-2",
+                "text-[12px] font-sans",
+                "rounded-full border border-border bg-muted/60 text-foreground",
+                "placeholder:text-muted-foreground",
+                "focus:outline-none focus:ring-2 focus:ring-ring focus:border-foreground",
+                "transition-[border-color,box-shadow] duration-[120ms]"
+              )
+            }
+          )
+        ] }) }),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+          !isAdmin ? /* @__PURE__ */ jsxs(
+            Button,
+            {
+              onClick: () => create.mutate(),
+              size: "sm",
+              className: "h-8 px-4 text-[10px]",
+              children: [
+                /* @__PURE__ */ jsx(Sparkles, { className: "h-3.5 w-3.5" }),
+                /* @__PURE__ */ jsx("span", { className: "hidden md:inline", children: "Ask AI" })
+              ]
+            }
+          ) : /* @__PURE__ */ jsxs(
+            Button,
+            {
+              onClick: () => navigate({ to: "/admin/students" }),
+              size: "sm",
+              className: "h-8 px-4 text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold",
+              children: [
+                /* @__PURE__ */ jsx(GraduationCap, { className: "h-3.5 w-3.5" }),
+                /* @__PURE__ */ jsx("span", { className: "hidden md:inline", children: "Manage Students" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: toggleTheme,
+              className: "p-2 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-[120ms]",
+              title: isDark ? "Light mode" : "Dark mode",
+              children: isDark ? /* @__PURE__ */ jsx(Sun, { className: "h-4 w-4" }) : /* @__PURE__ */ jsx(Moon, { className: "h-4 w-4" })
+            }
+          ),
+          /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setShowProfileMenu(!showProfileMenu),
+                className: "flex items-center p-1 rounded-full hover:bg-accent transition-colors duration-[120ms]",
+                children: /* @__PURE__ */ jsxs(Avatar, { className: "h-7 w-7 border border-border", children: [
+                  /* @__PURE__ */ jsx(AvatarImage, { src: userAvatar, alt: userName }),
+                  /* @__PURE__ */ jsx(AvatarFallback, { className: "bg-foreground text-background font-bold text-[10px]", children: userInitials })
+                ] })
+              }
+            ),
+            showProfileMenu && /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsx("div", { className: "fixed inset-0 z-40", onClick: () => setShowProfileMenu(false) }),
+              /* @__PURE__ */ jsxs("div", { className: cn(
+                "absolute right-0 top-full mt-2 w-52 z-50",
+                "rounded-xl border border-border bg-popover py-2",
+                "shadow-none animate-slide-up"
+              ), children: [
+                /* @__PURE__ */ jsxs("div", { className: "px-4 py-2 border-b border-border mb-1", children: [
+                  /* @__PURE__ */ jsx("p", { className: "font-sans text-[13px] font-semibold text-foreground truncate", children: userName }),
+                  /* @__PURE__ */ jsx("p", { className: "font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em] truncate mt-0.5", children: userEmail })
+                ] }),
+                /* @__PURE__ */ jsxs(
+                  Link,
+                  {
+                    to: isAdmin ? "/admin" : "/app/profile",
+                    onClick: () => setShowProfileMenu(false),
+                    className: "flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]",
+                    children: [
+                      /* @__PURE__ */ jsx(User, { className: "h-3.5 w-3.5" }),
+                      isAdmin ? "Admin Center" : "My Profile"
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxs(
+                  Link,
+                  {
+                    to: isAdmin ? "/admin/settings" : "/app/settings",
+                    onClick: () => setShowProfileMenu(false),
+                    className: "flex items-center gap-2.5 px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]",
+                    children: [
+                      /* @__PURE__ */ jsx(Settings, { className: "h-3.5 w-3.5" }),
+                      "Settings"
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsx("div", { className: "border-t border-border mt-1 pt-1", children: /* @__PURE__ */ jsxs(
+                  "button",
+                  {
+                    onClick: () => {
+                      setShowProfileMenu(false);
+                      handleSignOut();
+                    },
+                    className: "flex items-center gap-2.5 w-full text-left px-4 py-2 text-[13px] font-sans text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-[120ms]",
+                    children: [
+                      /* @__PURE__ */ jsx(LogOut, { className: "h-3.5 w-3.5" }),
+                      "Sign Out"
+                    ]
+                  }
+                ) })
+              ] })
+            ] })
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-hidden", children })
+    ] })
+  ] });
+}
+export {
+  ChatLayout as C,
+  createThread as c,
+  deleteThread as d,
+  getThreadMessages as g,
+  listThreads as l,
+  renameThread as r,
+  saveMessage as s
+};

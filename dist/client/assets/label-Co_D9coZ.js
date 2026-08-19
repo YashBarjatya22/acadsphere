@@ -1,1 +1,0 @@
-import{j as t}from"./index-DJvQq2x7.js";import{c as a}from"./utils-bRMfwS6c.js";function s({className:e,...o}){return t.jsx("label",{"data-slot":"label",className:a("font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground","leading-none","select-none","peer-disabled:cursor-not-allowed peer-disabled:opacity-50",e),...o})}export{s as L};

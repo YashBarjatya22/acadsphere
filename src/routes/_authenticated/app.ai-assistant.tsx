@@ -17,6 +17,7 @@ import {
   BookOpen, Brain, HelpCircle, Zap, MoreHorizontal,
   PencilLine, X, Loader2, Bot, User,
 } from "lucide-react";
+import { AiResponseWriter } from "@/components/ui/ai-response-writer";
 
 export const Route = createFileRoute("/_authenticated/app/ai-assistant")({
   component: AIAssistantPage,
@@ -642,19 +643,24 @@ function AIAssistantPage() {
                   flash: the bubble only appears once the first characters arrive.
                 */}
                 {streamingId && (
-                  streamingContent ? (
-                    /* Has content → show as normal assistant bubble, updating in place */
-                    <MessageBubble
-                      key={streamingId}
-                      message={{ id: streamingId, role: "assistant", content: streamingContent }}
-                      isStreaming
-                    />
-                  ) : (
-                    /* No content yet → show subtle typing dots while waiting for first token */
-                    <div className="flex items-start gap-3">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                        <Bot className="h-4 w-4 text-primary" />
+                  <div className="flex items-start gap-3">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                      <Bot className="h-4 w-4 text-primary" />
+                    </div>
+                    {streamingContent ? (
+                      /* Live responding card using AiResponseWriter with auto-scroll and status header */
+                      <div className="max-w-[85%] w-full bg-card border border-border text-foreground rounded-2xl rounded-tl-sm p-4 shadow-sm ring-1 ring-primary/10">
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                          </span>
+                          <span className="text-xs font-semibold text-foreground">AI is responding…</span>
+                        </div>
+                        <AiResponseWriter text={streamingContent} className="max-h-72" />
                       </div>
+                    ) : (
+                      /* No content yet → show subtle typing dots while waiting for first token */
                       <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
                         <div className="flex gap-1 items-center h-4">
                           <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
@@ -662,8 +668,8 @@ function AIAssistantPage() {
                           <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
                         </div>
                       </div>
-                    </div>
-                  )
+                    )}
+                  </div>
                 )}
 
                 <div ref={chatEndRef} />
