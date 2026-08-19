@@ -176,7 +176,7 @@ function AttendancePage() {
                 }));
                 setCueData(mapped);
                 setCueLastSynced(new Date().toISOString());
-                toast.success(`✅ Attendance synced! ${mapped.length} subjects updated in real-time.`);
+                toast.success(`Attendance synced! ${mapped.length} subjects updated in real-time.`);
               }
             });
         }
@@ -293,7 +293,7 @@ function AttendancePage() {
         setCaptchaSession(data);
         setCaptchaText("");
         if (data.hasCaptcha) {
-          toast.info("🔐 CAPTCHA required by portal. Please solve it below.");
+          toast.info("CAPTCHA required by portal. Please solve it below.");
         }
       } else {
         setCueError(data.error || "Failed to initialize login session.");
@@ -359,12 +359,12 @@ function AttendancePage() {
         setCueError(msg);
 
         if (kpData.isCaptchaError) {
-          toast.error("❌ Invalid CAPTCHA code. Loading a new CAPTCHA...");
+          toast.error("Invalid CAPTCHA code. Loading a new CAPTCHA...");
           fetchCaptchaSession();
         } else if (kpData.isCredentialError) {
-          toast.error("❌ Invalid credentials — check your CUE username/password.");
+          toast.error("Invalid credentials — check your CUE username/password.");
         } else {
-          toast.error(`❌ ${msg}`);
+          toast.error(msg);
         }
         return;
       }
@@ -384,7 +384,7 @@ function AttendancePage() {
         console.warn("[app.attendance] Error saving to local DB:", saveErr);
       }
 
-      toast.success(`✅ Synced ${kpData.count || kpData.subjects.length} subjects from CUE Portal!`);
+      toast.success(`Synced ${kpData.count || kpData.subjects.length} subjects from CUE Portal!`);
 
       // Phase 3: Optimistic UI update (Supabase realtime will also fire)
       const mapped: CueSubject[] = kpData.subjects.map((sub: any) => ({
@@ -409,7 +409,7 @@ function AttendancePage() {
     } catch (err: any) {
       const msg = err?.message || "Sync failed. Please try again.";
       setCueError(msg);
-      toast.error(`❌ ${msg}`);
+      toast.error(msg);
     } finally {
       setIsCueSyncing(false);
     }
@@ -508,11 +508,11 @@ function AttendancePage() {
 
   // ── Render CUE Sync Banner (server-side, no extension required) ──────────────
   const renderExtensionSyncBanner = () => (
-    <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-600/10 via-indigo-600/5 to-purple-600/10 border border-blue-500/20 shadow-sm space-y-4">
+    <div className="p-5 rounded-2xl bg-muted/30 border border-border space-y-4">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shrink-0">
-            <Globe className="h-5 w-5" />
+          <div className="h-10 w-10 rounded-2xl border border-border bg-card flex items-center justify-center shrink-0">
+            <Globe className="h-5 w-5 text-foreground" />
           </div>
           <div>
             <h3 className="text-sm font-extrabold text-foreground">Sync Live Attendance from CUE Portal</h3>
@@ -529,7 +529,7 @@ function AttendancePage() {
       <button
         type="button"
         onClick={() => setShowCueModal(true)}
-        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all"
+        className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:opacity-90 px-4 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[.98]"
       >
         <Zap className="h-4 w-4" />
         Sync Attendance Now
@@ -713,12 +713,11 @@ function AttendancePage() {
         )}
 
         {/* ── Header ── */}
-        <div className="relative overflow-hidden px-6 py-5 border-b border-border shrink-0">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-amber-500/5 to-transparent pointer-events-none" />
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="px-6 py-5 border-b border-border shrink-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Clock className="h-5 w-5 text-white" />
+              <div className="h-10 w-10 rounded-2xl border border-border bg-card flex items-center justify-center">
+                <Clock className="h-5 w-5 text-foreground" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -762,7 +761,7 @@ function AttendancePage() {
                 <button
                   type="button"
                   onClick={() => setShowCueModal(true)}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+                  className="flex items-center gap-2 bg-primary text-primary-foreground hover:opacity-90 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-[.98]"
                 >
                   <Globe className="h-3.5 w-3.5" />
                   Sync from CUE Portal
@@ -860,8 +859,8 @@ function AttendancePage() {
               </div>
             ) : (
               <div className="flex items-center gap-4 p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 border-dashed">
-                <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shrink-0 shadow-md">
-                  <Database className="h-5 w-5" />
+                <div className="h-11 w-11 rounded-2xl border border-border bg-card flex items-center justify-center shrink-0">
+                  <Database className="h-5 w-5 text-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-extrabold text-foreground">No Attendance Data Synced Yet</p>

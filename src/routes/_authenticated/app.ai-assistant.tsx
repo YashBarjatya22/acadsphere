@@ -15,9 +15,10 @@ import {
 import {
   Sparkles, Send, Plus, Search, Trash2, MessageSquare,
   BookOpen, Brain, HelpCircle, Zap, MoreHorizontal,
-  PencilLine, X, Loader2, Bot, User,
+  PencilLine, X, Loader2, Bot, User, PanelLeft,
 } from "lucide-react";
 import { AiResponseWriter } from "@/components/ui/ai-response-writer";
+import { AnimatePresence, motion } from "framer-motion";
 
 export const Route = createFileRoute("/_authenticated/app/ai-assistant")({
   component: AIAssistantPage,
@@ -132,6 +133,7 @@ function AIAssistantPage() {
   const rafRef = useRef<number | null>(null);
 
   /* — sidebar UI state — */
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -366,6 +368,7 @@ function AIAssistantPage() {
     setActiveThreadId(null);
     setMessages([]);
     setInput("");
+    setSidebarOpen(false);
     inputRef.current?.focus();
   };
 
@@ -375,6 +378,7 @@ function AIAssistantPage() {
     if (isStreaming) abortRef.current?.abort();
     setActiveThreadId(threadId);
     setMenuOpenId(null);
+    setSidebarOpen(false);
   };
 
   /* — delete thread — */
@@ -432,10 +436,32 @@ function AIAssistantPage() {
   /* ─────────────── Render ─────────────────────────────── */
   return (
     <ChatLayout activeThreadId={activeThreadId}>
-      <div className="flex h-full overflow-hidden">
+      <div className="flex h-full overflow-hidden relative">
+
+        {/* ── Mobile sidebar backdrop ── */}
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.div
+              className="absolute inset-0 z-30 bg-black/50 md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+        </AnimatePresence>
 
         {/* ── Inner Left Sidebar (Chat History) ── */}
-        <aside className="w-64 shrink-0 flex flex-col border-r border-border bg-sidebar overflow-hidden">
+        <aside
+          className={`absolute md:static inset-y-0 left-0 z-40
+            w-64 shrink-0 flex flex-col border-r border-border bg-sidebar overflow-hidden
+            transition-transform duration-300 ease-in-out
+            ${
+              sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+            }
+          `}
+        >
 
           {/* New Chat button */}
           <div className="p-3 border-b border-border shrink-0">
@@ -572,19 +598,27 @@ function AIAssistantPage() {
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
 
           {/* Chat header */}
-          <div className="flex items-center justify-between h-12 px-5 border-b border-border shrink-0 bg-card/50 backdrop-blur-sm">
+          <div className="flex items-center justify-between h-12 px-3 md:px-5 border-b border-border shrink-0 bg-card/50 backdrop-blur-sm">
             <div className="flex items-center gap-2">
+              {/* Mobile sidebar toggle */}
+              <button
+                className="md:hidden h-8 w-8 flex items-center justify-center rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSidebarOpen(true)}
+                title="Open chat history"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
               <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
               </div>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-sm font-semibold text-foreground truncate">
                 {activeThreadId
                   ? (threads.find(t => t.id === activeThreadId)?.title ?? "AI Study Assistant")
                   : "AI Study Assistant"}
               </span>
             </div>
-            <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-              Powered by Groq · Llama 3.3
+            <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0">
+              Groq · Llama 3.3
             </span>
           </div>
 

@@ -235,8 +235,8 @@ function ConversionsPage() {
       setHistory((prev) => [historyItem, ...prev]);
       setProgress("done");
 
-      toast.success("✅ File converted successfully!", {
-        description: `${droppedFile.name} → ${data.file_name}`,
+      toast.success("File converted successfully!", {
+        description: `${droppedFile.name} \u2192 ${data.file_name}`,
       });
 
     } catch (err: any) {
@@ -274,39 +274,28 @@ function ConversionsPage() {
     <ChatLayout activeThreadId={null}>
       <div className="flex flex-col h-full overflow-y-auto bg-background">
 
-        {/* ── Hero Header ──────────────────────────────────────────────── */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-700 px-6 py-10 md:px-10 md:py-14 shrink-0">
-          {/* Background grid pattern */}
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-              backgroundSize: "28px 28px",
-            }}
-          />
-          <div className="relative z-10 max-w-3xl">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="h-10 w-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center ring-1 ring-white/30">
-                <FileOutput className="h-5 w-5 text-white" />
+        {/* ── Page Header ─────────────────────────────────────────────── */}
+        <div className="border-b border-border bg-card/50 backdrop-blur-sm px-6 py-7 md:px-10 shrink-0">
+          <div className="max-w-3xl flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl border border-border bg-muted/60 flex items-center justify-center shrink-0">
+                <FileOutput className="h-4.5 w-4.5 text-foreground" />
               </div>
-              <span className="text-white/70 text-xs font-semibold uppercase tracking-widest">
-                Powered by iLoveAPI
-              </span>
+              <div>
+                <h1 className="text-base font-bold text-foreground leading-none">File Converter</h1>
+                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">Powered by iLoveAPI</p>
+              </div>
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 leading-tight">
-              File Converter
-            </h1>
-            <p className="text-white/75 text-sm md:text-base max-w-xl">
+            <p className="text-sm text-muted-foreground max-w-xl">
               Convert PDFs, Word docs, spreadsheets, presentations and images — instantly and securely.
             </p>
-
             {/* Feature pills */}
-            <div className="flex flex-wrap gap-2 mt-5">
+            <div className="flex flex-wrap gap-2">
               {[
-                { icon: Zap,        label: "Fast conversion" },
-                { icon: Shield,     label: "Encrypted & private" },
-                { icon: Clock,      label: "1h download link" },
-                { icon: Sparkles,   label: "8 format types" },
+                { icon: Zap,      label: "Fast conversion" },
+                { icon: Shield,   label: "Encrypted & private" },
+                { icon: Clock,    label: "1h download link" },
+                { icon: Sparkles, label: "8 format types" },
               ].map(({ icon: Icon, label }) => (
                 <div
                   key={label}
