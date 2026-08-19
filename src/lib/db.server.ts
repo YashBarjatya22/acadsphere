@@ -430,3 +430,19 @@ export function getSupabaseServerClient() {
   }
   return null;
 }
+
+export function ensureUserExistsInSqlite(userId: string, email?: string, name?: string) {
+  if (!userId) return;
+  try {
+    const database = getDb();
+    const existing = database.prepare("SELECT id FROM users WHERE id = ?").get(userId);
+    if (!existing) {
+      const userEmail = email || `${userId}@acadsphere.local`;
+      const pwHash = crypto.createHash("sha256").update(userId).digest("hex");
+      database.prepare("INSERT OR IGNORE INTO users (id, email, password_hash, status) VALUES (?, ?, ?, 'active')").run(userId, userEmail, pwHash);
+      database.prepare("INSERT OR IGNORE INTO profiles (id, full_name, role, degree, semester, target_role) VALUES (?, ?, 'student', 'MSc Big Data Analytics', 'Semester 4', 'Software Engineer')").run(userId, name || "Student");
+    }
+  } catch (err) {
+    console.warn("[SQLite] ensureUserExistsInSqlite failed:", err);
+  }
+}

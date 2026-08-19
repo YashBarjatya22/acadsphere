@@ -117,6 +117,8 @@ export async function createDefaultMetrics(userId: string): Promise<StudentMetri
         return { data, error };
       },
       () => {
+        const { ensureUserExistsInSqlite } = require("@/lib/db.server");
+        ensureUserExistsInSqlite(userId);
         const db = getDb();
         const id = crypto.randomUUID();
         const nowStr = new Date().toISOString();
