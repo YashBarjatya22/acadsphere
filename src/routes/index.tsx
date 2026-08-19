@@ -13,6 +13,7 @@ import {
   BookOpen, CalendarDays, CheckCircle2, LayoutDashboard, User, Settings,
   Loader2, LogIn, Zap, GraduationCap, Wand2, FileOutput
 } from "lucide-react";
+import { AntigravityMeshBackground } from "@/components/ui/antigravity-mesh-background";
 
 export const Route = createFileRoute("/")(({
   head: () => ({
@@ -72,6 +73,7 @@ function Landing() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [isAuthSuccess, setIsAuthSuccess] = useState(false);
   const localLoginFn = useServerFn(localDemoLogin);
 
   async function handleLandingLogin(e: React.FormEvent) {
@@ -83,8 +85,11 @@ function Landing() {
       localStorage.setItem("demo_user_id", result.userId);
       localStorage.setItem("demo_user_email", result.email);
       localStorage.setItem("demo_user_role", result.role || "student");
+      setIsAuthSuccess(true);
       toast.success(`Welcome back, ${result.name || result.email}!`);
-      navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+      setTimeout(() => {
+        navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+      }, 350);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -100,8 +105,11 @@ function Landing() {
       localStorage.setItem("demo_user_id", result.userId);
       localStorage.setItem("demo_user_email", result.email);
       localStorage.setItem("demo_user_role", result.role || "student");
+      setIsAuthSuccess(true);
       toast.success("Signed in as Demo Student");
-      navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+      setTimeout(() => {
+        navigate({ to: result.role === "admin" ? "/admin" : "/app", replace: true });
+      }, 350);
     } catch (err) {
       toast.error("Demo login failed");
     } finally {
@@ -133,7 +141,19 @@ function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="relative min-h-screen bg-background text-foreground overflow-hidden">
+      {/* ─── Reactive Anti-Gravity Mesh Canvas Background ─────── */}
+      <AntigravityMeshBackground
+        isSuccess={isAuthSuccess}
+        particleCount={90}
+        connectionDistance={145}
+        repulsionRadius={190}
+        repulsionStrength={15}
+        nodeColor={isDark ? "#818cf8" : "#4f46e5"}
+        lineColor={isDark ? "#6366f1" : "#818cf8"}
+        lineOpacity={isDark ? 0.28 : 0.22}
+        successColor="#10b981"
+      />
 
       {/* ─── Floating Pill Navigation ───────────────────────── */}
       <div className="sticky top-0 z-50 flex justify-center pt-4 px-6">
