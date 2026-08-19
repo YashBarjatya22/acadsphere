@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Users, MessageSquare, Heart, Plus, Search, Circle, Send, X,
   CheckCheck, MessageCircle, RefreshCw, UserCheck, UserPlus, Hash,
-  UsersRound, Loader2, Trash2, Lock, Globe, Sparkles, ChevronRight,
+  UsersRound, Loader2, Trash2, Lock, Globe, ArrowLeft,
   MessageSquarePlus
 } from "lucide-react";
 
@@ -65,22 +65,23 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function avatarColor(initials: string) {
-  const colors = [
-    "from-blue-500 to-indigo-600",
-    "from-violet-500 to-purple-600",
-    "from-emerald-500 to-teal-600",
-    "from-rose-500 to-red-600",
-    "from-amber-500 to-orange-600",
-    "from-cyan-500 to-blue-600",
-    "from-fuchsia-500 to-pink-600",
-    "from-lime-500 to-green-600",
+/**
+ * Minimalist, monochromatic monogram styling avoiding all loud/rainbow gradients.
+ */
+function avatarColor(initials: string): string {
+  const styles = [
+    "bg-zinc-800 text-zinc-100 border border-zinc-700/60 dark:bg-zinc-800 dark:text-zinc-100",
+    "bg-zinc-700 text-zinc-100 border border-zinc-600/60 dark:bg-zinc-900 dark:text-zinc-200",
+    "bg-neutral-800 text-neutral-100 border border-neutral-700/60",
+    "bg-stone-800 text-stone-100 border border-stone-700/60",
+    "bg-slate-800 text-slate-100 border border-slate-700/60",
+    "bg-zinc-900 text-zinc-100 border border-zinc-700/80",
   ];
-  const code = initials ? initials.charCodeAt(0) : 0;
-  return colors[code % colors.length];
+  const code = initials ? initials.charCodeAt(0) + (initials.charCodeAt(1) || 0) : 0;
+  return styles[code % styles.length];
 }
 
-function timeAgo(iso: string) {
+function timeAgo(iso: string): string {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -91,12 +92,12 @@ function timeAgo(iso: string) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function fmtTime(iso: string) {
+function fmtTime(iso: string): string {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function dataChanged(prev: DirectMessage[], next: DirectMessage[]) {
+function dataChanged(prev: DirectMessage[], next: DirectMessage[]): boolean {
   if (prev.length !== next.length) return true;
   if (prev.length > 0 && next.length > 0) {
     if (prev[prev.length - 1].id !== next[next.length - 1].id) return true;
@@ -113,7 +114,7 @@ function CommunityPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   /* Main Navigation Mode: Global Community vs Direct Messages */
-  const [mainTab, setMainTab] = useState<MainTab>("global");
+  const [mainTab, setMainTab] = useState<MainTab>("dms");
 
   /* Posts */
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -129,7 +130,7 @@ function CommunityPage() {
   const [memberFilter, setMemberFilter] = useState<"all" | "online" | "offline">("all");
   const [memberSearch, setMemberSearch] = useState("");
 
-  /* Right panel */
+  /* Right panel in Global mode */
   const [rightPanel, setRightPanel] = useState<RightPanel>("members");
 
   /* Groups */
@@ -140,7 +141,7 @@ function CommunityPage() {
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [groupSubmitting, setGroupSubmitting] = useState(false);
 
-  /* Direct Messages — Active Conversations & Unread Tracking */
+  /* Direct Messages */
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
   const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
   const [dmLoading, setDmLoading] = useState(false);
@@ -159,7 +160,7 @@ function CommunityPage() {
   const activePeerIdRef = useRef<string | null>(null);
   useEffect(() => { activePeerIdRef.current = activePeerId; }, [activePeerId]);
 
-  const mainTabRef = useRef<MainTab>("global");
+  const mainTabRef = useRef<MainTab>("dms");
   useEffect(() => { mainTabRef.current = mainTab; }, [mainTab]);
 
   /* ── Bootstrap: get current user ── */
@@ -227,14 +228,12 @@ function CommunityPage() {
   const fetchRecentConversations = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      // 1. Primary lookup: direct_messages table
       let { data: dms, error: dmError } = await supabase
         .from("direct_messages")
         .select("*")
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
         .order("created_at", { ascending: false });
 
-      // Fallback: private_messages table
       if (dmError || !dms || dms.length === 0) {
         const { data: pms } = await supabase
           .from("private_messages")
@@ -264,7 +263,6 @@ function CommunityPage() {
           };
         }
 
-        // Count unread incoming messages received after stored read timestamp
         const isIncoming = msg.receiver_id === currentUser.id;
         const readTime = getReadTime(peerId);
         const msgTime = new Date(msg.created_at).getTime();
@@ -276,6 +274,11 @@ function CommunityPage() {
 
       setRecentDmMap(convMap);
       setActivePeerIds(peerOrder);
+
+      // Auto-select first active peer if none selected and on desktop
+      if (!activePeerIdRef.current && peerOrder.length > 0) {
+        setActivePeerId(peerOrder[0]);
+      }
     } catch (err) {
       console.error("Failed to load recent DM conversations:", err);
     }
@@ -329,7 +332,7 @@ function CommunityPage() {
       setPosts(mapped);
     } catch (err) {
       console.error("Failed to fetch posts:", err);
-      toast.error("Could not refresh posts — showing cached feed");
+      toast.error("Could not refresh posts");
     } finally {
       setPostsLoading(false);
     }
@@ -341,7 +344,7 @@ function CommunityPage() {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
-      .channel("community-posts-realtime-v6")
+      .channel("community-posts-realtime-v7")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" },
         (payload) => {
           const p = payload.new as any;
@@ -425,7 +428,6 @@ function CommunityPage() {
   useEffect(() => {
     if (activePeerId && currentUser?.id) {
       fetchDMs(activePeerId);
-      // Mark conversation read
       const nowStr = new Date().toISOString();
       localStorage.setItem(`acadsphere_dm_read_${currentUser.id}_${activePeerId}`, nowStr);
       setRecentDmMap((prev) => ({
@@ -440,14 +442,13 @@ function CommunityPage() {
     }
   }, [activePeerId, currentUser?.id, fetchDMs]);
 
-  /* ── TRIPLE-REDUNDANT REALTIME ENGINE: Broadcast + postgres_changes ── */
+  /* ── Triple-redundant Realtime Engine: Broadcast + postgres_changes ── */
   useEffect(() => {
     if (!currentUser?.id) return;
 
     const handleNewMessage = (msg: DirectMessage) => {
       const peerId = msg.sender_id === currentUser.id ? msg.receiver_id : msg.sender_id;
 
-      // Bring peer to top of conversation list
       setActivePeerIds((prev) => [peerId, ...prev.filter((id) => id !== peerId)]);
 
       const isIncoming = msg.receiver_id === currentUser.id;
@@ -483,7 +484,6 @@ function CommunityPage() {
       }
     };
 
-    // 1. Dedicated Supabase Broadcast channel for instant peer-to-peer WebSocket delivery
     const myChannel = supabase.channel(`dm-peer-${currentUser.id}`);
     myChannel
       .on("broadcast", { event: "new_dm_message" }, (payload) => {
@@ -493,9 +493,8 @@ function CommunityPage() {
       })
       .subscribe();
 
-    // 2. Postgres changes fallback
     const dbChannel = supabase
-      .channel("custom-dm-channel-v6")
+      .channel("custom-dm-channel-v7")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "direct_messages" },
@@ -522,7 +521,7 @@ function CommunityPage() {
     };
   }, [currentUser?.id, members]);
 
-  /* ── Quiet 2.5s Polling Fallback for active DM chat (zero miss guarantee) ── */
+  /* ── 2.5s Polling Fallback for active DM chat ── */
   useEffect(() => {
     if (!activePeerId || !currentUser?.id) return;
 
@@ -602,9 +601,9 @@ function CommunityPage() {
   const onlineMembersCount = useMemo(() => {
     const classOnline = membersWithPresence.filter((m) => m.status === "online").length;
     return Math.max(onlineUserIds.size, classOnline);
-  }, [membersWithPresence, onlineUserIds, currentUser]);
+  }, [membersWithPresence, onlineUserIds]);
 
-  /* FILTER 1: Members for Direct Messages sidebar — ONLY show active conversation peers! */
+  /* FILTER 1: Active DM conversation peers */
   const conversationMembers = useMemo(() => {
     const activeSet = new Set(activePeerIds);
     const list = membersWithPresence.filter((m) => m.id !== currentUser?.id && activeSet.has(m.id));
@@ -689,7 +688,7 @@ function CommunityPage() {
       }).select().single();
       if (error) throw error;
       setPosts((prev) => prev.map((p) => (p.id === optimisticId ? { ...optimisticPost, id: data.id, created_at: data.created_at } : p)));
-      toast.success("Post published!");
+      toast.success("Discussion published");
     } catch (err: any) {
       setPosts((prev) => prev.filter((p) => p.id !== optimisticId));
       toast.error("Failed to post: " + (err.message || "Unknown error"));
@@ -702,9 +701,9 @@ function CommunityPage() {
       const { error } = await supabase.from("community_posts").delete().eq("id", postId).eq("user_id", currentUser.id);
       if (error) throw error;
       setPosts((prev) => prev.filter((p) => p.id !== postId));
-      toast.success("Post deleted");
+      toast.success("Discussion removed");
     } catch (err: any) {
-      toast.error("Could not delete post: " + (err.message || ""));
+      toast.error("Could not delete discussion: " + (err.message || ""));
     }
   };
 
@@ -764,7 +763,6 @@ function CommunityPage() {
       if (insertedMsg) {
         setDmMessages((prev) => prev.map((m) => (m.id === optimisticMsg.id ? insertedMsg! : m)));
 
-        // Broadcast to recipient via WebSocket channel for instant 0ms delivery
         const recipientChannel = supabase.channel(`dm-peer-${activePeerId}`);
         recipientChannel.send({
           type: "broadcast",
@@ -784,7 +782,7 @@ function CommunityPage() {
       await supabase.from("direct_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
       await supabase.from("private_messages").delete().eq("id", msgId).eq("sender_id", currentUser.id);
       setDmMessages((prev) => prev.filter((m) => m.id !== msgId));
-      toast.success("Message deleted");
+      toast.success("Message removed");
     } catch {
       toast.error("Could not delete message");
     }
@@ -800,7 +798,7 @@ function CommunityPage() {
       }).select().single();
       if (error) throw error;
       await supabase.from("community_group_members").insert({ group_id: data.id, user_id: currentUser.id });
-      toast.success(`Group "${newGroupName}" created!`);
+      toast.success(`Group "${newGroupName}" created`);
       setNewGroupName(""); setNewGroupDesc(""); setShowCreateGroup(false);
       fetchGroups();
     } catch (err: any) { toast.error("Failed to create group: " + (err.message || "")); }
@@ -815,7 +813,7 @@ function CommunityPage() {
         toast.success("Left group");
       } else {
         await supabase.from("community_group_members").insert({ group_id: groupId, user_id: currentUser.id });
-        toast.success("Joined group!");
+        toast.success("Joined group");
       }
       fetchGroups();
     } catch (err: any) { toast.error(err.message || "Error updating group membership"); }
@@ -825,174 +823,468 @@ function CommunityPage() {
 
   return (
     <ChatLayout activeThreadId={null}>
-      <div className="h-full bg-background text-foreground flex flex-col transition-colors duration-200 relative">
+      <div className="h-full bg-background text-foreground flex flex-col transition-colors duration-200 overflow-hidden relative">
 
-        {/* Header with Mode Toggle: Global Community vs Direct Messages */}
-        <div className="relative overflow-hidden px-6 py-3.5 border-b border-border shrink-0 bg-card">
-          <div className="absolute inset-0 bg-gradient-to-r from-pink-500/10 via-background to-rose-500/5 pointer-events-none" />
-          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-md shrink-0">
-                <Users className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-sm font-extrabold tracking-tight">Community Forum</h1>
-                <p className="text-[10px] text-muted-foreground">
-                  Shared class feed · Real-time 1-on-1 Direct Messaging
-                </p>
-              </div>
+        {/* ── Top Header Navigation ── */}
+        <header className="px-5 py-3.5 border-b border-border/80 bg-card/60 backdrop-blur-md shrink-0 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl border border-border/80 bg-muted/60 flex items-center justify-center text-foreground shrink-0 shadow-xs">
+              <Users className="h-4.5 w-4.5" />
             </div>
-
-            {/* Central Navigation Pills: Global vs Direct Messages */}
-            <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-2xl border border-border">
-              <button
-                onClick={() => setMainTab("global")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 ${
-                  mainTab === "global"
-                    ? "bg-card text-foreground shadow-sm border border-border"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card/50"
-                }`}
-              >
-                <Globe className="h-3.5 w-3.5 text-pink-500" />
-                <span>Global Community</span>
-              </button>
-
-              <button
-                onClick={() => setMainTab("dms")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 relative ${
-                  mainTab === "dms"
-                    ? "bg-card text-foreground shadow-sm border border-border"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card/50"
-                }`}
-              >
-                <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
-                <span>Direct Messages</span>
-                {totalUnreadCount > 0 ? (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
-                    {totalUnreadCount}
-                  </span>
-                ) : (
-                  conversationMembers.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-primary/10 text-primary">
-                      {conversationMembers.length}
-                    </span>
-                  )
-                )}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
-                <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500 animate-pulse" />
-                {onlineMembersCount} Online
-              </span>
-              <Button
-                variant="outline" size="sm"
-                onClick={() => { fetchProfiles(); fetchPosts(currentUser?.id); fetchRecentConversations(); if (activePeerId) fetchDMs(activePeerId); }}
-                className="h-7 text-[10px] gap-1 px-2.5" title="Refresh"
-              >
-                <RefreshCw className={`h-3 w-3 ${membersLoading ? "animate-spin" : ""}`} />
-                Sync
-              </Button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-semibold tracking-tight text-foreground">Community & Messages</h1>
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/50">
+                  Academic Net
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Classroom discussions & direct peer collaboration
+              </p>
             </div>
           </div>
-        </div>
 
-        {/* ── MODE 1: GLOBAL COMMUNITY VIEW ── */}
-        {mainTab === "global" && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* Center: Community Feed */}
-            <main className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto scrollbar-thin bg-muted/10">
+          {/* Central Segmented Control: DMs vs Discussions */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/80 shadow-xs">
+              <button
+                onClick={() => setMainTab("dms")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                  mainTab === "dms"
+                    ? "bg-background text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                <span>Direct Messages</span>
+                {totalUnreadCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-primary text-primary-foreground">
+                    {totalUnreadCount}
+                  </span>
+                )}
+              </button>
 
-              {/* Search Bar */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <input
-                  type="text" placeholder="Search posts or authors..."
-                  value={search} onChange={(e) => setSearch(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 text-xs bg-card border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
-                />
+              <button
+                onClick={() => setMainTab("global")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                  mainTab === "global"
+                    ? "bg-background text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span>Discussion Feed</span>
+              </button>
+            </div>
+
+            {/* Online Pill */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/40 border border-border/60 text-[11px] font-medium text-muted-foreground">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{onlineMembersCount} active</span>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                fetchProfiles();
+                fetchPosts(currentUser?.id);
+                fetchRecentConversations();
+                if (activePeerId) fetchDMs(activePeerId);
+              }}
+              className="h-8 text-xs px-2.5 rounded-lg border-border/80 hover:bg-accent"
+              title="Sync latest data"
+            >
+              <RefreshCw className={`h-3 w-3 ${membersLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </header>
+
+        {/* ════════════════════════════════════════════════════════════════════
+            MODE 1: DIRECT MESSAGES (DUAL PANE MESSENGER)
+        ════════════════════════════════════════════════════════════════════ */}
+        {mainTab === "dms" && (
+          <div className="flex-1 flex overflow-hidden bg-background">
+
+            {/* Left Conversation Sidebar */}
+            <aside className={`w-full md:w-80 lg:w-88 border-r border-border/80 bg-card/40 flex flex-col shrink-0 overflow-hidden ${
+              activePeerId ? "hidden md:flex" : "flex"
+            }`}>
+              {/* Header & Search */}
+              <div className="p-3 border-b border-border/60 space-y-2.5 bg-card/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Chats
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground">
+                      {conversationMembers.length}
+                    </span>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    onClick={() => setShowNewChatModal(true)}
+                    className="h-7 text-xs font-medium px-2.5 bg-foreground text-background hover:bg-foreground/90 rounded-lg shadow-xs"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    New Chat
+                  </Button>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search conversations..."
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    className="w-full h-8 pl-8 pr-3 text-xs bg-muted/50 border border-border/60 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground transition-all"
+                  />
+                </div>
               </div>
 
-              {/* Post Composer */}
-              <Card className="border-border bg-card shadow-sm">
-                <CardContent className="p-4">
+              {/* Conversation List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+                {membersLoading ? (
+                  <div className="space-y-2 p-2">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="h-14 bg-muted/40 rounded-xl animate-pulse" />
+                    ))}
+                  </div>
+                ) : filteredConversationMembers.length === 0 ? (
+                  <div className="text-center p-6 border border-dashed border-border/80 rounded-2xl my-6 mx-2 space-y-3 bg-muted/10">
+                    <div className="h-10 w-10 rounded-xl bg-muted border border-border/80 flex items-center justify-center mx-auto text-muted-foreground">
+                      <MessageSquarePlus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">No active conversations</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Start a direct chat with any student from your course.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowNewChatModal(true)}
+                      className="h-8 text-xs font-medium px-3 bg-foreground text-background hover:bg-foreground/90 rounded-lg"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Browse Classmates
+                    </Button>
+                  </div>
+                ) : (
+                  filteredConversationMembers.map((member) => {
+                    const isActive = activePeerId === member.id;
+                    const dmMeta = recentDmMap[member.id];
+                    const unread = dmMeta?.unreadCount || 0;
+                    const lastMsg = dmMeta?.lastMessage || "";
+                    const timeStr = dmMeta?.lastMessageAt ? fmtTime(dmMeta.lastMessageAt) : "";
+
+                    return (
+                      <button
+                        key={member.id}
+                        onClick={() => openChatWithPeer(member.id)}
+                        className={`w-full text-left flex items-center gap-3 p-2.5 rounded-xl border transition-all duration-150 relative ${
+                          isActive
+                            ? "bg-accent/80 border-border shadow-xs"
+                            : "border-transparent hover:bg-muted/40 hover:border-border/40"
+                        }`}
+                      >
+                        {/* Avatar */}
+                        <div className="relative shrink-0">
+                          <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-xs font-bold ${avatarColor(member.initials)}`}>
+                            {member.initials}
+                          </div>
+                          {member.status === "online" && (
+                            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-card" />
+                          )}
+                        </div>
+
+                        {/* Details */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-semibold text-foreground truncate">
+                              {member.name}
+                            </span>
+                            {timeStr && (
+                              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                                {timeStr}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 mt-0.5">
+                            <p className={`text-[11px] truncate ${unread > 0 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                              {lastMsg || member.department}
+                            </p>
+                            {unread > 0 && (
+                              <span className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-primary text-primary-foreground">
+                                {unread}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </aside>
+
+            {/* Right Chat Conversation Area */}
+            <main className={`flex-1 flex flex-col bg-background/50 overflow-hidden ${
+              !activePeerId ? "hidden md:flex" : "flex"
+            }`}>
+              {activePeer ? (
+                <>
+                  {/* Chat Top Bar */}
+                  <div className="px-4 py-3 border-b border-border/80 bg-card/60 backdrop-blur-md flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {/* Mobile Back Button */}
+                      <button
+                        onClick={() => setActivePeerId(null)}
+                        className="md:hidden h-8 w-8 rounded-lg flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                        title="Back to conversation list"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                      </button>
+
+                      <div className="relative">
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-xs font-bold ${avatarColor(activePeer.initials)}`}>
+                          {activePeer.initials}
+                        </div>
+                        {activePeer.status === "online" && (
+                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-card" />
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-xs font-semibold text-foreground leading-none">{activePeer.name}</h2>
+                          <span className="text-[10px] font-mono text-muted-foreground">·</span>
+                          <span className="text-[10px] text-muted-foreground truncate">{activePeer.department}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1.5">
+                          <Lock className="h-2.5 w-2.5 text-muted-foreground/70" />
+                          <span>End-to-end peer message</span>
+                          <span>·</span>
+                          <span className={activePeer.status === "online" ? "text-emerald-500 font-medium" : "text-muted-foreground"}>
+                            {activePeer.status === "online" ? "Online" : "Offline"}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Message History Feed */}
+                  <div className="flex-1 p-4 overflow-y-auto scrollbar-thin space-y-3 bg-muted/10">
+                    {dmLoading ? (
+                      <div className="h-full flex items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : dmMessages.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2 max-w-sm mx-auto">
+                        <div className="h-11 w-11 rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground mb-1">
+                          <MessageCircle className="h-5 w-5" />
+                        </div>
+                        <p className="text-xs font-semibold text-foreground">
+                          Direct message with {activePeer.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Collaborate on academic coursework, share study materials, or sync on project tasks.
+                        </p>
+                      </div>
+                    ) : (
+                      dmMessages.map((msg) => {
+                        const isMe = msg.sender_id === currentUser?.id;
+                        return (
+                          <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
+                            <div className={`flex items-end gap-1.5 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[85%] md:max-w-[70%]`}>
+                              <div className={`px-4 py-2.5 rounded-2xl text-xs leading-relaxed break-words whitespace-pre-wrap ${
+                                isMe
+                                  ? "bg-foreground text-background font-medium rounded-tr-xs shadow-xs"
+                                  : "bg-card border border-border/80 text-foreground rounded-tl-xs shadow-xs"
+                              }`}>
+                                {msg.content}
+                              </div>
+
+                              {isMe && (
+                                <button
+                                  onClick={() => handleDeleteDM(msg.id)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-red-500 hover:bg-muted mb-0.5 shrink-0"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+
+                            <span className="text-[9px] text-muted-foreground mt-1 px-1 flex items-center gap-1 font-mono">
+                              {fmtTime(msg.created_at)}
+                              {isMe && <CheckCheck className="h-3 w-3 text-muted-foreground inline" />}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Message Input Box */}
+                  <form onSubmit={handleSendDM} className="p-3 bg-card/60 border-t border-border/80 backdrop-blur-md flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder={`Message ${activePeer.name}...`}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      className="flex-1 h-10 px-4 text-xs bg-muted/40 border border-border/80 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground transition-all"
+                      autoFocus
+                    />
+                    <Button
+                      type="submit"
+                      disabled={!chatInput.trim() || dmSending}
+                      className="h-10 px-4 bg-foreground text-background hover:bg-foreground/90 font-medium text-xs rounded-xl shadow-xs gap-1.5 transition-all active:scale-98"
+                    >
+                      {dmSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3.5 w-3.5" /> Send</>}
+                    </Button>
+                  </form>
+                </>
+              ) : (
+                /* Empty Chat Prompt */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3">
+                  <div className="h-12 w-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
+                    <MessageSquarePlus className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">Your Direct Messages</h2>
+                    <p className="text-xs text-muted-foreground max-w-sm mt-1 leading-relaxed">
+                      Select a conversation on the left, or click "New Chat" to connect with any classmate.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowNewChatModal(true)}
+                    className="h-8 text-xs font-medium px-4 bg-foreground text-background hover:bg-foreground/90 rounded-lg shadow-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Start New Chat
+                  </Button>
+                </div>
+              )}
+            </main>
+
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════════
+            MODE 2: DISCUSSION FORUM (GLOBAL ACADEMIC FEED)
+        ════════════════════════════════════════════════════════════════════ */}
+        {mainTab === "global" && (
+          <div className="flex-1 flex overflow-hidden bg-background">
+
+            {/* Central Feed */}
+            <main className="flex-1 p-4 md:p-6 flex flex-col gap-4 overflow-y-auto scrollbar-thin max-w-4xl mx-auto w-full">
+
+              {/* Discussion Composer */}
+              <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+                <CardContent className="p-4 space-y-3">
                   <form onSubmit={handlePost} className="space-y-3">
                     <div className="flex items-start gap-3">
-                      <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(getInitials(currentUser?.user_metadata?.full_name || "You"))} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-1`}>
+                      <div className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${avatarColor(getInitials(currentUser?.user_metadata?.full_name || "You"))}`}>
                         {getInitials(currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "You")}
                       </div>
                       <Textarea
-                        placeholder="Share notes, ask a question, or post a tip to your class..."
-                        value={newPostText} onChange={(e) => setNewPostText(e.target.value)}
-                        className="flex-1 h-20 text-xs bg-muted/40 border-border resize-none focus:ring-1 focus:ring-primary"
+                        placeholder="Share a resource, ask a question, or start a study discussion with your batch..."
+                        value={newPostText}
+                        onChange={(e) => setNewPostText(e.target.value)}
+                        className="flex-1 min-h-[72px] text-xs bg-muted/40 border-border/80 resize-none focus:ring-1 focus:ring-primary rounded-xl placeholder:text-muted-foreground"
                         required
                       />
                     </div>
-                    <div className="flex justify-end">
-                      <Button type="submit" size="sm" disabled={postSubmitting || !newPostText.trim()}
-                        className="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs h-8 px-5 shadow-sm"
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className="px-2 py-0.5 rounded-md bg-muted border border-border/50 font-mono">#general</span>
+                        <span>Public to course students</span>
+                      </div>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={postSubmitting || !newPostText.trim()}
+                        className="h-8 px-4 bg-foreground text-background hover:bg-foreground/90 font-medium text-xs rounded-xl shadow-xs transition-all active:scale-98"
                       >
-                        {postSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3.5 w-3.5 mr-1" />Post</>}
+                        {postSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Send className="h-3 w-3 mr-1.5" /> Post Discussion</>}
                       </Button>
                     </div>
                   </form>
                 </CardContent>
               </Card>
 
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Filter discussions by topic, question, or author..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 text-xs bg-card/60 border border-border/80 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground transition-all"
+                />
+              </div>
+
               {/* Posts List */}
               {postsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />
+                    <div key={i} className="h-28 bg-card/60 border border-border/80 rounded-2xl animate-pulse" />
                   ))}
                 </div>
               ) : filteredPosts.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center space-y-2 p-8 rounded-2xl border border-dashed border-border">
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="text-center space-y-2 p-8 rounded-2xl border border-dashed border-border/80 bg-muted/10 max-w-sm">
                     <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      {search ? "No posts match your search" : "No posts yet"}
+                    <p className="text-xs font-semibold text-foreground">
+                      {search ? "No discussions match your filter" : "No discussions yet"}
                     </p>
-                    <p className="text-[10px] text-muted-foreground/70">Be the first to start a discussion!</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Be the first to post a study question or resource.
+                    </p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {filteredPosts.map((post) => (
-                    <Card key={post.id} className="border-border bg-card shadow-sm hover:shadow-md transition-shadow group">
+                    <Card key={post.id} className="border-border/80 bg-card/70 shadow-xs hover:border-border transition-colors rounded-2xl group">
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2.5">
-                            <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(post.author_initials)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${avatarColor(post.author_initials)}`}>
                               {post.author_initials}
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="text-xs font-bold text-foreground">{post.author_name}</p>
+                                <p className="text-xs font-semibold text-foreground">{post.author_name}</p>
                                 {post.user_id !== currentUser?.id && (
                                   <button
                                     onClick={() => openChatWithPeer(post.user_id)}
-                                    className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 transition-colors"
+                                    className="text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted px-1.5 py-0.5 rounded transition-colors"
                                   >
-                                    <MessageCircle className="h-3 w-3" /> DM
+                                    Direct Message
                                   </button>
                                 )}
                                 {post.user_id === currentUser?.id && (
-                                  <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>
+                                  <span className="text-[9px] bg-muted px-1.5 py-0.2 rounded font-mono text-muted-foreground">You</span>
                                 )}
                               </div>
-                              <p className="text-[9px] text-muted-foreground">{timeAgo(post.created_at)}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono">{timeAgo(post.created_at)}</p>
                             </div>
                           </div>
+
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <Hash className="h-2.5 w-2.5" />general
+                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-muted border border-border/50 text-muted-foreground">
+                              #general
                             </span>
                             {post.user_id === currentUser?.id && (
                               <button
                                 onClick={() => handleDeletePost(post.id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-red-500 hover:bg-muted"
                                 title="Delete post"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1001,23 +1293,26 @@ function CommunityPage() {
                           </div>
                         </div>
 
-                        <p className="text-xs text-foreground/90 leading-relaxed">{post.content}</p>
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{post.content}</p>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                        <div className="flex items-center justify-between pt-2 border-t border-border/40">
                           <button
                             onClick={() => handleLike(post)}
-                            className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors ${post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
+                            className={`flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+                              post.likedByMe ? "text-red-500" : "text-muted-foreground hover:text-foreground"
+                            }`}
                           >
-                            <Heart className={`h-3.5 w-3.5 transition-all ${post.likedByMe ? "fill-red-500" : ""}`} />
-                            {post.likes} {post.likes === 1 ? "Like" : "Likes"}
+                            <Heart className={`h-3.5 w-3.5 ${post.likedByMe ? "fill-red-500 text-red-500" : ""}`} />
+                            <span>{post.likes} {post.likes === 1 ? "Like" : "Likes"}</span>
                           </button>
 
                           {post.user_id !== currentUser?.id && (
                             <button
                               onClick={() => openChatWithPeer(post.user_id)}
-                              className="flex items-center gap-1 text-[10px] font-bold text-primary hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors"
+                              className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted px-2.5 py-1 rounded-lg transition-colors"
                             >
-                              <MessageSquare className="h-3.5 w-3.5" /> Direct Message
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Reply in DM</span>
                             </button>
                           )}
                         </div>
@@ -1029,131 +1324,134 @@ function CommunityPage() {
               <div ref={feedEndRef} />
             </main>
 
-            {/* Right Panel: Members / Groups toggle */}
-            <aside className="w-64 border-l border-border bg-card flex flex-col gap-0 overflow-hidden shrink-0">
-              <div className="grid grid-cols-2 border-b border-border">
+            {/* Right Sidebar: Classmates & Groups */}
+            <aside className="w-72 border-l border-border/80 bg-card/40 hidden xl:flex flex-col overflow-hidden shrink-0">
+              <div className="grid grid-cols-2 border-b border-border/60 p-1 bg-card/60">
                 <button
                   onClick={() => setRightPanel("members")}
-                  className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "members" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  className={`text-xs font-medium py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                    rightPanel === "members" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  <Users className="h-3 w-3" /> Classmates
+                  <Users className="h-3.5 w-3.5" /> Classmates
                 </button>
                 <button
                   onClick={() => { setRightPanel("groups"); fetchGroups(); }}
-                  className={`text-[10px] font-bold py-2.5 flex items-center justify-center gap-1.5 transition-all border-b-2 ${rightPanel === "groups" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  className={`text-xs font-medium py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                    rightPanel === "groups" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  <UsersRound className="h-3 w-3" /> Groups
+                  <UsersRound className="h-3.5 w-3.5" /> Study Groups
                 </button>
               </div>
 
               {/* Members panel */}
               {rightPanel === "members" && (
-                <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1">
-                        Classmates Presence
+                      <p className="text-[10px] font-mono font-semibold uppercase tracking-wider text-muted-foreground">
+                        Directory
                       </p>
-                      <span className="text-[9px] text-emerald-500 font-bold flex items-center gap-1">
-                        <Circle className="h-1.5 w-1.5 fill-emerald-500 animate-pulse" /> Live
+                      <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1 mb-3 bg-muted/40 p-1 rounded-xl">
-                      <button onClick={() => setMemberFilter("all")}
-                        className={`text-[10px] font-bold py-1 rounded-lg transition-all ${memberFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
+                    <div className="grid grid-cols-3 gap-1 mb-2.5 bg-muted/40 p-1 rounded-xl border border-border/60">
+                      <button
+                        onClick={() => setMemberFilter("all")}
+                        className={`text-[10px] font-medium py-1 rounded-lg transition-all ${
+                          memberFilter === "all" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                        }`}
+                      >
                         All ({membersWithPresence.length})
                       </button>
-                      <button onClick={() => setMemberFilter("online")}
-                        className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "online" ? "bg-card text-emerald-600 shadow-xs" : "text-muted-foreground"}`}>
+                      <button
+                        onClick={() => setMemberFilter("online")}
+                        className={`text-[10px] font-medium py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
+                          memberFilter === "online" ? "bg-background text-emerald-500 shadow-xs font-semibold" : "text-muted-foreground"
+                        }`}
+                      >
                         <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
-                        ({membersWithPresence.filter((m) => m.status === "online").length})
+                        Online
                       </button>
-                      <button onClick={() => setMemberFilter("offline")}
-                        className={`text-[10px] font-bold py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${memberFilter === "offline" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"}`}>
-                        <Circle className="h-1.5 w-1.5 fill-slate-400 text-slate-400" />
-                        ({membersWithPresence.filter((m) => m.status === "offline").length})
+                      <button
+                        onClick={() => setMemberFilter("offline")}
+                        className={`text-[10px] font-medium py-1 rounded-lg transition-all ${
+                          memberFilter === "offline" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                        }`}
+                      >
+                        Offline
                       </button>
                     </div>
 
-                    <div className="relative mb-3">
+                    <div className="relative mb-2.5">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                      <input type="text" placeholder="Filter classmate..."
-                        value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
-                        className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                      <input
+                        type="text"
+                        placeholder="Search student..."
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        className="w-full h-7 pl-7 pr-2 text-[11px] bg-muted/40 border border-border/60 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
                       />
                     </div>
 
                     {membersLoading ? (
-                      <div className="space-y-2">
-                        {[1, 2, 3, 4, 5].map((i) => (
-                          <div key={i} className="h-10 bg-muted/40 animate-pulse rounded-xl" />
+                      <div className="space-y-1.5">
+                        {[1, 2, 3, 4].map((i) => (
+                          <div key={i} className="h-9 bg-muted/40 rounded-xl animate-pulse" />
                         ))}
                       </div>
                     ) : filteredMembers.length === 0 ? (
-                      <div className="text-center p-4 rounded-xl border border-dashed border-border my-2">
-                        <UserCheck className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
-                        <p className="text-[10px] font-semibold text-muted-foreground">No classmates found</p>
+                      <div className="text-center p-4 border border-dashed border-border/80 rounded-xl my-2">
+                        <UserCheck className="h-5 w-5 mx-auto text-muted-foreground/40 mb-1" />
+                        <p className="text-[10px] text-muted-foreground">No students found</p>
                       </div>
                     ) : (
                       <div className="space-y-1">
-                        {filteredMembers.map((member) => {
-                          const unread = recentDmMap[member.id]?.unreadCount || 0;
-                          return (
-                            <div
-                              key={member.id}
-                              onClick={() => {
-                                if (member.id !== currentUser?.id) {
-                                  openChatWithPeer(member.id);
-                                }
-                              }}
-                              className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer group
-                                ${member.id === currentUser?.id ? "opacity-60 cursor-default border-transparent" :
-                                  activePeerId === member.id ? "border-primary bg-primary/5" :
-                                  "border-transparent hover:border-border hover:bg-accent/50"}`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="relative shrink-0">
-                                  <div className={`h-8 w-8 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}>
-                                    {member.initials}
-                                  </div>
-                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                        {filteredMembers.map((member) => (
+                          <div
+                            key={member.id}
+                            onClick={() => {
+                              if (member.id !== currentUser?.id) {
+                                openChatWithPeer(member.id);
+                              }
+                            }}
+                            className={`flex items-center justify-between p-2 rounded-xl border border-transparent hover:border-border/60 hover:bg-muted/40 transition-all cursor-pointer group ${
+                              member.id === currentUser?.id ? "opacity-60 cursor-default" : ""
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="relative shrink-0">
+                                <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold ${avatarColor(member.initials)}`}>
+                                  {member.initials}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                                      {member.name}
-                                      {member.id === currentUser?.id && <span className="ml-1 text-[8px] text-muted-foreground font-normal">(You)</span>}
-                                    </p>
-                                    {unread > 0 && (
-                                      <span className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
-                                        {unread}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[9px] text-muted-foreground truncate">
-                                    <span className={`font-semibold ${member.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                                      {member.status === "online" ? "● Online" : "○ Offline"}
-                                    </span>
-                                    {" · "}{member.department}
-                                  </p>
-                                </div>
+                                {member.status === "online" && (
+                                  <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 border-2 border-card" />
+                                )}
                               </div>
-                              {member.id !== currentUser?.id && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openChatWithPeer(member.id);
-                                  }}
-                                  className="shrink-0 h-7 w-7 p-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10"
-                                  title={`Message ${member.name}`}
-                                >
-                                  <MessageCircle className="h-3.5 w-3.5 text-primary" />
-                                </button>
-                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                                  {member.name}
+                                </p>
+                                <p className="text-[9px] text-muted-foreground truncate">{member.department}</p>
+                              </div>
                             </div>
-                          );
-                        })}
+
+                            {member.id !== currentUser?.id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openChatWithPeer(member.id);
+                                }}
+                                className="h-6 px-2 text-[10px] font-medium rounded bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-accent transition-all"
+                              >
+                                DM
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1162,27 +1460,36 @@ function CommunityPage() {
 
               {/* Groups panel */}
               {rightPanel === "groups" && (
-                <div className="flex-1 overflow-y-auto p-3 scrollbar-thin space-y-3">
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
                   <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Class Groups</p>
-                    <Button size="sm" variant="outline" onClick={() => setShowCreateGroup(!showCreateGroup)} className="h-6 text-[10px] px-2 gap-1">
-                      <Plus className="h-2.5 w-2.5" /> New Group
+                    <p className="text-[10px] font-mono font-semibold uppercase tracking-wider text-muted-foreground">Study Groups</p>
+                    <Button size="sm" variant="outline" onClick={() => setShowCreateGroup(!showCreateGroup)} className="h-6 text-[10px] px-2 gap-1 rounded-lg">
+                      <Plus className="h-2.5 w-2.5" /> Create
                     </Button>
                   </div>
 
                   {showCreateGroup && (
-                    <Card className="border-primary/30 bg-primary/5">
+                    <Card className="border-border/80 bg-muted/30">
                       <CardContent className="p-3">
                         <form onSubmit={handleCreateGroup} className="space-y-2">
-                          <input type="text" placeholder="Group name (e.g. DBMS Study)" value={newGroupName}
+                          <input
+                            type="text"
+                            placeholder="Group name (e.g. DBMS Study)"
+                            value={newGroupName}
                             onChange={(e) => setNewGroupName(e.target.value)}
-                            className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" required />
-                          <input type="text" placeholder="Description (optional)" value={newGroupDesc}
+                            className="w-full h-7 px-2 text-[11px] bg-card border border-border/80 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                            required
+                          />
+                          <input
+                            type="text"
+                            placeholder="Description (optional)"
+                            value={newGroupDesc}
                             onChange={(e) => setNewGroupDesc(e.target.value)}
-                            className="w-full h-7 px-2 text-[10px] bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary" />
-                          <div className="flex gap-1">
-                            <Button type="submit" size="sm" disabled={groupSubmitting || !newGroupName.trim()} className="flex-1 h-7 text-[10px] bg-primary text-white">
-                              {groupSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                            className="w-full h-7 px-2 text-[11px] bg-card border border-border/80 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <div className="flex gap-1.5">
+                            <Button type="submit" size="sm" disabled={groupSubmitting || !newGroupName.trim()} className="flex-1 h-7 text-[10px] bg-foreground text-background hover:bg-foreground/90">
+                              {groupSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create Group"}
                             </Button>
                             <Button type="button" size="sm" variant="ghost" onClick={() => setShowCreateGroup(false)} className="h-7 w-7 p-0">
                               <X className="h-3 w-3" />
@@ -1196,35 +1503,37 @@ function CommunityPage() {
                   {groupsLoading ? (
                     <div className="space-y-2">{[1, 2].map((i) => <div key={i} className="h-16 bg-muted/40 animate-pulse rounded-xl" />)}</div>
                   ) : groups.length === 0 ? (
-                    <div className="text-center p-6 rounded-xl border border-dashed border-border">
-                      <UsersRound className="h-6 w-6 mx-auto text-muted-foreground/40 mb-1" />
-                      <p className="text-[10px] font-semibold text-muted-foreground">No groups yet</p>
-                      <p className="text-[9px] text-muted-foreground/60">Create the first study group!</p>
+                    <div className="text-center p-6 border border-dashed border-border/80 rounded-xl">
+                      <UsersRound className="h-5 w-5 mx-auto text-muted-foreground/40 mb-1" />
+                      <p className="text-[10px] font-semibold text-foreground">No study groups yet</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">Start the first group for your batch.</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       {groups.map((group) => (
-                        <div key={group.id} className="p-2.5 rounded-xl border border-border bg-card hover:border-primary/30 transition-all">
+                        <div key={group.id} className="p-2.5 rounded-xl border border-border/80 bg-card/60 hover:border-border transition-all">
                           <div className="flex items-start justify-between gap-1">
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
-                                  <UsersRound className="h-3 w-3 text-white" />
+                                <div className="h-5 w-5 rounded-md border border-border bg-muted flex items-center justify-center shrink-0">
+                                  <UsersRound className="h-2.5 w-2.5 text-muted-foreground" />
                                 </div>
-                                <p className="text-xs font-bold text-foreground truncate">{group.name}</p>
+                                <p className="text-xs font-semibold text-foreground truncate">{group.name}</p>
                               </div>
                               {group.description && (
-                                <p className="text-[9px] text-muted-foreground mt-1 truncate">{group.description}</p>
+                                <p className="text-[10px] text-muted-foreground mt-1 truncate">{group.description}</p>
                               )}
-                              <p className="text-[9px] text-muted-foreground mt-0.5">
+                              <p className="text-[9px] font-mono text-muted-foreground mt-0.5">
                                 {group.memberCount} member{group.memberCount !== 1 ? "s" : ""}
                               </p>
                             </div>
                             <button
                               onClick={() => handleJoinGroup(group.id, group.isMember || false)}
-                              className={`shrink-0 text-[9px] font-bold px-2 py-1 rounded-lg transition-all ${group.isMember ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+                              className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg transition-all ${
+                                group.isMember ? "bg-muted text-muted-foreground hover:text-red-500" : "bg-foreground text-background hover:bg-foreground/90"
+                              }`}
                             >
-                              {group.isMember ? "Leave" : <><UserPlus className="h-2.5 w-2.5 inline mr-0.5" />Join</>}
+                              {group.isMember ? "Leave" : "Join"}
                             </button>
                           </div>
                         </div>
@@ -1237,272 +1546,18 @@ function CommunityPage() {
           </div>
         )}
 
-        {/* ── MODE 2: DIRECT MESSAGES DUAL-PANE VIEW ── */}
-        {mainTab === "dms" && (
-          <div className="flex-1 flex overflow-hidden">
-
-            {/* Left DM Sidebar: ONLY Active Conversation Peers + New Chat Action */}
-            <aside className="w-72 md:w-80 border-r border-border bg-card flex flex-col shrink-0 overflow-hidden">
-              <div className="p-3 border-b border-border space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xs font-extrabold tracking-tight flex items-center gap-1.5">
-                      <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
-                      Direct Messages
-                    </h2>
-                    <p className="text-[9px] text-muted-foreground font-medium">
-                      {conversationMembers.length} active conversation{conversationMembers.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  {/* + New Chat Button */}
-                  <Button
-                    size="sm"
-                    onClick={() => setShowNewChatModal(true)}
-                    className="h-7 text-[10px] font-bold gap-1 px-2.5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white rounded-xl shadow-xs"
-                  >
-                    <Plus className="h-3 w-3" />
-                    <span>New Chat</span>
-                  </Button>
-                </div>
-
-                {/* Search in Conversations */}
-                {conversationMembers.length > 0 && (
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                    <input type="text" placeholder="Search active chats..."
-                      value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
-                      className="w-full h-7 pl-7 pr-2 text-[10px] bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* DM Conversations List — ONLY active conversation peers! */}
-              <div className="flex-1 overflow-y-auto p-2 scrollbar-thin space-y-1">
-                {membersLoading ? (
-                  <div className="space-y-2 p-2">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-14 bg-muted/40 animate-pulse rounded-xl" />
-                    ))}
-                  </div>
-                ) : filteredConversationMembers.length === 0 ? (
-                  <div className="text-center p-6 rounded-2xl border border-dashed border-border my-6 space-y-3">
-                    <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
-                      <MessageSquarePlus className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-foreground">No active conversations</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        Start a direct message with any classmate using the button below.
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => setShowNewChatModal(true)}
-                      className="h-8 text-xs font-bold gap-1 px-4 bg-primary text-primary-foreground rounded-xl shadow-xs"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Start New Chat
-                    </Button>
-                  </div>
-                ) : (
-                  filteredConversationMembers.map((member) => {
-                    const isActive = activePeerId === member.id;
-                    const dmMeta = recentDmMap[member.id];
-                    const unread = dmMeta?.unreadCount || 0;
-                    const lastMsg = dmMeta?.lastMessage || "";
-                    const timeStr = dmMeta?.lastMessageAt ? fmtTime(dmMeta.lastMessageAt) : "";
-
-                    return (
-                      <div
-                        key={member.id}
-                        onClick={() => openChatWithPeer(member.id)}
-                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer group relative
-                          ${isActive
-                            ? "border-primary bg-primary/10 shadow-xs"
-                            : "border-transparent hover:border-border hover:bg-accent/40"}`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="relative shrink-0">
-                            <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(member.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
-                              {member.initials}
-                            </div>
-                            <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${member.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <p className={`text-xs font-bold truncate transition-colors ${isActive ? "text-primary" : "text-foreground group-hover:text-primary"}`}>
-                                  {member.name}
-                                </p>
-                                {/* Prominent Green Unread Counter Badge Next To Classmate's Name */}
-                                {unread > 0 && (
-                                  <span className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-500 text-white shadow-xs animate-pulse">
-                                    {unread}
-                                  </span>
-                                )}
-                              </div>
-                              {timeStr && (
-                                <span className={`text-[8.5px] shrink-0 font-mono ${unread > 0 ? "text-emerald-600 font-bold" : "text-muted-foreground"}`}>
-                                  {timeStr}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center justify-between gap-1 mt-0.5">
-                              <p className={`text-[10px] truncate max-w-[170px] ${unread > 0 ? "font-bold text-foreground" : "text-muted-foreground"}`}>
-                                {lastMsg || `${member.department}`}
-                              </p>
-
-                              {/* Additional Pill Badge if Unread */}
-                              {unread > 0 && (
-                                <span className="shrink-0 min-w-[20px] h-4 px-1 rounded-full text-[9.5px] font-extrabold bg-emerald-500 text-white flex items-center justify-center shadow-xs animate-pulse">
-                                  {unread}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </aside>
-
-            {/* Right DM Chat Area */}
-            <main className="flex-1 flex flex-col bg-muted/10 overflow-hidden">
-              {activePeer ? (
-                <>
-                  {/* Chat Window Header */}
-                  <div className="px-5 py-3.5 bg-card border-b border-border flex items-center justify-between shadow-xs">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={`h-10 w-10 rounded-full bg-gradient-to-br ${avatarColor(activePeer.initials)} flex items-center justify-center text-white text-xs font-bold shadow-sm`}>
-                          {activePeer.initials}
-                        </div>
-                        <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${activePeer.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-extrabold text-foreground">{activePeer.name}</h3>
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                          <span>{activePeer.department}</span>
-                          <span>·</span>
-                          <Lock className="h-2.5 w-2.5 text-emerald-500" />
-                          <span className="text-emerald-600 font-semibold">Real-time Direct Message</span>
-                          <span>·</span>
-                          <span className={`font-bold ${activePeer.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                            {activePeer.status === "online" ? "🟢 Active Now" : "⚪ Offline"}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Message History Body */}
-                  <div className="flex-1 p-4 overflow-y-auto scrollbar-thin space-y-3 bg-muted/20">
-                    {dmLoading ? (
-                      <div className="h-full flex items-center justify-center">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                      </div>
-                    ) : dmMessages.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2">
-                        <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-1">
-                          <MessageCircle className="h-7 w-7" />
-                        </div>
-                        <h4 className="text-sm font-bold text-foreground">Start a conversation with {activePeer.name}</h4>
-                        <p className="text-xs text-muted-foreground max-w-sm">
-                          Send a message to collaborate on coursework, discuss lab projects, or share study notes.
-                        </p>
-                      </div>
-                    ) : (
-                      dmMessages.map((msg) => {
-                        const isMe = msg.sender_id === currentUser?.id;
-                        return (
-                          <div key={msg.id} className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}>
-                            <div className={`flex items-end gap-1.5 ${isMe ? "flex-row-reverse" : "flex-row"} max-w-[80%] md:max-w-[70%]`}>
-                              <div className={`w-full px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-xs break-words whitespace-pre-wrap overflow-hidden
-                                ${isMe
-                                  ? "bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-br-sm font-medium"
-                                  : "bg-card border border-border text-foreground rounded-bl-sm"}`}>
-                                {msg.content}
-                              </div>
-                              {isMe && (
-                                <button
-                                  onClick={() => handleDeleteDM(msg.id)}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-500/10 mb-1 shrink-0"
-                                  title="Delete message"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                            <span className="text-[8.5px] text-muted-foreground mt-1 px-1 flex items-center gap-1 font-mono">
-                              {fmtTime(msg.created_at)}
-                              {isMe && <CheckCheck className="h-3 w-3 text-blue-500 inline" />}
-                            </span>
-                          </div>
-                        );
-                      })
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Input Footer */}
-                  <form onSubmit={handleSendDM} className="p-3 bg-card border-t border-border flex items-center gap-2 shadow-md">
-                    <input
-                      type="text"
-                      placeholder={`Message ${activePeer.name}...`}
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      className="flex-1 h-10 px-4 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
-                      autoFocus
-                    />
-                    <Button
-                      type="submit"
-                      disabled={!chatInput.trim() || dmSending}
-                      className="h-10 px-5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs rounded-xl shadow-sm gap-1.5"
-                    >
-                      {dmSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-3.5 w-3.5" />Send</>}
-                    </Button>
-                  </form>
-                </>
-              ) : (
-                /* No Classmate Selected State */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3">
-                  <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/20 to-rose-600/20 text-pink-600 dark:text-pink-400 flex items-center justify-center">
-                    <MessageCircle className="h-8 w-8" />
-                  </div>
-                  <h3 className="text-base font-bold text-foreground">Your Direct Messages</h3>
-                  <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
-                    Select an active conversation on the left, or click "+ New Chat" to message any classmate.
-                  </p>
-                  <Button
-                    size="sm"
-                    onClick={() => setShowNewChatModal(true)}
-                    className="h-9 text-xs font-bold gap-1.5 px-5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white rounded-xl shadow-sm"
-                  >
-                    <Plus className="h-4 w-4" /> Start New Chat
-                  </Button>
-                </div>
-              )}
-            </main>
-
-          </div>
-        )}
-
-        {/* ── MODAL: Start New Chat (Search All Registered Classmates) ── */}
+        {/* ── MODAL: Start New Chat (Classmates Directory) ── */}
         {showNewChatModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-            <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-150">
-              <div className="p-4 border-b border-border flex items-center justify-between bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-card border border-border/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-4 border-b border-border/80 flex items-center justify-between bg-muted/20">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-xl border border-border bg-muted flex items-center justify-center text-foreground">
                     <MessageSquarePlus className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-foreground">Start a New Chat</h3>
-                    <p className="text-[10px] text-muted-foreground">Select a classmate from the directory</p>
+                    <h2 className="text-sm font-semibold text-foreground">New Direct Chat</h2>
+                    <p className="text-[11px] text-muted-foreground">Select a student from your batch</p>
                   </div>
                 </div>
                 <button
@@ -1514,25 +1569,25 @@ function CommunityPage() {
               </div>
 
               {/* Search Bar */}
-              <div className="p-3 border-b border-border bg-card">
+              <div className="p-3 border-b border-border/60 bg-card">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <input
                     type="text"
-                    placeholder="Search classmate by name or department..."
+                    placeholder="Search by student name or department..."
                     value={newChatSearch}
                     onChange={(e) => setNewChatSearch(e.target.value)}
-                    className="w-full h-9 pl-9 pr-3 text-xs bg-muted/30 border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full h-8 pl-9 pr-3 text-xs bg-muted/40 border border-border/80 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
                     autoFocus
                   />
                 </div>
               </div>
 
-              {/* Classmates Directory List */}
+              {/* Directory List */}
               <div className="flex-1 overflow-y-auto p-2 scrollbar-thin space-y-1">
                 {allClassmatesForNewChat.length === 0 ? (
-                  <div className="text-center p-6 text-muted-foreground text-xs font-semibold">
-                    No classmates match "{newChatSearch}"
+                  <div className="text-center p-6 text-muted-foreground text-xs">
+                    No students match "{newChatSearch}"
                   </div>
                 ) : (
                   allClassmatesForNewChat.map((classmate) => (
@@ -1542,28 +1597,27 @@ function CommunityPage() {
                         openChatWithPeer(classmate.id);
                         setShowNewChatModal(false);
                       }}
-                      className="flex items-center justify-between p-2.5 rounded-xl border border-transparent hover:border-border hover:bg-accent/40 transition-all cursor-pointer group"
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-transparent hover:border-border/60 hover:bg-muted/40 transition-all cursor-pointer group"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="relative shrink-0">
-                          <div className={`h-9 w-9 rounded-full bg-gradient-to-br ${avatarColor(classmate.initials)} flex items-center justify-center text-white text-xs font-bold shadow-xs`}>
+                          <div className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold ${avatarColor(classmate.initials)}`}>
                             {classmate.initials}
                           </div>
-                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${classmate.status === "online" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                          {classmate.status === "online" && (
+                            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 border-2 border-card" />
+                          )}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                          <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
                             {classmate.name}
                           </p>
-                          <p className="text-[9.5px] text-muted-foreground truncate">
-                            <span className={`font-semibold ${classmate.status === "online" ? "text-emerald-500" : "text-slate-400"}`}>
-                              {classmate.status === "online" ? "● Online" : "○ Offline"}
-                            </span>
-                            {" · "}{classmate.department}
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {classmate.department}
                           </p>
                         </div>
                       </div>
-                      <Button size="sm" variant="ghost" className="h-7 text-[10px] font-bold gap-1 text-primary group-hover:bg-primary/10">
+                      <Button size="sm" variant="ghost" className="h-7 text-xs font-medium gap-1 text-muted-foreground group-hover:text-foreground group-hover:bg-muted">
                         <MessageCircle className="h-3 w-3" /> Chat
                       </Button>
                     </div>
