@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   FileOutput, Upload, Download, RefreshCw, FileText, FileImage,
   FileSpreadsheet, Presentation, CheckCircle2, X,
-  Sparkles, Zap, Clock, Shield
+  Sparkles, Zap, Clock, Shield, ArrowRight, Check
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/conversions")({
@@ -23,11 +23,10 @@ interface ConversionType {
   inputExt: string[];
   outputExt: string;
   icon: React.ElementType;
-  gradient: string;
   accept: string;
 }
 
-// All 8 conversions — powered by CloudConvert v2 API
+// All 8 conversions — powered by CloudConvert / iLoveAPI
 const CONVERSIONS: ConversionType[] = [
   {
     id: "pdf-to-word",
@@ -36,7 +35,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".pdf"],
     outputExt: "docx",
     icon: FileText,
-    gradient: "from-blue-500 to-indigo-600",
     accept: ".pdf,application/pdf",
   },
   {
@@ -46,7 +44,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".doc", ".docx"],
     outputExt: "pdf",
     icon: FileText,
-    gradient: "from-indigo-500 to-purple-600",
     accept: ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   },
   {
@@ -56,7 +53,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".pdf"],
     outputExt: "xlsx",
     icon: FileSpreadsheet,
-    gradient: "from-emerald-500 to-teal-600",
     accept: ".pdf,application/pdf",
   },
   {
@@ -66,7 +62,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".xls", ".xlsx"],
     outputExt: "pdf",
     icon: FileSpreadsheet,
-    gradient: "from-teal-500 to-cyan-600",
     accept: ".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
   {
@@ -76,7 +71,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".pdf"],
     outputExt: "pptx",
     icon: Presentation,
-    gradient: "from-orange-500 to-rose-600",
     accept: ".pdf,application/pdf",
   },
   {
@@ -86,7 +80,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".ppt", ".pptx"],
     outputExt: "pdf",
     icon: Presentation,
-    gradient: "from-rose-500 to-pink-600",
     accept: ".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation",
   },
   {
@@ -96,7 +89,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".pdf"],
     outputExt: "jpg",
     icon: FileImage,
-    gradient: "from-yellow-500 to-orange-500",
     accept: ".pdf,application/pdf",
   },
   {
@@ -106,7 +98,6 @@ const CONVERSIONS: ConversionType[] = [
     inputExt: [".jpg", ".jpeg", ".png", ".webp"],
     outputExt: "pdf",
     icon: FileImage,
-    gradient: "from-violet-500 to-purple-600",
     accept: ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
   },
 ];
@@ -129,7 +120,6 @@ function ConversionsPage() {
   const [converting, setConverting] = useState(false);
   const [progress, setProgress] = useState<"idle" | "uploading" | "processing" | "saving" | "done">("idle");
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Drag & drop handlers ───────────────────────────────────────────────────
@@ -173,7 +163,6 @@ function ConversionsPage() {
     setProgress("uploading");
 
     try {
-      // Get authenticated session with access token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user || !session?.access_token) {
         toast.error("You must be logged in to convert files.");
@@ -181,11 +170,11 @@ function ConversionsPage() {
         return;
       }
 
-      const userId    = session.user.id;
+      const userId = session.user.id;
       const timestamp = Date.now();
       const sourcePath = `${userId}/${timestamp}_${droppedFile.name}`;
 
-      // Step 1: Upload source file to Supabase storage using session-scoped client
+      // Step 1: Upload source file to Supabase storage
       setProgress("uploading");
       const { createClient } = await import("@supabase/supabase-js");
       const authClient = createClient(
@@ -200,7 +189,7 @@ function ConversionsPage() {
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      // Step 2: Call edge function — pass session JWT explicitly
+      // Step 2: Call edge function
       setProgress("processing");
       const { data, error: fnError } = await supabase.functions.invoke("file-converter", {
         body: { source_path: sourcePath, target_format: selectedConversion.id },
@@ -208,13 +197,11 @@ function ConversionsPage() {
       });
 
       if (fnError) {
-        // supabase.functions.invoke wraps the actual body in fnError.context
-        // Extract the real error message from the JSON body if possible
         let actualMsg = fnError.message;
         try {
           const body = await (fnError as any).context?.json?.();
           if (body?.error) actualMsg = body.error;
-        } catch { /* fallback to generic message */ }
+        } catch { /* fallback */ }
         console.error("Edge function error:", actualMsg);
         throw new Error(actualMsg);
       }
@@ -235,8 +222,8 @@ function ConversionsPage() {
       setHistory((prev) => [historyItem, ...prev]);
       setProgress("done");
 
-      toast.success("File converted successfully!", {
-        description: `${droppedFile.name} \u2192 ${data.file_name}`,
+      toast.success("File converted successfully", {
+        description: `${droppedFile.name} → ${data.file_name}`,
       });
 
     } catch (err: any) {
@@ -257,9 +244,9 @@ function ConversionsPage() {
   const progressLabel = {
     idle: "",
     uploading: "Uploading file…",
-    processing: "Converting with iLoveAPI…",
-    saving: "Saving converted file…",
-    done: "Done!",
+    processing: "Processing conversion…",
+    saving: "Generating download link…",
+    done: "Complete",
   }[progress];
 
   const progressPercent = {
@@ -272,117 +259,143 @@ function ConversionsPage() {
 
   return (
     <ChatLayout activeThreadId={null}>
-      <div className="flex flex-col h-full overflow-y-auto bg-background">
+      <div className="flex flex-col h-full overflow-y-auto bg-background text-foreground">
 
         {/* ── Page Header ─────────────────────────────────────────────── */}
-        <div className="border-b border-border bg-card/50 backdrop-blur-sm px-6 py-7 md:px-10 shrink-0">
-          <div className="max-w-3xl flex flex-col gap-3">
+        <header className="border-b border-border/80 bg-card/60 backdrop-blur-md px-6 py-6 md:px-10 shrink-0">
+          <div className="max-w-4xl flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl border border-border bg-muted/60 flex items-center justify-center shrink-0">
+              <div className="h-9 w-9 rounded-xl border border-border/80 bg-muted/60 flex items-center justify-center shrink-0 shadow-xs">
                 <FileOutput className="h-4.5 w-4.5 text-foreground" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-foreground leading-none">File Converter</h1>
-                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">Powered by iLoveAPI</p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-sm font-semibold tracking-tight text-foreground leading-none">File Converter</h1>
+                  <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/50">
+                    Engine v2
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Academic document transformation & formatting utility
+                </p>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground max-w-xl">
-              Convert PDFs, Word docs, spreadsheets, presentations and images — instantly and securely.
+
+            <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
+              Convert PDFs, Word documents, spreadsheets, presentations, and images with full structural fidelity.
             </p>
+
             {/* Feature pills */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 pt-1">
               {[
-                { icon: Zap,      label: "Fast conversion" },
-                { icon: Shield,   label: "Encrypted & private" },
-                { icon: Clock,    label: "1h download link" },
-                { icon: Sparkles, label: "8 format types" },
+                { icon: Zap, label: "Fast processing" },
+                { icon: Shield, label: "Encrypted & secure" },
+                { icon: Clock, label: "1h download cache" },
+                { icon: Sparkles, label: "8 supported formats" },
               ].map(({ icon: Icon, label }) => (
                 <div
                   key={label}
-                  className="flex items-center gap-1.5 bg-white/15 backdrop-blur-sm rounded-full px-3 py-1 text-white/90 text-xs font-medium ring-1 ring-white/20"
+                  className="flex items-center gap-1.5 border border-border/70 bg-muted/40 rounded-lg px-2.5 py-1 text-muted-foreground text-[11px] font-medium"
                 >
-                  <Icon className="h-3 w-3" />
-                  {label}
+                  <Icon className="h-3 w-3 text-muted-foreground" />
+                  <span>{label}</span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </header>
 
         {/* ── Main Content ──────────────────────────────────────────────── */}
-        <div className="flex-1 p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto w-full">
+        <main className="flex-1 p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto w-full">
 
           {/* ── Left column: Converter UI ─────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
 
             {/* Step 1: Format Selector */}
-            <Card className="border-border/60">
-              <CardHeader className="pb-3 border-b border-border/40">
-                <div className="flex items-center gap-2">
-                  <div className={`h-6 w-6 rounded-lg bg-gradient-to-br ${selectedConversion.gradient} flex items-center justify-center`}>
-                    <selectedConversion.icon className="h-3.5 w-3.5 text-white" />
+            <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+              <CardHeader className="pb-3 border-b border-border/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-lg border border-border bg-muted flex items-center justify-center text-foreground">
+                      <span className="text-[10px] font-mono font-bold">1</span>
+                    </div>
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Select Target Format
+                    </CardTitle>
                   </div>
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider">
-                    Step 1 — Select Conversion
-                  </CardTitle>
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    Selected: <strong className="text-foreground">{selectedConversion.label}</strong>
+                  </span>
                 </div>
               </CardHeader>
-              <CardContent className="pt-4">
+
+              <CardContent className="pt-4 space-y-3">
                 {/* Conversion type grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {CONVERSIONS.map((conv) => (
-                    <button
-                      key={conv.id}
-                      onClick={() => {
-                        setSelectedConversion(conv);
-                        setDroppedFile(null);
-                        setProgress("idle");
-                      }}
-                      className={`
-                        group relative flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center
-                        transition-all duration-200 cursor-pointer
-                        ${selectedConversion.id === conv.id
-                          ? "border-primary bg-primary/8 shadow-sm"
-                          : "border-border/50 bg-muted/30 hover:border-border hover:bg-muted/60"
-                        }
-                      `}
-                    >
-                      <div className={`
-                        h-8 w-8 rounded-lg flex items-center justify-center
-                        bg-gradient-to-br ${conv.gradient} shadow-sm
-                        transition-transform duration-200 group-hover:scale-105
-                      `}>
-                        <conv.icon className="h-4 w-4 text-white" />
-                      </div>
-                      <span className="text-[10px] font-semibold text-foreground leading-tight">
-                        {conv.label}
-                      </span>
-                      {selectedConversion.id === conv.id && (
-                        <div className="absolute top-1.5 right-1.5">
-                          <CheckCircle2 className="h-3 w-3 text-primary" />
+                  {CONVERSIONS.map((conv) => {
+                    const isSelected = selectedConversion.id === conv.id;
+                    const Icon = conv.icon;
+                    return (
+                      <button
+                        key={conv.id}
+                        onClick={() => {
+                          setSelectedConversion(conv);
+                          setDroppedFile(null);
+                          setProgress("idle");
+                        }}
+                        className={`
+                          group relative flex flex-col items-center gap-2 p-3 rounded-xl border text-center
+                          transition-all duration-150 cursor-pointer
+                          ${isSelected
+                            ? "border-foreground bg-accent text-foreground shadow-xs ring-1 ring-border"
+                            : "border-border/60 bg-muted/20 hover:border-border hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                          }
+                        `}
+                      >
+                        <div className={`
+                          h-8 w-8 rounded-lg flex items-center justify-center transition-colors
+                          ${isSelected
+                            ? "bg-foreground text-background"
+                            : "bg-muted border border-border/80 text-foreground group-hover:border-foreground/40"
+                          }
+                        `}>
+                          <Icon className="h-4 w-4" />
                         </div>
-                      )}
-                    </button>
-                  ))}
+                        <span className="text-[11px] font-semibold leading-tight">
+                          {conv.label}
+                        </span>
+                        {isSelected && (
+                          <div className="absolute top-1.5 right-1.5">
+                            <Check className="h-3 w-3 text-foreground" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-3">
-                  {selectedConversion.description} · Accepts: {selectedConversion.inputExt.join(", ")} · Output: .{selectedConversion.outputExt}
-                </p>
+
+                <div className="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-[11px] text-muted-foreground flex items-center justify-between">
+                  <span>{selectedConversion.description}</span>
+                  <span className="font-mono text-[10px] text-foreground font-medium">
+                    {selectedConversion.inputExt.join(", ")} → .{selectedConversion.outputExt}
+                  </span>
+                </div>
               </CardContent>
             </Card>
 
             {/* Step 2: Drop Zone */}
-            <Card className="border-border/60">
-              <CardHeader className="pb-3 border-b border-border/40">
+            <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+              <CardHeader className="pb-3 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
-                    <Upload className="h-3.5 w-3.5 text-white" />
+                  <div className="h-6 w-6 rounded-lg border border-border bg-muted flex items-center justify-center text-foreground">
+                    <span className="text-[10px] font-mono font-bold">2</span>
                   </div>
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider">
-                    Step 2 — Upload File
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Upload Document
                   </CardTitle>
                 </div>
               </CardHeader>
+
               <CardContent className="pt-4">
                 {!droppedFile ? (
                   <div
@@ -391,52 +404,44 @@ function ConversionsPage() {
                     onDrop={onDrop}
                     onClick={() => fileInputRef.current?.click()}
                     className={`
-                      relative flex flex-col items-center justify-center gap-4
-                      rounded-2xl border-2 border-dashed p-10 cursor-pointer
-                      transition-all duration-300
+                      relative flex flex-col items-center justify-center gap-3
+                      rounded-2xl border-2 border-dashed p-8 md:p-10 cursor-pointer
+                      transition-all duration-200
                       ${isDragging
-                        ? "border-primary bg-primary/8 scale-[1.01]"
-                        : "border-border/60 bg-muted/20 hover:border-primary/50 hover:bg-muted/40"
+                        ? "border-foreground bg-accent/50 scale-[1.005]"
+                        : "border-border/70 bg-muted/20 hover:border-foreground/40 hover:bg-muted/40"
                       }
                     `}
                   >
-                    <div className={`
-                      h-16 w-16 rounded-2xl flex items-center justify-center
-                      bg-gradient-to-br ${selectedConversion.gradient} shadow-lg
-                      transition-transform duration-300
-                      ${isDragging ? "scale-110" : ""}
-                    `}>
-                      <selectedConversion.icon className="h-8 w-8 text-white" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-foreground">
-                        {isDragging ? "Drop it here!" : "Drag & drop your file"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        or click to browse · {selectedConversion.inputExt.join(", ")} · max 50 MB
-                      </p>
+                    <div className="h-12 w-12 rounded-2xl border border-border/80 bg-card flex items-center justify-center text-foreground shadow-xs">
+                      <Upload className="h-6 w-6 text-foreground" />
                     </div>
 
-                    {/* Animated ring when dragging */}
-                    {isDragging && (
-                      <div className="absolute inset-0 rounded-2xl border-2 border-primary animate-ping opacity-20" />
-                    )}
+                    <div className="text-center space-y-1">
+                      <p className="text-xs font-semibold text-foreground">
+                        {isDragging ? "Drop your file to upload" : "Drag and drop file here, or click to browse"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground font-mono">
+                        Accepts {selectedConversion.inputExt.join(", ")} · Max 50 MB
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   /* File selected state */
-                  <div className="flex items-center gap-4 p-4 rounded-xl border border-border/60 bg-muted/30">
-                    <div className={`h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br ${selectedConversion.gradient} shadow-sm shrink-0`}>
-                      <selectedConversion.icon className="h-6 w-6 text-white" />
+                  <div className="flex items-center gap-3.5 p-3.5 rounded-xl border border-border/80 bg-muted/30">
+                    <div className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-foreground shadow-xs shrink-0">
+                      <selectedConversion.icon className="h-5 w-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{droppedFile.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(droppedFile.size / 1024 / 1024).toFixed(2)} MB · Ready to convert
+                      <p className="text-xs font-semibold text-foreground truncate">{droppedFile.name}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                        {(droppedFile.size / 1024 / 1024).toFixed(2)} MB · Ready for conversion
                       </p>
                     </div>
                     <button
                       onClick={resetState}
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      title="Remove file"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -454,18 +459,18 @@ function ConversionsPage() {
             </Card>
 
             {/* Step 3: Convert + Progress */}
-            <Card className="border-border/60">
-              <CardContent className="pt-5 pb-5 space-y-4">
-                {/* Progress bar (shown when converting) */}
+            <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+              <CardContent className="pt-4 pb-4 space-y-4">
+                {/* Progress bar */}
                 {converting && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <p className="text-xs font-medium text-foreground">{progressLabel}</p>
-                      <p className="text-xs text-muted-foreground">{progressPercent}%</p>
+                  <div className="space-y-1.5 p-3 rounded-xl bg-muted/30 border border-border/60">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-medium text-foreground">{progressLabel}</span>
+                      <span className="font-mono text-muted-foreground">{progressPercent}%</span>
                     </div>
                     <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full bg-gradient-to-r ${selectedConversion.gradient} rounded-full transition-all duration-700`}
+                        className="h-full bg-foreground rounded-full transition-all duration-500"
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
@@ -474,11 +479,13 @@ function ConversionsPage() {
 
                 {/* Success result */}
                 {progress === "done" && history.length > 0 && (
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-muted/40 border border-border">
+                    <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Conversion complete!</p>
-                      <p className="text-[10px] text-emerald-600/80 dark:text-emerald-500/80 truncate">{history[0].outputFileName}</p>
+                      <p className="text-xs font-semibold text-foreground">File converted successfully</p>
+                      <p className="text-[10px] font-mono text-muted-foreground truncate">{history[0].outputFileName}</p>
                     </div>
                     <a
                       href={history[0].signedUrl}
@@ -488,7 +495,7 @@ function ConversionsPage() {
                     >
                       <Button
                         size="sm"
-                        className="h-8 text-xs px-3 bg-emerald-500 hover:bg-emerald-600 text-white gap-1.5"
+                        className="h-8 text-xs px-3 bg-foreground text-background hover:bg-foreground/90 gap-1.5"
                       >
                         <Download className="h-3.5 w-3.5" />
                         Download
@@ -497,17 +504,11 @@ function ConversionsPage() {
                   </div>
                 )}
 
-                {/* Convert button */}
+                {/* Action button */}
                 <Button
                   onClick={handleConvert}
                   disabled={!droppedFile || converting}
-                  className={`
-                    w-full h-11 text-sm font-semibold gap-2
-                    bg-gradient-to-r ${selectedConversion.gradient} text-white
-                    hover:opacity-90 disabled:opacity-40
-                    transition-all duration-200
-                    ${!droppedFile || converting ? "cursor-not-allowed" : "hover:scale-[1.01] active:scale-[0.99]"}
-                  `}
+                  className="w-full h-11 text-xs font-semibold gap-2 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40 rounded-xl shadow-xs transition-all active:scale-98"
                 >
                   {converting ? (
                     <>
@@ -517,14 +518,14 @@ function ConversionsPage() {
                   ) : (
                     <>
                       <FileOutput className="h-4 w-4" />
-                      Convert {droppedFile ? `"${droppedFile.name}"` : "File"}
+                      Convert {droppedFile ? `"${droppedFile.name}"` : "Document"}
                     </>
                   )}
                 </Button>
 
                 {progress !== "done" && (
                   <p className="text-[10px] text-center text-muted-foreground">
-                    Files are processed securely via iLoveAPI · Download links expire in 1 hour
+                    Direct conversion engine · Secure temporary download link
                   </p>
                 )}
               </CardContent>
@@ -534,48 +535,68 @@ function ConversionsPage() {
           {/* ── Right column: Info + History ─────────────────────────── */}
           <div className="space-y-5">
 
-            {/* Supported formats info */}
-            <Card className="border-border/60">
-              <CardHeader className="pb-3 border-b border-border/40">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                  Supported Formats
+            {/* Supported formats list */}
+            <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+              <CardHeader className="pb-3 border-b border-border/60">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-foreground" />
+                  Format Registry
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-3 space-y-2">
-                {CONVERSIONS.map((conv) => (
-                  <div key={conv.id} className="flex items-center gap-2.5">
-                    <div className={`h-5 w-5 rounded-md flex items-center justify-center bg-gradient-to-br ${conv.gradient}`}>
-                      <conv.icon className="h-3 w-3 text-white" />
+              <CardContent className="pt-3 space-y-1.5">
+                {CONVERSIONS.map((conv) => {
+                  const Icon = conv.icon;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        setSelectedConversion(conv);
+                        setDroppedFile(null);
+                        setProgress("idle");
+                      }}
+                      className={`flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${
+                        selectedConversion.id === conv.id
+                          ? "bg-accent border-border"
+                          : "border-transparent hover:bg-muted/40 hover:border-border/40"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-6 w-6 rounded-md border border-border/80 bg-muted/60 flex items-center justify-center text-foreground">
+                          <Icon className="h-3 w-3" />
+                        </div>
+                        <span className="text-xs font-medium text-foreground">{conv.label}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                        .{conv.outputExt}
+                      </span>
                     </div>
-                    <span className="text-[11px] text-foreground font-medium">{conv.label}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
 
             {/* Session history */}
             {history.length > 0 && (
-              <Card className="border-border/60">
-                <CardHeader className="pb-3 border-b border-border/40">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-blue-500" />
-                    Recent Conversions
-                  </CardTitle>
-                  <CardDescription className="text-[10px]">
-                    Links valid for 1 hour
-                  </CardDescription>
+              <Card className="border-border/80 bg-card/70 shadow-xs rounded-2xl overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border/60">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-foreground" />
+                      Session History
+                    </CardTitle>
+                    <span className="text-[10px] font-mono text-muted-foreground">1h expiry</span>
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-3 space-y-2">
                   {history.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/30 border border-border/40"
+                      className="flex items-center gap-2.5 p-2.5 rounded-xl bg-muted/30 border border-border/60"
                     >
                       <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-semibold text-foreground truncate">{item.outputFileName}</p>
-                        <p className="text-[9px] text-muted-foreground">{item.conversion}</p>
+                        <p className="text-xs font-medium text-foreground truncate">{item.outputFileName}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono">{item.conversion}</p>
                       </div>
                       <a
                         href={item.signedUrl}
@@ -587,9 +608,9 @@ function ConversionsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-6 w-6 p-0 border-border/50"
+                          className="h-7 w-7 p-0 rounded-lg border-border/70 hover:bg-muted"
                         >
-                          <Download className="h-3 w-3" />
+                          <Download className="h-3.5 w-3.5" />
                         </Button>
                       </a>
                     </div>
@@ -598,30 +619,30 @@ function ConversionsPage() {
               </Card>
             )}
 
-            {/* Tips */}
-            <Card className="border-border/60 bg-gradient-to-br from-violet-500/5 to-blue-500/5">
-              <CardContent className="pt-4 pb-4 space-y-3">
-                <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 text-violet-500" />
-                  Privacy & Security
+            {/* Privacy & Security */}
+            <Card className="border-border/80 bg-muted/20 shadow-xs rounded-2xl overflow-hidden">
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs font-semibold text-foreground flex items-center gap-2">
+                  <Shield className="h-3.5 w-3.5 text-foreground" />
+                  Privacy & Data Retention
                 </p>
-                <ul className="space-y-1.5">
+                <ul className="space-y-2 text-[11px] text-muted-foreground">
                   {[
-                    "Files are stored in your private folder only",
-                    "iLoveAPI auto-deletes files after processing",
-                    "All storage is protected by Row Level Security",
-                    "Signed download URLs expire after 1 hour",
+                    "Files are stored temporarily in your session bucket",
+                    "Automated sanitization after processing completion",
+                    "Protected by Supabase Row-Level Security (RLS)",
+                    "Signed download URLs expire automatically after 60 min",
                   ].map((tip) => (
-                    <li key={tip} className="text-[10px] text-muted-foreground flex items-start gap-1.5">
-                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-violet-400 shrink-0" />
-                      {tip}
+                    <li key={tip} className="flex items-start gap-2">
+                      <span className="mt-1 h-1 w-1 rounded-full bg-foreground shrink-0" />
+                      <span className="leading-snug">{tip}</span>
                     </li>
                   ))}
                 </ul>
               </CardContent>
             </Card>
           </div>
-        </div>
+        </main>
       </div>
     </ChatLayout>
   );

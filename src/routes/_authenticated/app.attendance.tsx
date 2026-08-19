@@ -1399,8 +1399,8 @@ function AttendancePage() {
 
               {/* Header */}
               <div className="flex items-center gap-3 border-b border-border/60 pb-4 mb-4">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-md">
-                  <Globe className="h-5 w-5 text-white" />
+                <div className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center shrink-0 shadow-xs">
+                  <Globe className="h-5 w-5 text-foreground" />
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-foreground">Sync from CUE Portal</h3>
@@ -1597,7 +1597,7 @@ function AttendancePage() {
                         size="sm"
                         onClick={() => handleCueSync(cueUsername, cuePassword)}
                         disabled={isCueSyncing || !cueUsername.trim() || !cuePassword}
-                        className="w-full text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60 py-2.5"
+                        className="w-full text-xs font-semibold bg-foreground text-background hover:bg-foreground/90 flex items-center justify-center gap-1.5 disabled:opacity-60 py-2.5 rounded-xl shadow-xs transition-all active:scale-98"
                       >
                         {isCueSyncing ? (
                           <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Authenticating & Syncing...</>

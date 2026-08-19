@@ -245,7 +245,7 @@ function StudentRegistryPage() {
                     {students.map((student: any) => (
                       <tr key={student.id} className="hover:bg-slate-900/30 transition-colors">
                         <td className="py-3.5 px-4 flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-bold text-[11px] grid place-items-center">
+                          <div className="h-8 w-8 rounded-xl bg-muted border border-border text-foreground font-semibold text-[11px] grid place-items-center">
                             {student.name.charAt(0).toUpperCase()}
                           </div>
                           <div>

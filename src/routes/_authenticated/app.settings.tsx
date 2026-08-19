@@ -252,17 +252,16 @@ function SettingsPage() {
     <ChatLayout activeThreadId={null}>
       <div className="h-full bg-background text-foreground flex flex-col transition-colors duration-200">
 
-        {/* Gradient Header */}
-        <div className="relative overflow-hidden px-6 py-5 border-b border-border shrink-0">
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-500/10 via-background to-zinc-500/5 pointer-events-none" />
-          <div className="relative flex items-center justify-between">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-border/80 bg-card/60 backdrop-blur-md shrink-0">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-600 to-zinc-700 flex items-center justify-center shadow-md">
-                <Settings className="h-5 w-5 text-white" />
+              <div className="h-9 w-9 rounded-xl border border-border/80 bg-muted/60 flex items-center justify-center text-foreground shrink-0 shadow-xs">
+                <Settings className="h-4.5 w-4.5" />
               </div>
               <div>
-                <h1 className="text-sm font-extrabold tracking-tight">Workspace Preferences</h1>
-                <p className="text-[10px] text-muted-foreground">Modify settings manually or instruct Settler AI agent</p>
+                <h1 className="text-sm font-semibold tracking-tight text-foreground">Workspace Preferences</h1>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Modify settings manually or instruct Settler AI agent</p>
               </div>
             </div>
             {/* Tabs */}
@@ -291,9 +290,9 @@ function SettingsPage() {
                 {/* Appearance */}
                 <Card className="card-gradient border-border shadow-sm">
                   <CardHeader className="pb-3 border-b border-border/60">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                        <Palette className="h-3.5 w-3.5 text-white" />
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg border border-border/80 bg-muted/60 flex items-center justify-center text-foreground">
+                        <Palette className="h-3.5 w-3.5" />
                       </div>
                       Visual Appearance
                     </CardTitle>
@@ -340,9 +339,9 @@ function SettingsPage() {
                 {/* Notifications */}
                 <Card className="card-gradient border-border shadow-sm">
                   <CardHeader className="pb-3 border-b border-border/60">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
-                        <Bell className="h-3.5 w-3.5 text-white" />
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg border border-border/80 bg-muted/60 flex items-center justify-center text-foreground">
+                        <Bell className="h-3.5 w-3.5" />
                       </div>
                       Notifications & Alerts
                     </CardTitle>
@@ -373,9 +372,9 @@ function SettingsPage() {
                 {/* SMS Assignment Reminders */}
                 <Card className="card-gradient border-border shadow-sm">
                   <CardHeader className="pb-3 border-b border-border/60">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                        <MessageCircle className="h-3.5 w-3.5 text-white" />
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg border border-border/80 bg-muted/60 flex items-center justify-center text-foreground">
+                        <MessageCircle className="h-3.5 w-3.5" />
                       </div>
                       SMS Assignment Reminders
                     </CardTitle>
@@ -481,11 +480,11 @@ function SettingsPage() {
               <Card className="border-border bg-card shadow-lg flex flex-col h-[550px] overflow-hidden rounded-2xl">
                 <CardHeader className="pb-3 border-b border-border/60 bg-muted/20 shrink-0">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md">
-                      <Bot className="h-4.5 w-4.5 text-white" />
+                    <div className="h-8 w-8 rounded-xl border border-border/80 bg-muted flex items-center justify-center text-foreground shadow-xs">
+                      <Bot className="h-4.5 w-4.5 text-foreground" />
                     </div>
                     <div>
-                      <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground">Settler Autopilot</CardTitle>
+                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-foreground">Settler Autopilot</CardTitle>
                       <CardDescription className="text-[10px] mt-0.5">Tell Settler what config changes to make or problems to fix.</CardDescription>
                     </div>
                   </div>
@@ -495,8 +494,8 @@ function SettingsPage() {
                 <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
                   {messages.map((m, idx) => (
                     <div key={idx} className={`flex items-start gap-2.5 ${m.sender === "user" ? "flex-row-reverse" : ""}`}>
-                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 text-white ${
-                        m.sender === "user" ? "bg-primary" : "bg-gradient-to-br from-emerald-400 to-teal-500"
+                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 border border-border/70 ${
+                        m.sender === "user" ? "bg-foreground text-background" : "bg-muted text-foreground"
                       }`}>
                         {m.sender === "user" ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
                       </div>
