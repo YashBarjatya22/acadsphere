@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ChatLayout } from "@/components/chat/ChatLayout";
@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateAttendanceMargins, marginLabel, marginColor } from "@/lib/attendance-margins";
+import { motion, AnimatePresence } from "framer-motion";
+import gsap from "gsap";
 import {
   getAttendanceDashboardData,
   updateSubjectAttendance,

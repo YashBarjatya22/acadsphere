@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState, useMemo, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   GraduationCap,
   Clock,
@@ -29,6 +30,8 @@ import {
   MessageSquare,
   Send,
   Wifi,
+  FileCheck,
+  ArrowUpRight
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/classroom")({
@@ -54,13 +57,12 @@ function ClassroomPage() {
   const [isSendingDemoSms, setIsSendingDemoSms] = useState(false);
   const [reviewedMap, setReviewedMap] = useState<Record<string, boolean>>({});
   const [showBanner, setShowBanner] = useState(true);
-  // Track whether a google_provider_token is present so the query key can react to it
   const [hasToken, setHasToken] = useState<boolean>(
     () => typeof window !== "undefined" && !!localStorage.getItem("google_provider_token")
   );
   const tokenCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll localStorage briefly after mount to catch the token written by auth/callback.
+  // Poll localStorage briefly after mount to catch the token
   useEffect(() => {
     if (hasToken) return;
     let attempts = 0;
@@ -79,15 +81,15 @@ function ClassroomPage() {
     };
   }, [hasToken]);
 
-  /* — PHASE 1: Optimistic Cache — read from Supabase classroom_tasks instantly — */
+  /* — Optimistic Cache Query — */
   const { data: cachedData } = useQuery<ClassroomResponse>({
     queryKey: ["classroomCache"],
     queryFn: () => fetchCachedTasksFn() as Promise<ClassroomResponse>,
-    staleTime: 30 * 1000, // Cache valid for 30 seconds
+    staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
 
-  /* — PHASE 2: Live GCR Fetch — parallelized, uses cache as placeholder — */
+  /* — Live GCR Fetch — */
   const { data: liveData, isLoading: isLiveLoading, refetch } = useQuery<ClassroomResponse>({
     queryKey: ["classroomSubmissions", hasToken],
     queryFn: async () => {
@@ -112,23 +114,18 @@ function ClassroomPage() {
       return fetchSubmissionsFn({ data: { providerToken: googleToken } }) as Promise<ClassroomResponse>;
     },
     staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes in background
-    placeholderData: cachedData,  // Show cache immediately while GCR loads
+    refetchInterval: 5 * 60 * 1000,
+    placeholderData: cachedData,
   });
 
-  // Determine what data to show: prefer live GCR, fall back to cache
   const data = liveData ?? cachedData;
   const isShowingCache = !liveData && !!cachedData?.assignments?.length;
-  // Truly loading = no data at all (not even cache)
   const isLoading = isLiveLoading && !cachedData?.assignments?.length;
-  // Background refreshing = live is loading but we have cached/placeholder data
   const isBackgroundRefreshing = isLiveLoading && !!cachedData?.assignments?.length;
 
   const isConnected = liveData?.connected ?? false;
   const assignments = data?.assignments ?? [];
 
-  /* — Manual Sync Handler — */
-  // ── Offline SMS cache: quietly upsert PENDING/OVERDUE assignments to DB ──
   const syncTasksToDb = async (items: SubmissionItem[]) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -148,46 +145,37 @@ function ClassroomPage() {
         status:        "PENDING" as const,
       }));
 
-      // upsert on (user_id, coursework_id) — preserves notification flags
       await supabase
         .from("classroom_tasks")
         .upsert(rows, {
           onConflict: "user_id,coursework_id",
-          ignoreDuplicates: false,  // update due_date/title if changed
+          ignoreDuplicates: false,
         });
-    } catch (_) {
-      // Non-critical: don't surface DB errors to the user
-    }
+    } catch (_) {}
   };
 
   const handleSync = async () => {
     setIsRefreshing(true);
     try {
-      // Invalidate both queries to force fresh fetches
       await queryClient.invalidateQueries({ queryKey: ["classroomSubmissions"] });
       const result = await refetch();
 
-      // Quietly cache to DB and refresh the cache query
       if (result.data?.assignments) {
         await syncTasksToDb(result.data.assignments);
         await queryClient.invalidateQueries({ queryKey: ["classroomCache"] });
       }
 
-      toast.success("Classroom assignments synchronized!", {
-        description: "Live data refreshed from Google Classroom.",
-      });
+      toast.success("Classroom coursework synchronized!");
     } catch (err: any) {
-      toast.error("Sync failed", { description: err?.message || "Could not reach Google Classroom." });
+      toast.error("Sync failed: " + (err?.message || "Could not reach Google Classroom."));
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  /* — Demo SMS Handler (for live presentations) — */
   const handleDemoSms = async () => {
     setIsSendingDemoSms(true);
     try {
-      // Get the user's saved phone number from Supabase profiles
       const { data: { user } } = await supabase.auth.getUser();
       let phone: string | undefined;
       if (user) {
@@ -199,7 +187,6 @@ function ClassroomPage() {
         phone = profile?.phone_number || undefined;
       }
 
-      // Get user's display name
       const userName = user?.user_metadata?.full_name?.split(" ")[0]
         || user?.email?.split("@")[0]
         || "Student";
@@ -226,25 +213,20 @@ function ClassroomPage() {
 
       const result = await res.json();
       if (result.success) {
-        toast.success("📱 Demo SMS sent to your phone!", {
-          description: "Check your messages — live classroom stats delivered.",
-        });
+        toast.success("Demo SMS alert sent to phone!");
       } else {
-        toast.error("SMS failed: " + (result.error || "Unknown error"), {
-          description: "Make sure your phone number is saved in Settings.",
-        });
+        toast.error("SMS notification failed: " + (result.error || "Unknown error"));
       }
     } catch (err: any) {
-      toast.error("Failed to send Demo SMS", { description: err.message });
+      toast.error("Failed to send Demo SMS: " + err.message);
     } finally {
       setIsSendingDemoSms(false);
     }
   };
 
-  /* — Google OAuth Connect Handler — */
   const handleConnectGoogle = async () => {
     try {
-      toast.info("Redirecting to Google Classroom OAuth...");
+      toast.info("Connecting to Google Classroom...");
       await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -262,16 +244,14 @@ function ClassroomPage() {
     }
   };
 
-  /* — Toggle Reviewed State — */
   const toggleReviewed = (id: string) => {
     setReviewedMap((prev) => {
       const nextState = !prev[id];
-      if (nextState) toast.success("Assignment marked as reviewed");
+      if (nextState) toast.success("Coursework marked as reviewed");
       return { ...prev, [id]: nextState };
     });
   };
 
-  /* — Unique Course List for Dropdown Filter — */
   const coursesList = useMemo(() => {
     const activeSet = new Set<string>();
     const inactiveSet = new Set<string>();
@@ -291,14 +271,10 @@ function ClassroomPage() {
       }
     }
 
-    if (activeTab === "INACTIVE") {
-      return Array.from(inactiveSet);
-    }
-
+    if (activeTab === "INACTIVE") return Array.from(inactiveSet);
     return Array.from(activeSet);
   }, [assignments, data?.courses, activeTab]);
 
-  /* — Counts for Quick Stat Cards (Computed for Active Current Semester) — */
   const counts = useMemo(() => {
     let overdue = 0;
     let pending = 0;
@@ -320,7 +296,6 @@ function ClassroomPage() {
     if (data?.courses && data.courses.length > 0) {
       activeSubjectsCount = data.courses.filter((c) => c.isCurrentSemester !== false).length;
     } else if (isShowingCache) {
-      // Derive from unique course names in cached assignments
       activeSubjectsCount = new Set(activeAssignments.map((a) => a.courseName).filter(Boolean)).size;
     }
 
@@ -334,25 +309,20 @@ function ClassroomPage() {
     };
   }, [assignments, data, isShowingCache]);
 
-  /* — Filtered Assignments — */
   const filteredAssignments = useMemo(() => {
     return assignments.filter((item) => {
-      // 1. Current vs Past Semester filter
       if (activeTab === "INACTIVE") {
         if (item.isCurrentSemester !== false) return false;
       } else {
         if (item.isCurrentSemester === false) return false;
       }
 
-      // 2. Tab status filter
       if (activeTab === "PENDING" && item.state !== "PENDING") return false;
       if (activeTab === "OVERDUE" && item.state !== "OVERDUE") return false;
       if (activeTab === "COMPLETED" && item.state !== "SUBMITTED" && item.state !== "GRADED") return false;
 
-      // 3. Course filter
       if (selectedCourse !== "ALL" && item.courseName !== selectedCourse) return false;
 
-      // 4. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = item.title.toLowerCase().includes(q);
@@ -367,36 +337,39 @@ function ClassroomPage() {
 
   return (
     <ChatLayout activeThreadId={null}>
-      <div className="h-full overflow-y-auto bg-[#FAFAF8] dark:bg-background text-[#0A0A0A] dark:text-foreground p-4 md:p-8 space-y-6 scrollbar-thin">
-
-        {/* ─── Top Header & Live Sync Action ──────────────────────────────── */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E0DDD4] pb-5">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+        className="h-full overflow-y-auto bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6 md:p-8 space-y-6 max-w-7xl mx-auto"
+      >
+        {/* ─── Top Header ────────────────────────────────────────────── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200/80 dark:border-zinc-800/80 pb-5">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="h-8 w-8 rounded-xl bg-[#0A0A0A] text-white flex items-center justify-center shadow-sm">
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="h-8 w-8 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 flex items-center justify-center shadow-xs">
                 <GraduationCap className="h-4 w-4" />
               </div>
-              <h1 className="text-2xl font-bold font-sans tracking-tight text-[#0A0A0A]">
-                Classroom Submissions
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+                Classroom Coursework Ledger
               </h1>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-muted-foreground font-sans max-w-xl leading-relaxed">
-                Track pending coursework, upcoming deadlines, and submission history across all your subjects.
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Track pending assignments, milestones, and grading across enrolled subjects.
               </p>
-              {/* Live / Cache badge */}
               {isBackgroundRefreshing ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-700 border border-amber-300/40 whitespace-nowrap shrink-0 animate-pulse">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
                   <Wifi className="h-2.5 w-2.5" />
-                  Syncing live…
+                  Syncing…
                 </span>
               ) : isConnected ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-300/40 whitespace-nowrap shrink-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
-                  Live
+                  Connected
                 </span>
               ) : isShowingCache ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-700 border border-blue-300/40 whitespace-nowrap shrink-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-200/80 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300 dark:border-zinc-700">
                   Cached
                 </span>
               ) : null}
@@ -404,168 +377,78 @@ function ClassroomPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               onClick={handleSync}
               disabled={isRefreshing}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#E0DDD4] bg-[#F4F2EC] hover:bg-[#EAE7DC] text-xs font-semibold text-[#0A0A0A] transition-all duration-150 shadow-sm active:scale-95 disabled:opacity-60"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs disabled:opacity-60"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
-              <span>{isRefreshing ? "Syncing..." : "Sync Live Data"}</span>
-            </button>
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-zinc-900 dark:text-zinc-100" : ""}`} />
+              <span>{isRefreshing ? "Syncing..." : "Sync Live"}</span>
+            </motion.button>
 
-            {/* ── Demo SMS Button ── */}
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               id="demo-sms-btn"
               onClick={handleDemoSms}
               disabled={isSendingDemoSms}
-              className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 disabled:opacity-70 overflow-hidden"
-              style={{
-                background: isSendingDemoSms
-                  ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
-                  : "linear-gradient(135deg, #059669, #0d9488)",
-                color: "white",
-              }}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 text-xs font-semibold hover:opacity-90 transition-opacity shadow-xs disabled:opacity-70"
             >
-              {/* Animated ping ring when idle */}
-              {!isSendingDemoSms && (
-                <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white opacity-80" />
-                </span>
-              )}
               {isSendingDemoSms ? (
                 <Send className="h-3.5 w-3.5 animate-bounce" />
               ) : (
                 <MessageSquare className="h-3.5 w-3.5" />
               )}
-              <span>{isSendingDemoSms ? "Sending SMS..." : "Demo SMS"}</span>
-            </button>
+              <span>{isSendingDemoSms ? "Sending..." : "SMS Alert"}</span>
+            </motion.button>
 
             {!isConnected && (
-              <button
+              <motion.button
+                whileTap={{ scale: 0.96 }}
                 onClick={handleConnectGoogle}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0A0A0A] text-white text-xs font-semibold hover:opacity-90 transition-all duration-150 shadow-sm active:scale-95"
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 text-xs font-semibold hover:opacity-90 transition-opacity shadow-xs"
               >
-                <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                <span>Connect Google Classroom</span>
-              </button>
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Connect Google</span>
+              </motion.button>
             )}
           </div>
         </div>
 
-        {/* ─── Google OAuth Connection Banner ─────────────────────────────── */}
-        {!isConnected && showBanner && (
-          <div className="relative rounded-2xl border border-amber-300/60 bg-amber-500/10 p-4 md:p-5 shadow-sm transition-all duration-200">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3.5">
-                <div className="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
-                  <Info className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">
-                    Connect Google Classroom Account
-                  </h3>
-                  <p className="text-xs text-amber-800/80 dark:text-amber-300/80 leading-relaxed mt-0.5 max-w-2xl">
-                    {isShowingCache
-                      ? "Showing your last synced assignments. Connect to load live deadlines and grades."
-                      : "Sync your live university assignments, deadlines, and grades from Google Classroom."}
-                  </p>
-                  <div className="flex items-center gap-3 mt-3">
-                    <button
-                      onClick={handleConnectGoogle}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#0A0A0A] text-white text-xs font-semibold hover:bg-black transition-colors"
-                    >
-                      Authorize Google Account
-                    </button>
-                    <button
-                      onClick={() => setShowBanner(false)}
-                      className="text-xs font-medium text-amber-900/70 hover:underline"
-                    >
-                      Dismiss Banner
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowBanner(false)}
-                className="text-amber-700/60 hover:text-amber-900 p-1 rounded-lg"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ─── Quick Summary Metric Cards ─────────────────────────────────── */}
+        {/* ─── Metric Matrix ─────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {/* Card 1: Overdue */}
-          <div className="rounded-2xl border border-[#E0DDD4] bg-[#F4F2EC] p-4 shadow-sm transition-all duration-150 hover:border-red-400/50">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-                Action Needed
-              </span>
-              <div className="h-7 w-7 rounded-lg bg-red-500/10 text-red-600 flex items-center justify-center">
-                <AlertTriangle className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-[#0A0A0A]">{counts.overdue}</span>
-              <span className="text-xs text-muted-foreground font-medium">Overdue Submissions</span>
-            </div>
-          </div>
-
-          {/* Card 2: Pending */}
-          <div className="rounded-2xl border border-[#E0DDD4] bg-[#F4F2EC] p-4 shadow-sm transition-all duration-150 hover:border-amber-400/50">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                Due Soon
-              </span>
-              <div className="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
-                <Clock className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-[#0A0A0A]">{counts.pending}</span>
-              <span className="text-xs text-muted-foreground font-medium">Pending Coursework</span>
-            </div>
-          </div>
-
-          {/* Card 3: Completed */}
-          <div className="rounded-2xl border border-[#E0DDD4] bg-[#F4F2EC] p-4 shadow-sm transition-all duration-150 hover:border-emerald-400/50">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Turned In
-              </span>
-              <div className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-[#0A0A0A]">{counts.completed}</span>
-              <span className="text-xs text-muted-foreground font-medium">Submitted / Graded</span>
-            </div>
-          </div>
-
-          {/* Card 4: Enrolled Courses */}
-          <div className="rounded-2xl border border-[#E0DDD4] bg-[#F4F2EC] p-4 shadow-sm transition-all duration-150 hover:border-blue-400/50">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-                Subjects
-              </span>
-              <div className="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
-                <BookOpen className="h-3.5 w-3.5" />
-              </div>
-            </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-[#0A0A0A]">{counts.courses}</span>
-              <span className="text-xs text-muted-foreground font-medium">Active Classroom Subjects</span>
-            </div>
-          </div>
+          {[
+            { label: "Action Needed", count: counts.overdue, desc: "Overdue Submissions", icon: AlertTriangle, color: "text-red-500" },
+            { label: "Due Soon", count: counts.pending, desc: "Pending Coursework", icon: Clock, color: "text-amber-500" },
+            { label: "Turned In", count: counts.completed, desc: "Submitted / Graded", icon: CheckCircle2, color: "text-emerald-500" },
+            { label: "Enrolled Courses", count: counts.courses, desc: "Active Classroom Subjects", icon: BookOpen, color: "text-zinc-600 dark:text-zinc-300" },
+          ].map((card, idx) => {
+            const Icon = card.icon;
+            return (
+              <motion.div
+                key={idx}
+                whileHover={{ y: -2 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-900/90 p-4 shadow-xs flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                    {card.label}
+                  </span>
+                  <Icon className={`h-3.5 w-3.5 ${card.color}`} />
+                </div>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{card.count}</span>
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{card.desc}</span>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* ─── Filter Tabs & Search Bar ───────────────────────────────────── */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-[#F4F2EC] p-2 rounded-2xl border border-[#E0DDD4]">
+        {/* ─── Filter Tabs & Search Bar ───────────────────────────────── */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white/90 dark:bg-zinc-900/90 p-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          
           {/* Status Tabs */}
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-none p-0.5">
             {[
@@ -573,7 +456,7 @@ function ClassroomPage() {
               { id: "PENDING", label: `Pending (${counts.pending})` },
               { id: "OVERDUE", label: `Overdue (${counts.overdue})` },
               { id: "COMPLETED", label: `Completed (${counts.completed})` },
-              { id: "INACTIVE", label: `Past Semesters (${counts.inactive})` },
+              { id: "INACTIVE", label: `Past (${counts.inactive})` },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -581,10 +464,10 @@ function ClassroomPage() {
                   setActiveTab(tab.id as any);
                   setSelectedCourse("ALL");
                 }}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
+                className={`relative px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
                   activeTab === tab.id
-                    ? "bg-[#0A0A0A] text-white shadow-sm"
-                    : "text-muted-foreground hover:bg-[#EAE7DC] hover:text-[#0A0A0A]"
+                    ? "bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 shadow-xs"
+                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 }`}
               >
                 {tab.label}
@@ -592,14 +475,13 @@ function ClassroomPage() {
             ))}
           </div>
 
-          {/* Search & Course Filter Dropdown */}
+          {/* Search & Course Filter */}
           <div className="flex items-center gap-2 flex-1 max-w-md">
-            {/* Course Filter Dropdown */}
             <div className="relative shrink-0">
               <select
                 value={selectedCourse}
                 onChange={(e) => setSelectedCourse(e.target.value)}
-                className="appearance-none bg-background border border-[#E0DDD4] rounded-xl px-3 py-1.5 pr-8 text-xs font-medium text-[#0A0A0A] focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+                className="appearance-none bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 pr-8 text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all"
               >
                 <option value="ALL">All Subjects</option>
                 {coursesList.map((course) => (
@@ -608,187 +490,179 @@ function ClassroomPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
             </div>
 
-            {/* Keyword Search Input */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
               <input
                 type="text"
-                placeholder="Search coursework..."
+                placeholder="Filter coursework..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-[#E0DDD4] bg-background text-[#0A0A0A] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all"
               />
             </div>
           </div>
         </div>
 
-        {/* ─── Submissions List / Grid ────────────────────────────────────── */}
+        {/* ─── Submissions List / Grid with Framer Motion Layout ──────── */}
         {isLoading ? (
-          /* Full Loading Skeleton State (no cache available yet) */
-          <div className="space-y-4">
+          <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-32 rounded-2xl bg-[#F4F2EC] border border-[#E0DDD4] animate-pulse" />
+              <div key={i} className="h-28 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 animate-pulse" />
             ))}
           </div>
         ) : filteredAssignments.length === 0 ? (
-          /* Empty State */
-          <div className="flex flex-col items-center justify-center py-16 px-4 bg-[#F4F2EC] rounded-2xl border border-[#E0DDD4] text-center">
-            <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
-              <CheckCircle2 className="h-8 w-8" />
+          <div className="flex flex-col items-center justify-center py-16 px-4 bg-white/90 dark:bg-zinc-900/90 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 text-center shadow-xs">
+            <div className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 flex items-center justify-center mb-3">
+              <CheckCircle2 className="h-6 w-6 text-zinc-900 dark:text-zinc-100" />
             </div>
-            <h3 className="text-base font-bold text-[#0A0A0A]">
-              {!isConnected && !isShowingCache ? "Connect Google Classroom" : "You're all caught up!"}
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {!isConnected && !isShowingCache ? "Connect Google Classroom" : "No assignments found"}
             </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+            <p className="text-xs text-zinc-500 mt-1 max-w-sm">
               {!isConnected && !isShowingCache
-                ? "Authorize your Google account above to load your live coursework and deadlines."
-                : searchQuery || selectedCourse !== "ALL" || activeTab !== "ALL"
-                ? "No submissions match your selected filter criteria."
-                : "No pending or overdue assignments found across your Classroom subjects."}
+                ? "Authorize your Google account above to load live deadlines and coursework."
+                : "No coursework matches the active search and filter settings."}
             </p>
           </div>
         ) : (
-          /* Cards Grid */
-          <div className="space-y-4">
-            {filteredAssignments.map((item) => {
-              const isOverdue = item.state === "OVERDUE";
-              const isSubmitted = item.state === "SUBMITTED";
-              const isGraded = item.state === "GRADED";
-              const isReviewed = reviewedMap[item.id] ?? false;
-              const isCacheItem = item.fromCache === true;
+          <motion.div layout className="space-y-3">
+            <AnimatePresence>
+              {filteredAssignments.map((item) => {
+                const isOverdue = item.state === "OVERDUE";
+                const isSubmitted = item.state === "SUBMITTED";
+                const isGraded = item.state === "GRADED";
+                const isReviewed = reviewedMap[item.id] ?? false;
 
-              // Format Due Date Display
-              let dueDisplay = "No Due Date";
-              if (item.dueDate) {
-                const d = new Date(item.dueDate);
-                dueDisplay = d.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-              }
+                let dueDisplay = "No Due Date";
+                if (item.dueDate) {
+                  const d = new Date(item.dueDate);
+                  dueDisplay = d.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                }
 
-              return (
-                <div
-                  key={item.id}
-                  className={`group relative rounded-2xl border p-5 bg-[#F4F2EC] transition-all duration-150 hover:shadow-md ${
-                    isOverdue
-                      ? "border-red-300 dark:border-red-900/50"
-                      : isReviewed
-                      ? "opacity-60 border-[#E0DDD4]"
-                      : "border-[#E0DDD4] hover:border-[#0A0A0A]/30"
-                  }`}
-                >
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                return (
+                  <motion.div
+                    layout
+                    key={item.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    whileHover={{ y: -2 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    className={`group relative rounded-2xl border p-4 md:p-5 bg-white/90 dark:bg-zinc-900/90 transition-all shadow-xs ${
+                      isOverdue
+                        ? "border-red-300 dark:border-red-900/60 bg-red-50/20 dark:bg-red-950/10"
+                        : isReviewed
+                        ? "opacity-60 border-zinc-200 dark:border-zinc-800"
+                        : "border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-600"
+                    }`}
+                  >
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
 
-                    {/* Left Details */}
-                    <div className="flex-1 space-y-2">
-                      {/* Top Badges */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#0A0A0A]/10 text-[#0A0A0A]">
-                          {item.courseName}
-                        </span>
-
-                        {/* Status Badge */}
-                        {isOverdue && (
-                          <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 text-red-700 dark:text-red-400">
-                            <AlertTriangle className="h-3 w-3" />
-                            Missing / Overdue
+                      {/* Left Coursework Details */}
+                      <div className="flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                            {item.courseName}
                           </span>
-                        )}
-                        {item.state === "PENDING" && (
-                          <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400">
-                            <Clock className="h-3 w-3" />
-                            Pending Submission
-                          </span>
-                        )}
-                        {isSubmitted && (
-                          <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Turned In
-                          </span>
-                        )}
-                        {isGraded && (
-                          <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-700 dark:text-blue-400">
-                            <Sparkles className="h-3 w-3" />
-                            Graded
-                          </span>
-                        )}
-                        {/* Cache indicator — subtle pill shown only until live data loads */}
-                        {isCacheItem && isBackgroundRefreshing && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-[#0A0A0A]/5 text-muted-foreground border border-[#E0DDD4]">
-                            cached
-                          </span>
-                        )}
-                      </div>
 
-                      {/* Title & Description */}
-                      <h3 className="text-base font-bold text-[#0A0A0A] leading-snug group-hover:text-primary transition-colors">
-                        {item.title}
-                      </h3>
-
-                      {item.description && (
-                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                          {item.description}
-                        </p>
-                      )}
-
-                      {/* Metadata Row */}
-                      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>Due: <strong className="text-[#0A0A0A]">{dueDisplay}</strong></span>
+                          {isOverdue && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                              <AlertTriangle className="h-3 w-3" />
+                              Missing / Overdue
+                            </span>
+                          )}
+                          {item.state === "PENDING" && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                              <Clock className="h-3 w-3" />
+                              Pending Submission
+                            </span>
+                          )}
+                          {isSubmitted && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Turned In
+                            </span>
+                          )}
+                          {isGraded && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200">
+                              <Sparkles className="h-3 w-3" />
+                              Graded
+                            </span>
+                          )}
                         </div>
 
-                        {item.maxPoints != null && (
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono text-[11px] font-semibold text-[#0A0A0A]">
-                              {isGraded && item.grade != null
-                                ? `Score: ${item.grade}/${item.maxPoints} pts`
-                                : `${item.maxPoints} pts possible`}
-                            </span>
-                          </div>
+                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
+                          {item.title}
+                        </h3>
+
+                        {item.description && (
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2">
+                            {item.description}
+                          </p>
                         )}
+
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-400 pt-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-zinc-400" />
+                            <span>Due: <strong className="text-zinc-800 dark:text-zinc-200 font-medium">{dueDisplay}</strong></span>
+                          </div>
+
+                          {item.maxPoints != null && (
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono text-[10px] text-zinc-600 dark:text-zinc-300">
+                                {isGraded && item.grade != null
+                                  ? `Score: ${item.grade}/${item.maxPoints} pts`
+                                  : `${item.maxPoints} pts possible`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Right Quick Actions */}
+                      <div className="flex md:flex-col items-center md:items-end justify-between md:justify-start gap-2 shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
+                        <motion.a
+                          whileTap={{ scale: 0.96 }}
+                          href={item.alternateLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900 text-xs font-semibold shadow-xs hover:opacity-90 transition-opacity"
+                        >
+                          <span>Open in GCR</span>
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </motion.a>
+
+                        <motion.button
+                          whileTap={{ scale: 0.96 }}
+                          onClick={() => toggleReviewed(item.id)}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+                            isReviewed
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                              : "border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                          }`}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span>{isReviewed ? "Reviewed" : "Mark Reviewed"}</span>
+                        </motion.button>
+                      </div>
+
                     </div>
-
-                    {/* Right Actions */}
-                    <div className="flex md:flex-col items-center md:items-end justify-between md:justify-start gap-2 shrink-0 border-t md:border-t-0 border-[#E0DDD4] pt-3 md:pt-0">
-                      <a
-                        href={item.alternateLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0A0A0A] text-white text-xs font-semibold hover:opacity-90 transition-all active:scale-95 shadow-sm"
-                      >
-                        <span>Open in Classroom</span>
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-
-                      <button
-                        onClick={() => toggleReviewed(item.id)}
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
-                          isReviewed
-                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
-                            : "bg-background border-[#E0DDD4] text-muted-foreground hover:text-[#0A0A0A]"
-                        }`}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        <span>{isReviewed ? "Reviewed" : "Mark Reviewed"}</span>
-                      </button>
-                    </div>
-
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
         )}
-
-      </div>
+      </motion.div>
     </ChatLayout>
   );
 }
+export default ClassroomPage;

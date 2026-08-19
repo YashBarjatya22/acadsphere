@@ -1,0 +1,1 @@
+import{j as a,V as o}from"./index-B6VllQCm.js";function r({className:e,...t}){return a.jsx("label",{"data-slot":"label",className:o("font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground","leading-none","select-none","peer-disabled:cursor-not-allowed peer-disabled:opacity-50",e),...t})}export{r as L};
