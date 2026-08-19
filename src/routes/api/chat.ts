@@ -42,9 +42,9 @@ export const Route = createFileRoute("/api/chat")({
               model,
               system: getStudentOsSystemPrompt(),
               messages: await convertToModelMessages(uiMessages),
-              maxRetries: 0,
+              maxRetries: 1,
               onError: ({ error }) => {
-                console.error("StudentOS stream error:", error);
+                console.warn("[api/chat] Live stream warning:", error);
               },
             });
             return result.toUIMessageStreamResponse({ originalMessages: uiMessages });

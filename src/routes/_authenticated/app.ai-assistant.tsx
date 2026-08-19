@@ -273,25 +273,40 @@ function AIAssistantPage() {
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split("\n");
           for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const dataStr = line.slice(6).trim();
-            if (dataStr === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(dataStr);
-              const delta =
-                (parsed.type === "text-delta" ? (parsed.delta ?? parsed.textDelta) : null) ??
-                parsed.textDelta ??
-                parsed.text ??
-                null;
-              if (delta) {
-                streamBufferRef.current += delta;
-                scheduleFlush();
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+
+            if (trimmedLine.startsWith("data: ")) {
+              const dataStr = trimmedLine.slice(6).trim();
+              if (dataStr === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(dataStr);
+                const delta =
+                  (parsed.type === "text-delta" ? (parsed.delta ?? parsed.textDelta) : null) ??
+                  parsed.textDelta ??
+                  parsed.text ??
+                  (typeof parsed === "string" ? parsed : null);
+                if (delta) {
+                  streamBufferRef.current += delta;
+                  scheduleFlush();
+                }
+              } catch {
+                if (dataStr && !dataStr.startsWith("{") && dataStr !== "[DONE]") {
+                  streamBufferRef.current += dataStr;
+                  scheduleFlush();
+                }
               }
-            } catch {
-              if (dataStr && !dataStr.startsWith("{") && dataStr !== "[DONE]") {
-                streamBufferRef.current += dataStr;
-                scheduleFlush();
-              }
+            } else if (trimmedLine.startsWith("0:")) {
+              try {
+                const raw = JSON.parse(trimmedLine.slice(2));
+                if (typeof raw === "string") {
+                  streamBufferRef.current += raw;
+                  scheduleFlush();
+                } else if (raw?.textDelta || raw?.delta) {
+                  streamBufferRef.current += (raw.textDelta || raw.delta);
+                  scheduleFlush();
+                }
+              } catch {}
             }
           }
         }
@@ -304,7 +319,7 @@ function AIAssistantPage() {
 
       let replyContent = streamBufferRef.current;
       if (!replyContent.trim()) {
-        replyContent = `I've received your query: **"${trimmed}"**\n\nLet me break this down for you with key concepts, examples, and study tips.`;
+        replyContent = generateAcademicResponse(trimmed);
       }
 
       setMessages(prev => [

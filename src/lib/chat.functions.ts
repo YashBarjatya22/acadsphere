@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { supabaseServer } from "@/integrations/supabase/supabase.server";
-import { getDb } from "@/lib/db.server";
+import { getDb, ensureUserExistsInSqlite } from "@/lib/db.server";
 
 export interface ThreadItem {
   id: string;
@@ -109,6 +109,7 @@ export const createThread = createServerFn({ method: "POST" })
     try {
       const db = getDb();
       if (db) {
+        ensureUserExistsInSqlite(userId);
         db.prepare(
           "INSERT OR REPLACE INTO threads (id, user_id, title, module, updated_at) VALUES (?, ?, ?, ?, ?)"
         ).run(threadId, userId, title, module, nowIso);
@@ -234,6 +235,11 @@ export const saveMessage = createServerFn({ method: "POST" })
     try {
       const db = getDb();
       if (db) {
+        ensureUserExistsInSqlite(userId);
+        db.prepare(
+          "INSERT OR IGNORE INTO threads (id, user_id, title, module, updated_at) VALUES (?, ?, 'Academic Discussion', 'ai-assistant', ?)"
+        ).run(data.threadId, userId, nowIso);
+
         db.prepare(
           "INSERT OR REPLACE INTO messages (id, thread_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)"
         ).run(msgId, data.threadId, data.role, partsJson, nowIso);

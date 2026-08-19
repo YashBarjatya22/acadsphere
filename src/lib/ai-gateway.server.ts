@@ -8,38 +8,75 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
  * Reads GROQ_API_KEY from the environment (set in .env.local).
  */
 export function getAiModel(modelName: string = "llama-3.3-70b-versatile") {
-  const groqKey = process.env.GROQ_API_KEY?.trim();
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-
-  if (groqKey && !groqKey.includes("your_") && groqKey.length > 5) {
-    const provider = createOpenAICompatible({
-      name: "groq",
-      baseURL: "https://api.groq.com/openai/v1",
-      apiKey: groqKey,
-    });
-    return provider(modelName);
+  // 1. Resolve Groq Key (handle direct, split P1/P2, and unexpanded ${...} strings from Render)
+  let groqKey = process.env.GROQ_API_KEY?.trim();
+  if (!groqKey || groqKey.includes("${") || groqKey.startsWith('"') || groqKey.startsWith("'")) {
+    groqKey = groqKey?.replace(/['"]/g, "").trim();
+    if (!groqKey || groqKey.includes("${")) {
+      const p1 = process.env.GROQ_P1?.replace(/['"]/g, "").trim() || "";
+      const p2 = process.env.GROQ_P2?.replace(/['"]/g, "").trim() || "";
+      if (p1 && p2) {
+        groqKey = `${p1}${p2}`;
+      }
+    }
   }
 
-  if (openaiKey && !openaiKey.includes("your_") && openaiKey.length > 5) {
-    const provider = createOpenAICompatible({
-      name: "openai",
-      baseURL: "https://api.openai.com/v1",
-      apiKey: openaiKey,
-    });
-    return provider("gpt-4o-mini");
+  // 2. Resolve OpenAI Key
+  let openaiKey = process.env.OPENAI_API_KEY?.replace(/['"]/g, "").trim();
+
+  // 3. Resolve Gemini Key
+  let geminiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY)?.trim();
+  if (!geminiKey || geminiKey.includes("${") || geminiKey.startsWith('"') || geminiKey.startsWith("'")) {
+    geminiKey = geminiKey?.replace(/['"]/g, "").trim();
+    if (!geminiKey || geminiKey.includes("${")) {
+      const gp1 = (process.env.GEMINI_P1 || process.env.VITE_GEMINI_P1)?.replace(/['"]/g, "").trim() || "";
+      const gp2 = (process.env.GEMINI_P2 || process.env.VITE_GEMINI_P2)?.replace(/['"]/g, "").trim() || "";
+      if (gp1 && gp2) {
+        geminiKey = `${gp1}${gp2}`;
+      }
+    }
   }
 
-  if (geminiKey && !geminiKey.includes("your_") && geminiKey.length > 5) {
-    const provider = createOpenAICompatible({
-      name: "gemini",
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-      apiKey: geminiKey,
-    });
-    return provider("gemini-1.5-flash");
+  if (groqKey && !groqKey.includes("your_") && groqKey.startsWith("gsk_") && groqKey.length > 15) {
+    try {
+      const provider = createOpenAICompatible({
+        name: "groq",
+        baseURL: "https://api.groq.com/openai/v1",
+        apiKey: groqKey,
+      });
+      return provider(modelName);
+    } catch (e) {
+      console.warn("[ai-gateway] Groq provider init warning:", e);
+    }
   }
 
-  // No key configured — return null, caller handles fallback
+  if (openaiKey && !openaiKey.includes("your_") && openaiKey.length > 15) {
+    try {
+      const provider = createOpenAICompatible({
+        name: "openai",
+        baseURL: "https://api.openai.com/v1",
+        apiKey: openaiKey,
+      });
+      return provider("gpt-4o-mini");
+    } catch (e) {
+      console.warn("[ai-gateway] OpenAI provider init warning:", e);
+    }
+  }
+
+  if (geminiKey && !geminiKey.includes("your_") && geminiKey.length > 15) {
+    try {
+      const provider = createOpenAICompatible({
+        name: "gemini",
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        apiKey: geminiKey,
+      });
+      return provider("gemini-1.5-flash");
+    } catch (e) {
+      console.warn("[ai-gateway] Gemini provider init warning:", e);
+    }
+  }
+
+  // No valid external key — returns null to trigger instant built-in Academic AI engine
   return null;
 }
 
